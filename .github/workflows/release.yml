@@ -49,12 +49,27 @@ jobs:
     needs: build
     runs-on: ubuntu-latest
     steps:
+      - uses: actions/checkout@v4
       - uses: actions/download-artifact@v4
         with:
           merge-multiple: true
           path: dist
+      - name: Release notes from CHANGELOG
+        run: |
+          version="${GITHUB_REF_NAME#v}"
+          awk -v ver="$version" '
+            BEGIN { heading = "## " ver }
+            $0 == heading { found = 1 }
+            found && /^## / && $0 != heading { exit }
+            found { print }
+          ' CHANGELOG.md > notes.md
+          if ! grep -q '[^[:space:]]' notes.md; then
+            echo "CHANGELOG.md has no section for ${version}" >&2
+            exit 1
+          fi
       - uses: softprops/action-gh-release@v2
         with:
           files: dist/*.zip
+          body_path: notes.md
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
