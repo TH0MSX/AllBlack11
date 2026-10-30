@@ -13,6 +13,8 @@
 
 <p align="center"><strong>Make Windows 11 truly black.</strong> OLED-friendly, featherweight, fully reversible.</p>
 
+<p align="center">Made by <a href="https://github.com/TH0MSX">@TH0MSX</a> with AI assistance (Cursor), tested daily on real ARM64 hardware.</p>
+
 ## 🌙 Why
 
 Windows 11 dark mode still paints gray title bars, a gray taskbar, and a tinted Start menu. AllBlack11 is a small tray program that makes Windows 11 OLED-friendly: an all-black taskbar, a dark Start menu and notification center, and darker window frames. It stays under 50 MB of RAM, stays out of other processes, and ships native ARM64 and x64 builds. On a Snapdragon ZenBook it sat at about 12 MB, with near-idle CPU while it waits on window events.
@@ -222,7 +224,7 @@ Same program, new name. The first launch copies the old config and snapshots whe
 
 ## 👤 Credits
 
-[Tomasz Pepliński](https://github.com/TH0MSX) (TH0MSX).
+Built by Tomasz Pepliński ([@TH0MSX](https://github.com/TH0MSX)) with AI coding assistance from Cursor's agent (credited as `cursoragent` in the commit history). Every feature was directed, tested and used daily by Tomasz on a Snapdragon ASUS ZenBook A14 (Windows 11 ARM64).
 
 Window frames use the public DWM attribute APIs. Tinted acrylic uses `SetWindowCompositionAttribute`, the same user32 entry TranslucentTB uses on the taskbar, called from this process only.
 
