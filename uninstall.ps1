@@ -66,6 +66,25 @@ function Restore-Binary {
     }
 }
 
+function Restore-CaptionHeight {
+    param([string]$Path)
+    if (-not (Test-Path $Path)) {
+        return
+    }
+    $backup = Get-Content -Raw -Path $Path | ConvertFrom-Json
+    $key = "HKCU:\Control Panel\Desktop\WindowMetrics"
+    if (-not (Test-Path $key)) {
+        return
+    }
+    if ($backup.present) {
+        Set-ItemProperty -Path $key -Name "CaptionHeight" -Value ([string]$backup.captionHeight)
+        Write-Host "Restored CaptionHeight. Sign out for the title bar height to return."
+    } else {
+        Remove-ItemProperty -Path $key -Name "CaptionHeight" -ErrorAction SilentlyContinue
+        Write-Host "Removed CaptionHeight. Sign out for the title bar height to return."
+    }
+}
+
 function Broadcast-ImmersiveColor {
     if (-not ("AllBlack11Broadcast" -as [type])) {
         Add-Type -TypeDefinition @"
@@ -108,6 +127,7 @@ Get-Process -Name "AllBlack11" -ErrorAction SilentlyContinue | Stop-Process -For
 
 $cfg = Join-Path $env:APPDATA "AllBlack11"
 Restore-ShellBackup (Join-Path $cfg "shell-backup.json")
+Restore-CaptionHeight (Join-Path $cfg "metrics-backup.json")
 
 Remove-ItemProperty -Path "HKCU:\Software\Microsoft\Windows\CurrentVersion\Run" -Name "AllBlack11" -ErrorAction SilentlyContinue
 

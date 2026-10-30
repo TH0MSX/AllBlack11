@@ -1,5 +1,13 @@
 # Changelog
 
+## 1.2.0
+
+- The tray menu follows the Windows app theme, light or dark, with taller rows, horizontal padding, and rounded corners. It uses `SetPreferredAppMode(AllowDark)`, `FlushMenuThemes`, and `AllowDarkModeForWindow` on the tray window. High contrast keeps the system menu.
+- Settings is a native Win32 window (no WebView). Open it from **Settings…** or by double-clicking the tray icon. It edits backdrop, colors, acrylic opacity, corners, legacy caption height, shell toggles, per-app rules, exclusions, startup, and the experimental switch. Changes write `config.json` and apply as you go. Sliders apply when you release the thumb.
+- `captionHeight` writes HKCU `CaptionHeight` (negative twips). Windows applies it at the next sign-in. The previous value is stored in `metrics-backup.json` and restored when the slider is set back to System, or by `uninstall.ps1`. AllBlack11 does not call `SetSysColors`.
+- Classic `#32770` dialogs, including Run, now get a dark caption from the existing DWM path. AllBlack11 also calls `SetWindowTheme` (`DarkMode_CFD` / `DarkMode_Explorer`) on the dialog and its children. That call is cross-process and often does not recolor the client area.
+- **Experimental: dark legacy windows** is off by default. When on, `AllBlack11Hook.dll` is loaded only into same-architecture processes that are not elevated, protected, or on the exclude list. The DLL subclasses `#32770` dialogs, paints `WM_CTLCOLOR*` with a dark background and light text (links and large static fonts included), and asks list views and Explorer-hosted children to use `DarkMode_Explorer`. Control Panel is included for `mmc.exe` and for Explorer windows titled "Control Panel". Turning the switch off, or exiting, removes the hooks. Games, launchers, and elevated processes are never entered. Antivirus and anti-cheat products may flag a hook DLL. DirectUI, XAML, and HTML pages can stay their own color. An ARM64 build does not hook x64-emulated processes, and an x64 build does not hook ARM64 processes.
+
 ## 1.1.1
 
 - The Shell menu shows "Black Start, taskbar & notification center". The ampersand is no longer swallowed as a menu shortcut.

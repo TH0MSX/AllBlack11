@@ -1,7 +1,9 @@
 //! AllBlack11 core: config, window policy, and the snapshot file used to undo changes.
 //! The Win32 tray loop lives in `platform` and is compiled only for Windows.
 
+mod caption;
 mod config;
+mod inject;
 mod policy;
 mod shell;
 mod snapshot;

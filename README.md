@@ -49,10 +49,13 @@ Windows 11 dark mode still paints gray title bars, a gray taskbar, and a tinted 
 </table>
 
 - Per-window dark captions, border, text color, corners, and backdrop (Mica, Mica Alt, Acrylic, or tinted acrylic).
+- A dark or light tray menu with Windows 11 spacing and rounded corners. It follows the system app theme.
+- A native Settings window (no WebView) for every config option, including per-app rules and exclusions. Double-click the tray icon or choose **Settings…**.
 - Rules by exe name, plus a built-in skip list for the shell, games, and launchers.
 - Out-of-context window events. No polling loop while the PC is idle.
 - Original frame attributes go back on Exit, Disable, or Reset.
 - Shell tweaks are HKCU only, snapshotted, and undone from the same menu or the uninstaller.
+- Optional, off by default: **Experimental: dark legacy windows**. A same-architecture hook DLL recolors classic dialogs and some Control Panel views. See [Safety](#-safety-and-uninstall).
 
 ## 📦 Download
 
@@ -76,7 +79,7 @@ No administrator account. `-NoAutostart` skips the HKCU Run value if you launch 
 powershell -ExecutionPolicy Bypass -File .\install.ps1
 ```
 
-The script copies `AllBlack11.exe` to `%LOCALAPPDATA%\Programs\AllBlack11`, creates `%APPDATA%\AllBlack11\config.json` when you do not have one, and adds `AllBlack11` under `HKCU\Software\Microsoft\Windows\CurrentVersion\Run`.
+The script copies `AllBlack11.exe` and `AllBlack11Hook.dll` to `%LOCALAPPDATA%\Programs\AllBlack11`, creates `%APPDATA%\AllBlack11\config.json` when you do not have one, and adds `AllBlack11` under `HKCU\Software\Microsoft\Windows\CurrentVersion\Run`. The hook DLL stays on disk until you opt in.
 
 The exe is unsigned. SmartScreen may say it protected your PC. Choose **More info**, then **Run anyway**.
 
@@ -84,12 +87,15 @@ If `%APPDATA%\PepaTheme\config.json` is still there and the new config is not, t
 
 ## 🖱️ Tray menu
 
+Right-click the icon for the menu. A single left-click opens it too. Double-click opens Settings.
+
 ```
 AllBlack11
 ──────────
 Enabled
 Reload config
 Open config
+Settings…
 Reset all windows
 ──────────
 Shell
@@ -101,13 +107,14 @@ Start with Windows
 Exit
 ```
 
-A check mark means that item is on.
+A check mark means that item is on. In dark mode the menu is dark, with padded rows and rounded corners. Light mode stays light. High contrast uses the normal system menu.
 
 | Item | What it does |
 | --- | --- |
 | **Enabled** | Window-frame pass. Off restores frames and is saved in the config. |
 | **Reload config** | Reads `config.json` again. |
 | **Open config** | Opens the JSON in your editor. |
+| **Settings…** | Native settings window. Same as a double-click on the tray icon. |
 | **Reset all windows** | Puts frames back until you reload or turn Enabled on again. |
 | **OLED taskbar** | `UseOLEDTaskbarTransparency` = 1. |
 | **Black Start, taskbar & notification center** | Black shell palette, transparency on, light theme off. |
@@ -165,7 +172,9 @@ On the author's Snapdragon ZenBook the process sat at about 12 MB of RAM.
 
 ## 🛡️ Safety and uninstall
 
-Everything is per-user. No administrator rights, no DLL injection, no remote threads, no `SetWindowsHookEx`.
+Everything is per-user. No administrator rights. The default path does not inject: window events are out-of-context, and frames are DWM messages.
+
+**Experimental: dark legacy windows** is the exception, and it ships off. Turning it on loads `AllBlack11Hook.dll` with `SetWindowsHookEx` into specific threads. The DLL matches the exe (ARM64 or x64). It will not enter an elevated process, a process that cannot be opened, or anything on the exclude list (games and launchers included). Exit, or turn the switch off, and the hooks come out. Antivirus and anti-cheat software sometimes flag this kind of DLL. Leave it off if you play games that watch for hooks.
 
 Frame changes are remembered in `%APPDATA%\AllBlack11\snapshots.json` and put back on Exit, Disable, or Reset. Shell changes are remembered in `shell-backup.json` and put back when you uncheck the item or run the uninstaller.
 
@@ -175,7 +184,7 @@ If a toggle is turned on when Windows is **already** in the target state, that b
 powershell -ExecutionPolicy Bypass -File .\uninstall.ps1
 ```
 
-That exits the app, restores `shell-backup.json`, removes the Run key, and deletes the install folder and `%APPDATA%\AllBlack11`.
+That exits the app, restores `shell-backup.json` and `CaptionHeight` from `metrics-backup.json` when those files exist, removes the Run key, and deletes the install folder and `%APPDATA%\AllBlack11`. Caption height returns to the saved value after you sign out.
 
 By hand: Exit from the tray, uncheck the Shell items, delete the exe, delete `%APPDATA%\AllBlack11`, and delete the `AllBlack11` Run value.
 
@@ -184,7 +193,9 @@ By hand: Exit from the tray, uncheck the Shell items, delete the exe, delete `%A
 <details>
 <summary>What AllBlack11 cannot recolor</summary>
 
-DWM and the accent policy paint the frame. The app still paints its own client area. Store app pages, and most classic Win32 content, keep the app's own background.
+DWM and the accent policy paint the frame. The app still paints its own client area. Store app pages, and most classic Win32 content, keep the app's own background unless **Experimental: dark legacy windows** is on.
+
+With that switch on, standard dialog controls (`#32770`, static text, buttons, edits, list boxes) are recolored in-process, and list views are asked to use `DarkMode_Explorer`. The Run dialog and classic dialog pages are the ones this covers. Control Panel's category home is included when the window title is "Control Panel" or the process is `mmc.exe`, but DirectUI, XAML, and HTML regions can stay light. `SetWindowTheme` from AllBlack11's own process is also tried first; many programs ignore that. Nothing here changes system-wide colors with `SetSysColors`.
 
 Custom title bars ignore caption and border colors. That includes Chrome and a lot of Electron apps. Borderless DirectComposition windows and full-screen games are skipped. A windowed game with a normal caption can still be themed; add its exe under `exclude`. GeForce NOW and the usual launchers are excluded in the default config.
 

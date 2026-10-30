@@ -145,6 +145,10 @@ if (Test-Path $destExe) {
 
 New-Item -ItemType Directory -Force -Path $dest | Out-Null
 Copy-Item $source $destExe -Force
+$hook = Join-Path $here "AllBlack11Hook.dll"
+if (Test-Path $hook) {
+    Copy-Item $hook (Join-Path $dest "AllBlack11Hook.dll") -Force
+}
 foreach ($name in @("README.md", "uninstall.ps1", "config.default.json", "install.ps1")) {
     $from = Join-Path $here $name
     if (Test-Path $from) {

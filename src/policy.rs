@@ -145,7 +145,8 @@ pub fn decide(facts: &WindowFacts, config: &Config, accent_bgr: u32) -> Decision
     if facts.exstyle & WS_EX_TOOLWINDOW != 0 {
         return Decision::Skip("toolwindow");
     }
-    if facts.style & WS_DLGFRAME == 0 {
+    let dialog = facts.class_name == "#32770";
+    if facts.style & WS_DLGFRAME == 0 && !dialog {
         return Decision::Skip("no-frame");
     }
     if facts.exstyle & WS_EX_LAYERED != 0 && facts.exstyle & WS_EX_TRANSPARENT != 0 {
@@ -161,7 +162,7 @@ pub fn decide(facts: &WindowFacts, config: &Config, accent_bgr: u32) -> Decision
     if !facts.minimized && (facts.width < 80 || facts.height < 32) {
         return Decision::Skip("tiny");
     }
-    if facts.has_owner && facts.style & WS_DLGFRAME == 0 {
+    if facts.has_owner && facts.style & WS_DLGFRAME == 0 && !dialog {
         return Decision::Skip("popup");
     }
     if !facts.pid_known || facts.exe.is_empty() {
@@ -171,6 +172,7 @@ pub fn decide(facts: &WindowFacts, config: &Config, accent_bgr: u32) -> Decision
         return Decision::Skip("excluded");
     }
     if facts.exe.eq_ignore_ascii_case("explorer.exe")
+        && !dialog
         && !class_listed(&facts.class_name, EXPLORER_ALLOWED_CLASSES)
     {
         return Decision::Skip("explorer-shell");
@@ -203,6 +205,11 @@ fn class_listed(class_name: &str, list: &[impl AsRef<str>]) -> bool {
 
 fn exe_listed(exe: &str, list: &[impl AsRef<str>]) -> bool {
     list.iter().any(|item| exe_matches(item.as_ref(), exe))
+}
+
+/// Shell hosts, services, and our own process. The experimental hook uses the same list.
+pub fn process_always_skipped(exe: &str) -> bool {
+    exe_listed(exe, ALWAYS_SKIP_PROCESSES)
 }
 
 #[cfg(test)]
@@ -279,7 +286,17 @@ mod tests {
         let mut copy_dialog = normal_notepad();
         copy_dialog.exe = "explorer.exe".into();
         copy_dialog.class_name = "#32770".into();
-        assert_eq!(skip(&copy_dialog), "explorer-shell");
+        assert!(matches!(
+            decide(&copy_dialog, &cfg(), FALLBACK_ACCENT_BGR),
+            Decision::Apply(_)
+        ));
+
+        let mut frameless_dialog = copy_dialog.clone();
+        frameless_dialog.style = WS_POPUP | 0x00C0_0000;
+        assert!(matches!(
+            decide(&frameless_dialog, &cfg(), FALLBACK_ACCENT_BGR),
+            Decision::Apply(_)
+        ));
     }
 
     #[test]

@@ -19,6 +19,8 @@
     "oledTaskbar": false,
     "blackShell": false
   },
+  "captionHeight": null,
+  "experimentalDarkLegacy": false,
   "rules": [],
   "exclude": [
     "GeForceNOW.exe",

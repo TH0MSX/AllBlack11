@@ -38,6 +38,8 @@ jobs:
         run: |
           stage=$(mktemp -d)
           cp "target/${{ matrix.target }}/release/AllBlack11.exe" "$stage/"
+          cargo xwin build --release --target ${{ matrix.target }} --manifest-path hook/Cargo.toml
+          cp "hook/target/${{ matrix.target }}/release/AllBlack11Hook.dll" "$stage/"
           cp install.ps1 uninstall.ps1 README.md config.default.json LICENSE CHANGELOG.md "$stage/"
           (cd "$stage" && zip -r "$GITHUB_WORKSPACE/${{ matrix.zip }}" .)
       - uses: actions/upload-artifact@v4

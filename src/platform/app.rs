@@ -1,10 +1,10 @@
 use std::collections::{HashMap, HashSet};
 use std::ptr::{null, null_mut};
-use std::sync::atomic::{AtomicIsize, Ordering};
+use std::sync::atomic::{AtomicBool, AtomicIsize, Ordering};
 use std::sync::{Mutex, OnceLock};
 use windows_sys::Win32::Foundation::{
-    CloseHandle, GetLastError, BOOL, ERROR_ALREADY_EXISTS, HANDLE, HWND, LPARAM, LRESULT, POINT,
-    RECT, TRUE, WAIT_OBJECT_0, WPARAM,
+    CloseHandle, GetLastError, BOOL, ERROR_ALREADY_EXISTS, HANDLE, HWND, LPARAM, LRESULT, RECT, TRUE,
+    WAIT_OBJECT_0, WPARAM,
 };
 use windows_sys::Win32::Graphics::Gdi::{
     GetMonitorInfoW, MonitorFromWindow, MONITORINFO, MONITOR_DEFAULTTONEAREST,
@@ -20,23 +20,23 @@ use windows_sys::Win32::UI::Accessibility::{SetWinEventHook, UnhookWinEvent, HWI
 use windows_sys::Win32::UI::HiDpi::{
     SetProcessDpiAwarenessContext, DPI_AWARENESS_CONTEXT_PER_MONITOR_AWARE_V2,
 };
+use windows_sys::Win32::UI::Input::KeyboardAndMouse::GetDoubleClickTime;
 use windows_sys::Win32::UI::Shell::{
     Shell_NotifyIconW, NIF_ICON, NIF_INFO, NIF_MESSAGE, NIF_TIP, NIIF_ERROR, NIIF_INFO, NIM_ADD,
     NIM_DELETE, NIM_MODIFY, NOTIFYICONDATAW,
 };
 use windows_sys::Win32::UI::WindowsAndMessaging::{
-    AppendMenuW, CreatePopupMenu, CreateWindowExW, DefWindowProcW, DestroyIcon, DestroyMenu,
-    DestroyWindow, DispatchMessageW, EnumWindows, FindWindowW, GetAncestor, GetClassNameW,
-    GetCursorPos, GetWindow, GetWindowLongPtrW, GetWindowRect, GetWindowThreadProcessId, IsIconic,
-    IsWindow, IsWindowVisible, KillTimer, MsgWaitForMultipleObjectsEx, PeekMessageW, PostMessageW,
-    PostQuitMessage, RegisterClassExW, RegisterWindowMessageW, SetForegroundWindow, SetTimer,
-    TrackPopupMenuEx, TranslateMessage, EVENT_OBJECT_SHOW, EVENT_OBJECT_UNCLOAKED,
+    CreateWindowExW, DefWindowProcW, DestroyIcon, DestroyWindow, DispatchMessageW, EnumWindows,
+    FindWindowW, GetAncestor, GetClassNameW, GetWindow, GetWindowLongPtrW, GetWindowRect,
+    GetWindowThreadProcessId, IsIconic, IsWindow, IsWindowVisible, KillTimer,
+    MsgWaitForMultipleObjectsEx, PeekMessageW, PostMessageW, PostQuitMessage, RegisterClassExW,
+    RegisterWindowMessageW, SetTimer, TranslateMessage, EVENT_OBJECT_SHOW, EVENT_OBJECT_UNCLOAKED,
     EVENT_SYSTEM_FOREGROUND, EVENT_SYSTEM_MOVESIZEEND, EVENT_SYSTEM_MOVESIZESTART, GA_ROOT,
-    GWL_EXSTYLE, GWL_STYLE, GW_OWNER, MF_CHECKED, MF_DISABLED, MF_GRAYED, MF_POPUP, MF_SEPARATOR,
-    MF_STRING, MSG, MWMO_INPUTAVAILABLE, PM_REMOVE, QS_ALLINPUT, TPM_BOTTOMALIGN, TPM_NONOTIFY,
-    TPM_RETURNCMD, TPM_RIGHTBUTTON, WINEVENT_INCONTEXT, WINEVENT_OUTOFCONTEXT,
-    WINEVENT_SKIPOWNPROCESS, WM_APP, WM_CLOSE, WM_CONTEXTMENU, WM_DESTROY, WM_ENDSESSION,
-    WM_LBUTTONUP, WM_NULL, WM_QUERYENDSESSION, WM_QUIT, WM_RBUTTONUP, WM_SETTINGCHANGE, WM_TIMER,
+    GWL_EXSTYLE, GWL_STYLE, GW_OWNER, MSG, MWMO_INPUTAVAILABLE, PM_REMOVE, QS_ALLINPUT,
+    WINEVENT_INCONTEXT, WINEVENT_OUTOFCONTEXT,
+    WINEVENT_SKIPOWNPROCESS, WM_APP, WM_CLOSE, WM_CONTEXTMENU, WM_DESTROY, WM_DRAWITEM, WM_ENDSESSION,
+    WM_LBUTTONDBLCLK, WM_LBUTTONUP, WM_MEASUREITEM, WM_QUERYENDSESSION, WM_QUIT, WM_RBUTTONUP,
+    WM_SETTINGCHANGE, WM_TIMER,
     WNDCLASSEXW, WS_CHILD, WS_DLGFRAME, WS_EX_LAYERED, WS_EX_NOACTIVATE, WS_EX_NOREDIRECTIONBITMAP,
     WS_EX_TOOLWINDOW, WS_EX_TRANSPARENT, WS_POPUP,
 };
@@ -44,8 +44,8 @@ use windows_sys::Win32::UI::WindowsAndMessaging::{
 use windows_sys::Win32::System::Registry::{RegCloseKey, HKEY};
 
 use crate::config::{
-    acrylic_gradient, bundled_default_json, file_name, hex_rgb, parse_config, set_enabled_flag,
-    set_shell_flag, summarize, Backdrop, Style,
+    acrylic_gradient, bundled_default_json, file_name, hex_rgb, normalize_caption_height, parse_config,
+    set_enabled_flag, set_shell_flag, summarize, Backdrop, Style,
 };
 use crate::policy::{decide, rect_covers_monitor, Decision, WindowFacts};
 use crate::snapshot::{format_snapshots, parse_snapshots, same_process, StoredSnapshot};
@@ -58,8 +58,13 @@ use crate::{
 use super::composition;
 use super::dwm;
 use super::icon;
+use super::legacy;
+use super::menu::{self, Item, ItemKind};
+use super::metrics;
 use super::registry;
+use super::settings;
 use super::shellwin;
+use super::uxtheme;
 use super::wide::{
     self, config_path, fill_wide, log_line, migrate_legacy_config, pcw, snapshot_path, to_wide,
 };
@@ -86,7 +91,11 @@ const CMD_AUTOSTART: u32 = 5;
 const CMD_EXIT: u32 = 6;
 const CMD_OLED: u32 = 7;
 const CMD_BLACK_SHELL: u32 = 8;
+const CMD_SETTINGS: u32 = 9;
 const TIMER_ACCENT: usize = 3;
+const TIMER_CLICK: usize = 4;
+
+static SUPPRESS_MENU: AtomicBool = AtomicBool::new(false);
 
 static APP_HWND: AtomicIsize = AtomicIsize::new(0);
 static QUEUE: Mutex<Vec<(i64, u32)>> = Mutex::new(Vec::new());
@@ -189,6 +198,7 @@ fn help_text() -> String {
          \n\
          AllBlack11.exe           Start the tray app\n\
          AllBlack11.exe --exit    Restore themed windows and quit\n\
+         Settings                 Tray menu, or double-click the icon\n\
          AllBlack11.exe --check   Validate config.json (also writes %APPDATA%\\AllBlack11\\check.txt)\n\
          AllBlack11.exe --version Print the version\n\
          AllBlack11.exe --help    Show this help\n\
@@ -381,6 +391,8 @@ fn run() -> Result<(), String> {
     };
     app.prune_dead();
     APP_HWND.store(hwnd as isize, Ordering::Relaxed);
+    uxtheme::allow_dark_menus(!app.high_contrast);
+    uxtheme::allow_window(hwnd, true);
     if !app.add_tray() {
         unsafe {
             if !app.icon_on.is_null() {
@@ -412,6 +424,13 @@ fn run() -> Result<(), String> {
         );
     }
     app.apply_startup();
+    if app.config.experimental_dark_legacy && !app.high_contrast {
+        if let Err(err) = legacy::set_active(true) {
+            log_line("error", &err);
+        } else {
+            app.scan_legacy();
+        }
+    }
     let shell_broadcast = app.apply_saved_shell();
     {
         let mut guard = STATE.lock().unwrap_or_else(|err| err.into_inner());
@@ -529,9 +548,30 @@ unsafe extern "system" fn wndproc(hwnd: HWND, msg: u32, wparam: WPARAM, lparam: 
     match msg {
         WM_TRAY => {
             let mouse = lparam as u32;
-            if mouse == WM_LBUTTONUP || mouse == WM_RBUTTONUP || mouse == WM_CONTEXTMENU {
+            if mouse == WM_RBUTTONUP || mouse == WM_CONTEXTMENU {
                 show_menu(hwnd);
+            } else if mouse == WM_LBUTTONDBLCLK {
+                unsafe { KillTimer(hwnd, TIMER_CLICK) };
+                SUPPRESS_MENU.store(true, Ordering::Release);
+                settings::open(hwnd);
+            } else if mouse == WM_LBUTTONUP {
+                if SUPPRESS_MENU.swap(false, Ordering::AcqRel) {
+                    return 0;
+                }
+                unsafe { SetTimer(hwnd, TIMER_CLICK, GetDoubleClickTime(), None) };
             }
+            return 0;
+        }
+        WM_MEASUREITEM => {
+            menu::on_measure(lparam);
+            return 1;
+        }
+        WM_DRAWITEM => {
+            menu::on_draw(lparam);
+            return 1;
+        }
+        settings::WM_SETTINGS_APPLIED => {
+            with_app(|app| app.apply_external_config());
             return 0;
         }
         WM_APPLY => {
@@ -539,7 +579,10 @@ unsafe extern "system" fn wndproc(hwnd: HWND, msg: u32, wparam: WPARAM, lparam: 
             return 0;
         }
         WM_TIMER => {
-            if wparam == TIMER_SECOND {
+            if wparam == TIMER_CLICK {
+                unsafe { KillTimer(hwnd, TIMER_CLICK) };
+                show_menu(hwnd);
+            } else if wparam == TIMER_SECOND {
                 with_app(|app| app.fire_due());
             } else if wparam == TIMER_ACCENT {
                 let wrote = with_app(|app| app.reapply_black_palette()).unwrap_or(false);
@@ -617,88 +660,86 @@ fn on_setting_change(lparam: LPARAM) {
         app.high_contrast = contrast;
         if contrast && contrast_changed {
             app.restore_visuals();
+            let _ = legacy::set_active(false);
             app.balloon("AllBlack11", "Paused while high contrast is on.", false);
         } else if accent_changed || contrast_changed {
             app.hold.clear();
             app.last_apply.clear();
             app.apply_startup();
+            if !contrast && app.config.experimental_dark_legacy && legacy::set_active(true).is_ok() {
+                app.scan_legacy();
+            }
         }
+        uxtheme::allow_dark_menus(!contrast);
         app.update_tray();
     });
 }
 
 fn show_menu(hwnd: HWND) {
-    let Some((enabled, autostart, contrast, oled, black_shell)) = with_app(|app| {
+    let Some((enabled, autostart, contrast, oled, black_shell, dark)) = with_app(|app| {
         (
             app.config.enabled,
             registry::autostart_enabled(),
             app.high_contrast,
             app.config.shell.oled_taskbar,
             app.config.shell.black_shell,
+            app.apps_dark.unwrap_or(true),
         )
     }) else {
         return;
     };
-    let title = to_wide("AllBlack11");
-    let enable = to_wide(if contrast {
-        "Enabled (high contrast)"
-    } else {
-        "Enabled"
-    });
-    let reload = to_wide("Reload config");
-    let open = to_wide("Open config");
-    let reset = to_wide("Reset all windows");
-    let shell = to_wide("Shell");
-    let oled_label = to_wide("OLED taskbar");
-    let black_label = to_wide("Black Start, taskbar && notification center");
-    let startup = to_wide("Start with Windows");
-    let exit = to_wide("Exit");
-    unsafe {
-        let menu = CreatePopupMenu();
-        if menu.is_null() {
-            return;
-        }
-        AppendMenuW(menu, MF_STRING | MF_GRAYED | MF_DISABLED, 0, pcw(&title));
-        AppendMenuW(menu, MF_SEPARATOR, 0, null());
-        let mut enable_flags = MF_STRING;
-        if enabled {
-            enable_flags |= MF_CHECKED;
-        }
-        if contrast {
-            enable_flags |= MF_GRAYED | MF_DISABLED;
-        }
-        AppendMenuW(menu, enable_flags, CMD_ENABLE as usize, pcw(&enable));
-        AppendMenuW(menu, MF_STRING, CMD_RELOAD as usize, pcw(&reload));
-        AppendMenuW(menu, MF_STRING, CMD_OPEN as usize, pcw(&open));
-        AppendMenuW(menu, MF_STRING, CMD_RESET as usize, pcw(&reset));
-        AppendMenuW(menu, MF_SEPARATOR, 0, null());
-        let shell_menu = CreatePopupMenu();
-        let oled_flags = MF_STRING | if oled { MF_CHECKED } else { 0 };
-        let black_flags = MF_STRING | if black_shell { MF_CHECKED } else { 0 };
-        AppendMenuW(shell_menu, oled_flags, CMD_OLED as usize, pcw(&oled_label));
-        AppendMenuW(
-            shell_menu,
-            black_flags,
-            CMD_BLACK_SHELL as usize,
-            pcw(&black_label),
-        );
-        AppendMenuW(menu, MF_STRING | MF_POPUP, shell_menu as usize, pcw(&shell));
-        AppendMenuW(menu, MF_SEPARATOR, 0, null());
-        let startup_flags = MF_STRING | if autostart { MF_CHECKED } else { 0 };
-        AppendMenuW(menu, startup_flags, CMD_AUTOSTART as usize, pcw(&startup));
-        AppendMenuW(menu, MF_SEPARATOR, 0, null());
-        AppendMenuW(menu, MF_STRING, CMD_EXIT as usize, pcw(&exit));
-        let mut point = POINT { x: 0, y: 0 };
-        GetCursorPos(&mut point);
-        let mut flags = TPM_RETURNCMD | TPM_RIGHTBUTTON | TPM_NONOTIFY;
-        if point.y > 80 {
-            flags |= TPM_BOTTOMALIGN;
-        }
-        SetForegroundWindow(hwnd);
-        let chosen = TrackPopupMenuEx(menu, flags, point.x, point.y, hwnd, null());
-        PostMessageW(hwnd, WM_NULL, 0, 0);
-        DestroyMenu(menu);
-        on_command(hwnd, chosen as u32);
+    uxtheme::allow_dark_menus(!contrast);
+    let items = vec![
+        item(0, "AllBlack11", ItemKind::Title, false),
+        item(0, "", ItemKind::Separator, true),
+        item(
+            CMD_ENABLE,
+            if contrast { "Enabled (high contrast)" } else { "Enabled" },
+            ItemKind::Checked(enabled),
+            !contrast,
+        ),
+        item(CMD_RELOAD, "Reload config", ItemKind::Action, true),
+        item(CMD_OPEN, "Open config", ItemKind::Action, true),
+        item(CMD_SETTINGS, "Settings…", ItemKind::Action, true),
+        item(CMD_RESET, "Reset all windows", ItemKind::Action, true),
+        item(0, "", ItemKind::Separator, true),
+        Item {
+            id: 0,
+            label: "Shell".into(),
+            kind: ItemKind::Submenu,
+            enabled: true,
+            children: vec![
+                item(CMD_OLED, "OLED taskbar", ItemKind::Checked(oled), true),
+                item(
+                    CMD_BLACK_SHELL,
+                    "Black Start, taskbar & notification center",
+                    ItemKind::Checked(black_shell),
+                    true,
+                ),
+            ],
+        },
+        item(0, "", ItemKind::Separator, true),
+        item(
+            CMD_AUTOSTART,
+            "Start with Windows",
+            ItemKind::Checked(autostart),
+            true,
+        ),
+        item(0, "", ItemKind::Separator, true),
+        item(CMD_EXIT, "Exit", ItemKind::Action, true),
+    ];
+    let chosen = menu::popup(hwnd, dark, contrast, &items);
+    on_command(hwnd, chosen);
+    settings::notify_external_change();
+}
+
+fn item(id: u32, label: &str, kind: ItemKind, enabled: bool) -> Item {
+    Item {
+        id,
+        label: label.into(),
+        kind,
+        enabled,
+        children: Vec::new(),
     }
 }
 
@@ -723,6 +764,9 @@ fn on_command(hwnd: HWND, command: u32) {
         }
         CMD_RESET => {
             with_app(|app| app.reset_all());
+        }
+        CMD_SETTINGS => {
+            settings::open(hwnd);
         }
         CMD_AUTOSTART => {
             let enabled = registry::autostart_enabled();
@@ -769,6 +813,7 @@ fn shutdown() {
     }
     app.shut_down = true;
     APP_HWND.store(0, Ordering::Relaxed);
+    legacy::shutdown();
     app.unhook();
     app.restore_and_forget();
     app.remove_tray();
@@ -1022,6 +1067,7 @@ impl App {
 
     fn apply_startup(&mut self) {
         if self.high_contrast || !self.config.enabled {
+            self.scan_legacy();
             return;
         }
         let hwnds = enum_hwnds();
@@ -1040,6 +1086,92 @@ impl App {
             );
         }
         self.update_tray();
+        self.scan_legacy();
+    }
+
+    fn scan_legacy(&self) {
+        if !self.config.experimental_dark_legacy || self.high_contrast || self.shut_down {
+            return;
+        }
+        for key in enum_hwnds() {
+            self.note_legacy(key);
+        }
+    }
+
+    fn note_legacy(&self, key: i64) {
+        if !self.config.experimental_dark_legacy || self.high_contrast || self.shut_down {
+            return;
+        }
+        legacy::consider(key_to_hwnd(key), &self.config.exclude);
+    }
+
+    fn apply_external_config(&mut self) {
+        let old = self.config.clone();
+        let text = match std::fs::read_to_string(&self.config_file) {
+            Ok(text) => text,
+            Err(err) => {
+                self.balloon("AllBlack11", &format!("Could not read config: {err}"), true);
+                return;
+            }
+        };
+        let new = match parse_config(&text) {
+            Ok(config) => config,
+            Err(err) => {
+                self.balloon("AllBlack11", &format!("Config not applied: {err}"), true);
+                return;
+            }
+        };
+        self.config = new;
+        self.config.caption_height = normalize_caption_height(self.config.caption_height);
+        self.reconcile_shell(&old);
+        if normalize_caption_height(old.caption_height) != self.config.caption_height {
+            if let Err(err) = metrics::apply_caption_height(self.config.caption_height) {
+                self.balloon("AllBlack11", &err, true);
+            } else if self.config.caption_height.is_some() {
+                self.balloon(
+                    "AllBlack11",
+                    "Caption height saved. Sign out and back in for it to apply.",
+                    false,
+                );
+            }
+        }
+        let want_hook = self.config.experimental_dark_legacy && !self.high_contrast;
+        let had_hook = old.experimental_dark_legacy && !self.high_contrast;
+        if want_hook != had_hook || (want_hook && old.exclude != self.config.exclude) {
+            let _ = legacy::set_active(false);
+            if want_hook {
+                if let Err(err) = legacy::set_active(true) {
+                    self.balloon("AllBlack11", &err, true);
+                    self.config.experimental_dark_legacy = false;
+                }
+            }
+        }
+        self.accent_bgr = registry::accent_bgr();
+        self.apps_dark = registry::apps_prefer_dark();
+        self.high_contrast = dwm::high_contrast_enabled();
+        self.hold.clear();
+        self.last_apply.clear();
+        self.exe_cache.clear();
+        if self.config.enabled && !self.high_contrast {
+            self.apply_startup();
+        } else {
+            self.restore_visuals();
+        }
+        self.update_tray();
+        uxtheme::allow_dark_menus(!self.high_contrast);
+    }
+
+    fn reconcile_shell(&mut self, old: &crate::Config) {
+        let want_oled = self.config.shell.oled_taskbar;
+        let want_black = self.config.shell.black_shell;
+        if want_oled != old.shell.oled_taskbar {
+            self.config.shell.oled_taskbar = old.shell.oled_taskbar;
+            let _ = self.set_oled(want_oled);
+        }
+        if want_black != old.shell.black_shell {
+            self.config.shell.black_shell = old.shell.black_shell;
+            let _ = self.set_black_shell(want_black);
+        }
     }
 
     fn handle_batch(&mut self, batch: Vec<(i64, u32)>) {
@@ -1060,6 +1192,7 @@ impl App {
         }
         let mut pending = Vec::new();
         for (key, kind) in kinds {
+            self.note_legacy(key);
             if let Some(item) = self.plan(key, kind) {
                 pending.push(item);
             }
@@ -1245,6 +1378,7 @@ impl App {
                 }
             }
             self.last_apply.insert(item.hwnd, now);
+            legacy::nudge(hwnd);
         }
         if self.dirty {
             self.write_snapshots();
@@ -1396,8 +1530,14 @@ impl App {
     }
 
     fn toggle_oled(&mut self) -> bool {
+        self.set_oled(!self.config.shell.oled_taskbar)
+    }
+
+    fn set_oled(&mut self, enable: bool) -> bool {
         self.ensure_config_file();
-        let enable = !self.config.shell.oled_taskbar;
+        if self.config.shell.oled_taskbar == enable {
+            return false;
+        }
         let mut backup = shellwin::load_backup();
         let result = if enable {
             shellwin::enable_oled(&mut backup)
@@ -1418,8 +1558,14 @@ impl App {
     }
 
     fn toggle_black_shell(&mut self) -> bool {
+        self.set_black_shell(!self.config.shell.black_shell)
+    }
+
+    fn set_black_shell(&mut self, enable: bool) -> bool {
         self.ensure_config_file();
-        let enable = !self.config.shell.black_shell;
+        if self.config.shell.black_shell == enable {
+            return false;
+        }
         let mut backup = shellwin::load_backup();
         let result = if enable {
             shellwin::enable_black_shell(&mut backup).map(|_| ())
@@ -1557,7 +1703,10 @@ unsafe extern "system" fn win_event_proc(
         return;
     }
     let style = GetWindowLongPtrW(hwnd, GWL_STYLE) as u32;
-    if style & WS_CHILD != 0 || style & WS_DLGFRAME == 0 {
+    if style & WS_CHILD != 0 {
+        return;
+    }
+    if style & WS_DLGFRAME == 0 && class_of(hwnd) != "#32770" {
         return;
     }
     let exstyle = GetWindowLongPtrW(hwnd, GWL_EXSTYLE) as u32;

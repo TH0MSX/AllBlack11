@@ -243,6 +243,15 @@ pub fn base_style() -> Style {
     }
 }
 
+/// `None` and `0` mean "leave the system CaptionHeight alone".
+/// Other values clamp to the slider range, 16–64 pixels.
+pub fn normalize_caption_height(value: Option<u32>) -> Option<u32> {
+    match value {
+        None | Some(0) => None,
+        Some(pixels) => Some(pixels.clamp(16, 64)),
+    }
+}
+
 /// `acrylicOpacity` as the alpha byte of an `AABBGGRR` gradient.
 pub fn opacity_byte(value: f64) -> Result<u8, String> {
     if !value.is_finite() || !(0.0..=1.0).contains(&value) {
@@ -265,7 +274,8 @@ pub struct Opacity(pub u8);
 
 impl Serialize for Opacity {
     fn serialize<S: Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
-        serializer.serialize_f64(f64::from(self.0) / 255.0)
+        let hundredths = (f64::from(self.0) / 255.0 * 100.0).round() / 100.0;
+        serializer.serialize_f64(hundredths)
     }
 }
 
@@ -281,20 +291,30 @@ impl<'de> Deserialize<'de> for Opacity {
 #[derive(Debug, Clone, Default, Deserialize, Serialize)]
 #[serde(rename_all = "camelCase", default)]
 pub struct PartialStyle {
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub enabled: Option<bool>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub dark_mode: Option<bool>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub backdrop: Option<Backdrop>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub caption_color: Option<Color>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub border_color: Option<Color>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub text_color: Option<Color>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub corners: Option<Corners>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub acrylic_tint: Option<Color>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub acrylic_opacity: Option<Opacity>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub tinted_acrylic_on_move_fallback: Option<bool>,
 }
 
 impl PartialStyle {
-    fn merge_onto(&self, mut style: Style) -> Style {
+    pub fn merge_onto(&self, mut style: Style) -> Style {
         if let Some(value) = self.dark_mode {
             style.dark_mode = value;
         }
@@ -371,6 +391,13 @@ pub struct Config {
     pub exclude_classes: Vec<String>,
     #[serde(default)]
     pub shell: ShellSettings,
+    /// Legacy caption height in pixels. `None` leaves Windows `CaptionHeight` alone.
+    /// Applied only after the user signs out.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub caption_height: Option<u32>,
+    /// Opt-in in-process recolor of classic dialogs. Off unless the user turns it on.
+    #[serde(default)]
+    pub experimental_dark_legacy: bool,
 }
 
 fn default_true() -> bool {
@@ -475,10 +502,15 @@ fn is_dark(r: u8, g: u8, b: u8) -> bool {
 pub fn summarize(config: &Config, accent_bgr: u32) -> String {
     let style = config.defaults.merge_onto(base_style());
     format!(
-        "enabled={} logging={} reapplyOnForeground={}\ndefault darkMode={} backdrop={:?} caption={} border={} text={} corners={:?}\nrules={}\nexclude={}",
+        "enabled={} logging={} reapplyOnForeground={} experimentalDarkLegacy={} captionHeight={}\ndefault darkMode={} backdrop={:?} caption={} border={} text={} corners={:?}\nrules={}\nexclude={}",
         config.enabled,
         config.logging,
         config.reapply_on_foreground,
+        config.experimental_dark_legacy,
+        config
+            .caption_height
+            .map(|px| px.to_string())
+            .unwrap_or_else(|| "system".into()),
         style.dark_mode,
         style.backdrop,
         color_label(style.caption, accent_bgr),
@@ -647,6 +679,8 @@ mod tests {
         assert!(style.tinted_acrylic_on_move_fallback);
         assert!(!config.shell.oled_taskbar);
         assert!(!config.shell.black_shell);
+        assert!(!config.experimental_dark_legacy);
+        assert!(config.caption_height.is_none());
 
         let config = parse_config(
             r##"{
@@ -669,6 +703,32 @@ mod tests {
             0x0003_0201
         );
         assert!(parse_config(r#"{ "default": { "acrylicOpacity": 1.5 } }"#).is_err());
+    }
+
+    #[test]
+    fn opacity_round_trips_through_two_decimals() {
+        let text = serde_json::to_string(&Opacity(140)).unwrap();
+        assert_eq!(text, "0.55");
+        let text = serde_json::to_string(&Opacity(204)).unwrap();
+        assert_eq!(text, "0.8");
+    }
+
+    #[test]
+    fn new_v120_fields_default_off_and_round_trip() {
+        let config = parse_config(bundled_default_json()).unwrap();
+        assert!(!config.experimental_dark_legacy);
+        assert!(config.caption_height.is_none());
+        let text = serde_json::to_string(&config).unwrap();
+        let again = parse_config(&text).unwrap();
+        assert!(!again.experimental_dark_legacy);
+        assert!(again.caption_height.is_none());
+        let custom = parse_config(r#"{ "captionHeight": 28, "experimentalDarkLegacy": true }"#).unwrap();
+        assert_eq!(custom.caption_height, Some(28));
+        assert!(custom.experimental_dark_legacy);
+        assert_eq!(normalize_caption_height(Some(0)), None);
+        assert_eq!(normalize_caption_height(Some(8)), Some(16));
+        assert_eq!(normalize_caption_height(Some(40)), Some(40));
+        assert_eq!(normalize_caption_height(Some(200)), Some(64));
     }
 
     #[test]

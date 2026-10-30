@@ -1,4 +1,5 @@
 /target
+/hook/target
 /dist
 *.zip
 *.exe
