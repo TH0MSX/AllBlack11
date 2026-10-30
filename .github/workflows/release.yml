@@ -1,0 +1,60 @@
+name: Release
+
+on:
+  push:
+    tags:
+      - "v*"
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - target: aarch64-pc-windows-msvc
+            zip: AllBlack11-arm64.zip
+          - target: x86_64-pc-windows-msvc
+            zip: AllBlack11-x64.zip
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: ${{ matrix.target }}
+      - name: Install LLVM resource tools and cargo-xwin
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y llvm-18 zip
+          curl -fsSL -o /tmp/cargo-xwin.tar.gz \
+            https://github.com/rust-cross/cargo-xwin/releases/download/v0.23.1/cargo-xwin-v0.23.1.x86_64-unknown-linux-musl.tar.gz
+          tar -xzf /tmp/cargo-xwin.tar.gz -C /tmp
+          sudo install -m 755 /tmp/cargo-xwin /usr/local/bin/cargo-xwin
+      - name: Build
+        run: cargo xwin build --release --target ${{ matrix.target }}
+      - name: Pack
+        run: |
+          stage=$(mktemp -d)
+          cp "target/${{ matrix.target }}/release/AllBlack11.exe" "$stage/"
+          cp install.ps1 uninstall.ps1 README.md config.default.json LICENSE CHANGELOG.md "$stage/"
+          (cd "$stage" && zip -r "$GITHUB_WORKSPACE/${{ matrix.zip }}" .)
+      - uses: actions/upload-artifact@v4
+        with:
+          name: ${{ matrix.zip }}
+          path: ${{ matrix.zip }}
+
+  release:
+    needs: build
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          merge-multiple: true
+          path: dist
+      - uses: softprops/action-gh-release@v2
+        with:
+          files: dist/*.zip
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

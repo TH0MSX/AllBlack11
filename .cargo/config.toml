@@ -1,0 +1,6 @@
+# Statically link the CRT so the exe does not need the VC++ redistributable.
+[target.aarch64-pc-windows-msvc]
+rustflags = ["-C", "target-feature=+crt-static"]
+
+[target.x86_64-pc-windows-msvc]
+rustflags = ["-C", "target-feature=+crt-static"]

@@ -1,0 +1,49 @@
+{
+  "comment": "AllBlack11. Reload from the tray after editing. borderColor \"accent\" reads AccentColorMenu (0xFF748501 is #018574). Set backdrop to \"tintedAcrylic\" for a darker acrylic tint (acrylicTint + acrylicOpacity). Shell toggles are under \"shell\" and are also in the tray menu.",
+  "enabled": true,
+  "logging": true,
+  "reapplyOnForeground": true,
+  "default": {
+    "enabled": true,
+    "darkMode": true,
+    "backdrop": "mica",
+    "captionColor": "#000000",
+    "borderColor": "accent",
+    "textColor": "#FFFFFF",
+    "corners": "default",
+    "acrylicTint": "#000000",
+    "acrylicOpacity": 0.55,
+    "tintedAcrylicOnMoveFallback": true
+  },
+  "shell": {
+    "oledTaskbar": false,
+    "blackShell": false
+  },
+  "rules": [],
+  "exclude": [
+    "GeForceNOW.exe",
+    "GeForceNOWStreamer.exe",
+    "GeForceNOWContainer.exe",
+    "steam.exe",
+    "steamwebhelper.exe",
+    "steamservice.exe",
+    "GameOverlayUI.exe",
+    "EpicGamesLauncher.exe",
+    "EpicWebHelper.exe",
+    "GalaxyClient.exe",
+    "Battle.net.exe",
+    "upc.exe",
+    "UbisoftConnect.exe",
+    "EADesktop.exe",
+    "EALauncher.exe",
+    "Origin.exe",
+    "RiotClientServices.exe",
+    "RiotClientUx.exe",
+    "RiotClientUxRender.exe",
+    "NVIDIA Overlay.exe",
+    "NVIDIA Share.exe",
+    "nvsphelper64.exe",
+    "nvcontainer.exe"
+  ],
+  "excludeClasses": []
+}
