@@ -3,8 +3,8 @@ use std::ptr::{null, null_mut};
 use std::sync::atomic::{AtomicBool, AtomicIsize, Ordering};
 use std::sync::{Mutex, OnceLock};
 use windows_sys::Win32::Foundation::{
-    CloseHandle, GetLastError, BOOL, ERROR_ALREADY_EXISTS, HANDLE, HWND, LPARAM, LRESULT, RECT, TRUE,
-    WAIT_OBJECT_0, WPARAM,
+    CloseHandle, GetLastError, BOOL, ERROR_ALREADY_EXISTS, HANDLE, HWND, LPARAM, LRESULT, RECT,
+    TRUE, WAIT_OBJECT_0, WPARAM,
 };
 use windows_sys::Win32::Graphics::Gdi::{
     GetMonitorInfoW, MonitorFromWindow, MONITORINFO, MONITOR_DEFAULTTONEAREST,
@@ -28,25 +28,24 @@ use windows_sys::Win32::UI::Shell::{
 use windows_sys::Win32::UI::WindowsAndMessaging::{
     CreateWindowExW, DefWindowProcW, DestroyIcon, DestroyWindow, DispatchMessageW, EnumWindows,
     FindWindowW, GetAncestor, GetClassNameW, GetWindow, GetWindowLongPtrW, GetWindowRect,
-    GetWindowThreadProcessId, IsIconic, IsWindow, IsWindowVisible, KillTimer,
+    GetWindowThreadProcessId, IsIconic, IsWindow, IsWindowVisible, KillTimer, MessageBoxW,
     MsgWaitForMultipleObjectsEx, PeekMessageW, PostMessageW, PostQuitMessage, RegisterClassExW,
     RegisterWindowMessageW, SetTimer, TranslateMessage, EVENT_OBJECT_SHOW, EVENT_OBJECT_UNCLOAKED,
     EVENT_SYSTEM_FOREGROUND, EVENT_SYSTEM_MOVESIZEEND, EVENT_SYSTEM_MOVESIZESTART, GA_ROOT,
-    GWL_EXSTYLE, GWL_STYLE, GW_OWNER, MSG, MWMO_INPUTAVAILABLE, PM_REMOVE, QS_ALLINPUT,
-    WINEVENT_INCONTEXT, WINEVENT_OUTOFCONTEXT,
-    WINEVENT_SKIPOWNPROCESS, WM_APP, WM_CLOSE, WM_CONTEXTMENU, WM_DESTROY, WM_DRAWITEM, WM_ENDSESSION,
-    WM_LBUTTONDBLCLK, WM_LBUTTONUP, WM_MEASUREITEM, WM_QUERYENDSESSION, WM_QUIT, WM_RBUTTONUP,
-    WM_SETTINGCHANGE, WM_TIMER,
-    MessageBoxW, IDYES, MB_DEFBUTTON2, MB_ICONQUESTION, MB_SETFOREGROUND, MB_TOPMOST, MB_YESNO,
-    WNDCLASSEXW, WS_CHILD, WS_DLGFRAME, WS_EX_LAYERED, WS_EX_NOACTIVATE, WS_EX_NOREDIRECTIONBITMAP,
-    WS_EX_TOOLWINDOW, WS_EX_TRANSPARENT, WS_POPUP,
+    GWL_EXSTYLE, GWL_STYLE, GW_OWNER, IDYES, MB_DEFBUTTON2, MB_ICONQUESTION, MB_SETFOREGROUND,
+    MB_TOPMOST, MB_YESNO, MSG, MWMO_INPUTAVAILABLE, PM_REMOVE, QS_ALLINPUT, WINEVENT_INCONTEXT,
+    WINEVENT_OUTOFCONTEXT, WINEVENT_SKIPOWNPROCESS, WM_APP, WM_CLOSE, WM_CONTEXTMENU, WM_DESTROY,
+    WM_DRAWITEM, WM_ENDSESSION, WM_LBUTTONDBLCLK, WM_LBUTTONUP, WM_MEASUREITEM, WM_QUERYENDSESSION,
+    WM_QUIT, WM_RBUTTONUP, WM_SETTINGCHANGE, WM_TIMER, WNDCLASSEXW, WS_CHILD, WS_DLGFRAME,
+    WS_EX_LAYERED, WS_EX_NOACTIVATE, WS_EX_NOREDIRECTIONBITMAP, WS_EX_TOOLWINDOW,
+    WS_EX_TRANSPARENT, WS_POPUP,
 };
 
 use windows_sys::Win32::System::Registry::{RegCloseKey, HKEY};
 
 use crate::config::{
-    acrylic_gradient, bundled_default_json, file_name, hex_rgb, normalize_caption_height, parse_config,
-    set_enabled_flag, set_shell_flag, summarize, Backdrop, Style,
+    acrylic_gradient, bundled_default_json, file_name, hex_rgb, normalize_caption_height,
+    parse_config, set_enabled_flag, set_shell_flag, summarize, Backdrop, Style,
 };
 use crate::policy::{decide, rect_covers_monitor, Decision, WindowFacts};
 use crate::snapshot::{format_snapshots, parse_snapshots, same_process, StoredSnapshot};
@@ -56,6 +55,7 @@ use crate::{
     WS_EX_TOOLWINDOW as POLICY_WS_EX_TOOLWINDOW, WS_EX_TRANSPARENT as POLICY_WS_EX_TRANSPARENT,
 };
 
+use super::cfgio;
 use super::composition;
 use super::dwm;
 use super::icon;
@@ -66,7 +66,6 @@ use super::registry;
 use super::settings;
 use super::shellwin;
 use super::sysinfo;
-use super::cfgio;
 use super::uxtheme;
 use super::wide::{
     self, config_path, fill_wide, log_line, migrate_legacy_config, pcw, snapshot_path, to_wide,
@@ -790,7 +789,8 @@ fn on_setting_change(lparam: LPARAM) {
             app.hold.clear();
             app.last_apply.clear();
             app.apply_startup();
-            if !contrast && app.config.experimental_dark_legacy && legacy::set_active(true).is_ok() {
+            if !contrast && app.config.experimental_dark_legacy && legacy::set_active(true).is_ok()
+            {
                 app.scan_legacy();
             }
         }
@@ -842,7 +842,11 @@ fn show_menu(hwnd: HWND) {
         item(0, "", ItemKind::Separator, true),
         hinted(
             CMD_ENABLE,
-            if contrast { "Enabled (high contrast)" } else { "Enabled" },
+            if contrast {
+                "Enabled (high contrast)"
+            } else {
+                "Enabled"
+            },
             "Master switch for dark title bars, borders and backdrops.",
             ItemKind::Checked(enabled),
             !contrast,
@@ -889,7 +893,12 @@ fn show_menu(hwnd: HWND) {
                 item(CMD_RELOAD, "Reload config", ItemKind::Action, true),
                 item(CMD_OPEN, "Open config", ItemKind::Action, true),
                 item(CMD_OPEN_FOLDER, "Open data folder", ItemKind::Action, true),
-                item(CMD_DIAGNOSTICS, "Write diagnostics report", ItemKind::Action, true),
+                item(
+                    CMD_DIAGNOSTICS,
+                    "Write diagnostics report",
+                    ItemKind::Action,
+                    true,
+                ),
                 item(0, "", ItemKind::Separator, true),
                 hinted(
                     CMD_RESET,
@@ -1008,8 +1017,8 @@ fn on_command(hwnd: HWND, command: u32) {
             cmd_check_to_file();
         }
         id if (CMD_PRESET_BASE..CMD_PRESET_BASE + crate::PRESETS.len() as u32).contains(&id) => {
-            let broadcast = with_app(|app| app.apply_preset((id - CMD_PRESET_BASE) as usize))
-                .unwrap_or(false);
+            let broadcast =
+                with_app(|app| app.apply_preset((id - CMD_PRESET_BASE) as usize)).unwrap_or(false);
             if broadcast {
                 shellwin::broadcast_immersive_color();
             }
@@ -1421,7 +1430,11 @@ impl App {
         }
         let changed = self.apply_external_config();
         if let Some(preset) = crate::PRESETS.get(index) {
-            self.balloon("AllBlack11", &format!("Preset applied: {}.", preset.name), false);
+            self.balloon(
+                "AllBlack11",
+                &format!("Preset applied: {}.", preset.name),
+                false,
+            );
         }
         changed
     }

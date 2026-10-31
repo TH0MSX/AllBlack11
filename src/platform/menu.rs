@@ -9,21 +9,21 @@ use windows_sys::Win32::Foundation::{HWND, LPARAM, LRESULT, POINT, RECT, WPARAM}
 use windows_sys::Win32::Graphics::Dwm::DwmSetWindowAttribute;
 use windows_sys::Win32::Graphics::Gdi::{
     CreateFontW, CreatePen, CreateSolidBrush, DeleteObject, DrawTextW, FillRect, GetStockObject,
-    GetTextExtentPoint32W, MonitorFromPoint, MONITOR_DEFAULTTONEAREST, RoundRect, SelectObject, SetBkMode, SetTextColor, HDC, HFONT, NULL_BRUSH,
-    PS_SOLID, TRANSPARENT,
+    GetTextExtentPoint32W, MonitorFromPoint, RoundRect, SelectObject, SetBkMode, SetTextColor, HDC,
+    HFONT, MONITOR_DEFAULTTONEAREST, NULL_BRUSH, PS_SOLID, TRANSPARENT,
 };
 use windows_sys::Win32::System::Threading::GetCurrentThreadId;
-use windows_sys::Win32::UI::HiDpi::{GetDpiForMonitor, GetDpiForWindow, MDT_EFFECTIVE_DPI};
 use windows_sys::Win32::UI::Controls::{
     DRAWITEMSTRUCT, MEASUREITEMSTRUCT, ODA_SELECT, ODS_DISABLED, ODS_GRAYED, ODS_SELECTED, ODT_MENU,
 };
+use windows_sys::Win32::UI::HiDpi::{GetDpiForMonitor, GetDpiForWindow, MDT_EFFECTIVE_DPI};
 use windows_sys::Win32::UI::WindowsAndMessaging::{
     AppendMenuW, CallNextHookEx, CreatePopupMenu, DestroyMenu, DrawMenuBar, GetClassNameW,
-    GetCursorPos, PostMessageW, SetForegroundWindow, SetMenuInfo,
-    SetWindowsHookExW, TrackPopupMenuEx, UnhookWindowsHookEx, HMENU, MENUINFO,
-    MF_CHECKED, MF_DISABLED, MF_GRAYED, MF_OWNERDRAW, MF_POPUP, MF_SEPARATOR, MF_STRING,
-    MIM_APPLYTOSUBMENUS, MIM_BACKGROUND, MSG, TPM_BOTTOMALIGN, TPM_NONOTIFY, TPM_RETURNCMD,
-    TPM_RIGHTBUTTON, WH_CBT, WM_NULL, WM_UNINITMENUPOPUP,
+    GetCursorPos, PostMessageW, SetForegroundWindow, SetMenuInfo, SetWindowsHookExW,
+    TrackPopupMenuEx, UnhookWindowsHookEx, HMENU, MENUINFO, MF_CHECKED, MF_DISABLED, MF_GRAYED,
+    MF_OWNERDRAW, MF_POPUP, MF_SEPARATOR, MF_STRING, MIM_APPLYTOSUBMENUS, MIM_BACKGROUND, MSG,
+    TPM_BOTTOMALIGN, TPM_NONOTIFY, TPM_RETURNCMD, TPM_RIGHTBUTTON, WH_CBT, WM_NULL,
+    WM_UNINITMENUPOPUP,
 };
 
 use super::wide::{pcw, to_wide};
@@ -94,7 +94,12 @@ pub fn popup(owner: HWND, dark: bool, high_contrast: bool, items: &[Item]) -> u3
             info.hbrBack = brush;
             SetMenuInfo(menu, &info);
         }
-        let hook = SetWindowsHookExW(WH_CBT, Some(cbt_proc), std::ptr::null_mut(), GetCurrentThreadId());
+        let hook = SetWindowsHookExW(
+            WH_CBT,
+            Some(cbt_proc),
+            std::ptr::null_mut(),
+            GetCurrentThreadId(),
+        );
         let mut point = POINT { x: 0, y: 0 };
         GetCursorPos(&mut point);
         let mut flags = TPM_RETURNCMD | TPM_RIGHTBUTTON | TPM_NONOTIFY;
@@ -305,12 +310,19 @@ impl Clone for Drawn {
 fn paint_item(draw: &DRAWITEMSTRUCT, item: Drawn) {
     unsafe {
         let dark = MENU_DARK.load(Ordering::Relaxed);
-        let selected = draw.itemState & ODS_SELECTED != 0 && item.enabled && item.kind != ItemKind::Title;
-        let disabled = !item.enabled || draw.itemState & (ODS_DISABLED | ODS_GRAYED) != 0 || item.kind == ItemKind::Title;
+        let selected =
+            draw.itemState & ODS_SELECTED != 0 && item.enabled && item.kind != ItemKind::Title;
+        let disabled = !item.enabled
+            || draw.itemState & (ODS_DISABLED | ODS_GRAYED) != 0
+            || item.kind == ItemKind::Title;
         let bg = if dark { 0x002C_2C2C } else { 0x00FB_FBFB };
         let hover = if dark { 0x003A_3A3A } else { 0x00E8_E8E8 };
         let text = if disabled {
-            if dark { 0x008A_8A8A } else { 0x0088_8888 }
+            if dark {
+                0x008A_8A8A
+            } else {
+                0x0088_8888
+            }
         } else if dark {
             0x00F5_F5F5
         } else {
@@ -323,7 +335,12 @@ fn paint_item(draw: &DRAWITEMSTRUCT, item: Drawn) {
             let y = rect.top + (rect.bottom - rect.top) / 2;
             let pen = CreatePen(PS_SOLID, 1, if dark { 0x003F_3F3F } else { 0x00E0_E0E0 });
             let old = SelectObject(draw.hDC, pen);
-            windows_sys::Win32::Graphics::Gdi::MoveToEx(draw.hDC, rect.left + 12, y, std::ptr::null_mut());
+            windows_sys::Win32::Graphics::Gdi::MoveToEx(
+                draw.hDC,
+                rect.left + 12,
+                y,
+                std::ptr::null_mut(),
+            );
             windows_sys::Win32::Graphics::Gdi::LineTo(draw.hDC, rect.right - 12, y);
             SelectObject(draw.hDC, old);
             DeleteObject(pen);
@@ -342,7 +359,15 @@ fn paint_item(draw: &DRAWITEMSTRUCT, item: Drawn) {
             let old_brush = SelectObject(draw.hDC, brush);
             let pen = CreatePen(PS_SOLID, 1, hover);
             let old_pen = SelectObject(draw.hDC, pen);
-            RoundRect(draw.hDC, hover_rect.left, hover_rect.top, hover_rect.right, hover_rect.bottom, 8, 8);
+            RoundRect(
+                draw.hDC,
+                hover_rect.left,
+                hover_rect.top,
+                hover_rect.right,
+                hover_rect.bottom,
+                8,
+                8,
+            );
             SelectObject(draw.hDC, old_pen);
             SelectObject(draw.hDC, old_brush);
             DeleteObject(pen);
@@ -443,7 +468,10 @@ fn current_dpi() -> u32 {
         GetCursorPos(&mut point);
         let monitor = MonitorFromPoint(point, MONITOR_DEFAULTTONEAREST);
         let (mut x, mut y) = (0u32, 0u32);
-        if !monitor.is_null() && GetDpiForMonitor(monitor, MDT_EFFECTIVE_DPI, &mut x, &mut y) == 0 && x != 0 {
+        if !monitor.is_null()
+            && GetDpiForMonitor(monitor, MDT_EFFECTIVE_DPI, &mut x, &mut y) == 0
+            && x != 0
+        {
             return x;
         }
         let hwnd = windows_sys::Win32::UI::WindowsAndMessaging::GetForegroundWindow();
@@ -533,7 +561,11 @@ unsafe extern "system" fn cbt_proc(code: i32, wparam: WPARAM, lparam: LPARAM) ->
 unsafe fn is_menu_class(hwnd: HWND) -> bool {
     let mut buf = [0u16; 16];
     let length = GetClassNameW(hwnd, buf.as_mut_ptr(), buf.len() as i32);
-    length == 6 && buf[..6] == ['#' as u16, '3' as u16, '2' as u16, '7' as u16, '6' as u16, '8' as u16]
+    length == 6
+        && buf[..6]
+            == [
+                '#' as u16, '3' as u16, '2' as u16, '7' as u16, '6' as u16, '8' as u16,
+            ]
 }
 
 #[allow(dead_code)]

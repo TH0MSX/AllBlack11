@@ -19,8 +19,9 @@ use windows_sys::Win32::Graphics::Gdi::{
     BitBlt, CreateCompatibleBitmap, CreateCompatibleDC, CreateFontW, CreatePen, CreateRectRgn,
     CreateRoundRectRgn, CreateSolidBrush, DeleteDC, DeleteObject, DrawTextW, Ellipse, FillRect,
     GetStockObject, IntersectClipRect, InvalidateRect, LineTo, MonitorFromPoint, MoveToEx,
-    RoundRect, SelectClipRgn, SelectObject, SetBkColor, SetBkMode, SetTextColor, SetViewportOrgEx, HBRUSH, HDC, HFONT,
-    MONITORINFO, MONITOR_DEFAULTTONEAREST, NULL_BRUSH, NULL_PEN, PS_SOLID, SRCCOPY, TRANSPARENT,
+    RoundRect, SelectClipRgn, SelectObject, SetBkColor, SetBkMode, SetTextColor, SetViewportOrgEx,
+    HBRUSH, HDC, HFONT, MONITORINFO, MONITOR_DEFAULTTONEAREST, NULL_BRUSH, NULL_PEN, PS_SOLID,
+    SRCCOPY, TRANSPARENT,
 };
 use windows_sys::Win32::System::LibraryLoader::GetModuleHandleW;
 use windows_sys::Win32::UI::Controls::SetWindowTheme;
@@ -717,7 +718,10 @@ impl Ui {
         self.config = cfgio::load();
         self.autostart = registry::autostart_enabled();
         self.accent = visible_accent(registry::accent_bgr());
-        if self.rule.is_some_and(|index| index >= self.config.rules.len()) {
+        if self
+            .rule
+            .is_some_and(|index| index >= self.config.rules.len())
+        {
             self.rule = None;
         }
         if self
@@ -849,7 +853,10 @@ impl Ui {
             Row::Note("Games and launchers belong here. Use the exe name, such as steam.exe."),
             None,
         );
-        push(Row::ExcludeList, Some(list_height(self.config.exclude.len())));
+        push(
+            Row::ExcludeList,
+            Some(list_height(self.config.exclude.len())),
+        );
         push(Row::AddField(Button::AddExclude), None);
         push(Row::Action(Button::RemoveExclude), None);
 
@@ -887,7 +894,10 @@ impl Ui {
     }
 
     fn content_height(&self) -> i32 {
-        self.rows().last().map(|row| row.y + row.h + 24).unwrap_or(0)
+        self.rows()
+            .last()
+            .map(|row| row.y + row.h + 24)
+            .unwrap_or(0)
     }
 
     // --- input ------------------------------------------------------------
@@ -963,7 +973,9 @@ impl Ui {
             }
             Toggle::Oled => {
                 self.config.shell.oled_taskbar = !self.config.shell.oled_taskbar;
-                self.status = "Taskbar changes can need an Explorer restart. See Restart Explorer below.".into();
+                self.status =
+                    "Taskbar changes can need an Explorer restart. See Restart Explorer below."
+                        .into();
             }
             Toggle::Black => {
                 self.config.shell.black_shell = !self.config.shell.black_shell;
@@ -983,12 +995,15 @@ impl Ui {
                 };
                 return;
             }
-            Toggle::Reapply => self.config.reapply_on_foreground = !self.config.reapply_on_foreground,
+            Toggle::Reapply => {
+                self.config.reapply_on_foreground = !self.config.reapply_on_foreground
+            }
             Toggle::Logging => self.config.logging = !self.config.logging,
             Toggle::Experimental => {
                 self.config.experimental_dark_legacy = !self.config.experimental_dark_legacy;
                 self.status = if self.config.experimental_dark_legacy {
-                    "Dark legacy windows are on. Classic dialogs may be recolored in-process.".into()
+                    "Dark legacy windows are on. Classic dialogs may be recolored in-process."
+                        .into()
                 } else {
                     "Dark legacy windows are off. The hook is unloaded.".into()
                 };
@@ -1059,7 +1074,12 @@ impl Ui {
                     self.status = "Type an exe name to exclude.".into();
                     return;
                 }
-                if !self.config.exclude.iter().any(|item| item.eq_ignore_ascii_case(&name)) {
+                if !self
+                    .config
+                    .exclude
+                    .iter()
+                    .any(|item| item.eq_ignore_ascii_case(&name))
+                {
                     self.config.exclude.push(name);
                 }
                 set_text(self.edits.exclude, "");
@@ -1254,7 +1274,12 @@ fn action_pill(id: Button, lw: i32, row_h: i32) -> (i32, i32, i32, i32) {
     let width = (label.chars().count() as i32 * 8 + 32).clamp(92, 220);
     let card_h = row_h - GAP;
     let right = lw - MARGIN - PAD;
-    (right - width, (card_h - 32) / 2, right, (card_h - 32) / 2 + 32)
+    (
+        right - width,
+        (card_h - 32) / 2,
+        right,
+        (card_h - 32) / 2 + 32,
+    )
 }
 
 fn add_pill(lw: i32) -> (i32, i32, i32, i32) {
@@ -1318,7 +1343,16 @@ impl Canvas {
 
     /// Rounded rectangle. `radius` is the corner radius in logical pixels.
     #[allow(clippy::too_many_arguments)]
-    fn round(&self, l: i32, t: i32, r: i32, b: i32, radius: i32, fill: Option<u32>, stroke: Option<u32>) {
+    fn round(
+        &self,
+        l: i32,
+        t: i32,
+        r: i32,
+        b: i32,
+        radius: i32,
+        fill: Option<u32>,
+        stroke: Option<u32>,
+    ) {
         unsafe {
             let brush = match fill {
                 Some(color) => CreateSolidBrush(color),
@@ -1356,7 +1390,17 @@ impl Canvas {
     }
 
     #[allow(clippy::too_many_arguments)]
-    fn text(&self, l: i32, t: i32, r: i32, b: i32, text: &str, color: u32, font: HFONT, flags: u32) {
+    fn text(
+        &self,
+        l: i32,
+        t: i32,
+        r: i32,
+        b: i32,
+        text: &str,
+        color: u32,
+        font: HFONT,
+        flags: u32,
+    ) {
         unsafe {
             let old = SelectObject(self.dc, font);
             SetTextColor(self.dc, color);
@@ -1378,7 +1422,12 @@ fn paint(hwnd: HWND, ui: &mut Ui) {
         let old_bitmap = SelectObject(dc, bitmap);
         SetBkMode(dc, TRANSPARENT as i32);
 
-        let full = RECT { left: 0, top: 0, right: w, bottom: h };
+        let full = RECT {
+            left: 0,
+            top: 0,
+            right: w,
+            bottom: h,
+        };
         FillRect(dc, &full, ui.bg_brush);
 
         let canvas = Canvas { dc, k: ui.k };
@@ -1441,7 +1490,15 @@ fn paint_status(c: &Canvas, ui: &Ui, lw: i32) {
 }
 
 fn card(c: &Canvas, top: i32, h: i32, lw: i32) {
-    c.round(MARGIN, top, lw - MARGIN, top + h - GAP, 5, Some(CARD), Some(CARD_EDGE));
+    c.round(
+        MARGIN,
+        top,
+        lw - MARGIN,
+        top + h - GAP,
+        5,
+        Some(CARD),
+        Some(CARD_EDGE),
+    );
 }
 
 fn paint_row(c: &Canvas, ui: &Ui, row: &Laid, top: i32, lw: i32) {
@@ -1451,38 +1508,154 @@ fn paint_row(c: &Canvas, ui: &Ui, row: &Laid, top: i32, lw: i32) {
     let card_h = row.h - GAP;
     match &row.row {
         Row::Header(text) => {
-            c.text(MARGIN, top + 14, lw - MARGIN, top + 40, text, TEXT, fonts.head, DT_LEFT | DT_VCENTER | DT_SINGLELINE);
+            c.text(
+                MARGIN,
+                top + 14,
+                lw - MARGIN,
+                top + 40,
+                text,
+                TEXT,
+                fonts.head,
+                DT_LEFT | DT_VCENTER | DT_SINGLELINE,
+            );
         }
         Row::Note(text) => {
-            c.text(MARGIN + 2, top + 2, lw - MARGIN, top + row.h, text, MUTED, fonts.small, DT_LEFT | DT_WORDBREAK);
+            c.text(
+                MARGIN + 2,
+                top + 2,
+                lw - MARGIN,
+                top + row.h,
+                text,
+                MUTED,
+                fonts.small,
+                DT_LEFT | DT_WORDBREAK,
+            );
         }
         Row::Toggle(id) => {
             card(c, top, row.h, lw);
             let (label, desc) = toggle_meta(*id);
             let on = toggle_on(ui, *id);
-            c.text(left, top + 10, right - 120, top + 30, label, TEXT, fonts.body, DT_LEFT | DT_VCENTER | DT_SINGLELINE | DT_END_ELLIPSIS);
-            c.text(left, top + 30, right - 120, top + card_h - 4, desc, MUTED, fonts.small, DT_LEFT | DT_WORDBREAK);
+            c.text(
+                left,
+                top + 10,
+                right - 120,
+                top + 30,
+                label,
+                TEXT,
+                fonts.body,
+                DT_LEFT | DT_VCENTER | DT_SINGLELINE | DT_END_ELLIPSIS,
+            );
+            c.text(
+                left,
+                top + 30,
+                right - 120,
+                top + card_h - 4,
+                desc,
+                MUTED,
+                fonts.small,
+                DT_LEFT | DT_WORDBREAK,
+            );
             // "On" text, then the switch, both right-aligned and vertically centered.
             let mid = top + card_h / 2;
-            c.text(right - 100, mid - 12, right - 52, mid + 12, if on { "On" } else { "Off" }, TEXT, fonts.body, DT_RIGHT | DT_VCENTER | DT_SINGLELINE);
+            c.text(
+                right - 100,
+                mid - 12,
+                right - 52,
+                mid + 12,
+                if on { "On" } else { "Off" },
+                TEXT,
+                fonts.body,
+                DT_RIGHT | DT_VCENTER | DT_SINGLELINE,
+            );
             draw_toggle(c, right - 40, mid - 10, on, ui.accent);
         }
         Row::Choice(id) => {
             card(c, top, row.h, lw);
-            c.text(left, top + 10, right - 190, top + 30, choice_title(*id), TEXT, fonts.body, DT_LEFT | DT_VCENTER | DT_SINGLELINE);
-            c.text(left, top + 30, right - 190, top + card_h - 4, choice_desc(ui, *id), MUTED, fonts.small, DT_LEFT | DT_WORDBREAK);
+            c.text(
+                left,
+                top + 10,
+                right - 190,
+                top + 30,
+                choice_title(*id),
+                TEXT,
+                fonts.body,
+                DT_LEFT | DT_VCENTER | DT_SINGLELINE,
+            );
+            c.text(
+                left,
+                top + 30,
+                right - 190,
+                top + card_h - 4,
+                choice_desc(ui, *id),
+                MUTED,
+                fonts.small,
+                DT_LEFT | DT_WORDBREAK,
+            );
             let mid = top + card_h / 2;
-            c.round(right - 176, mid - 16, right, mid + 16, 5, Some(CARD_HI), Some(CARD_EDGE));
-            c.text(right - 164, mid - 16, right - 30, mid + 16, choice_text(ui, *id), TEXT, fonts.body, DT_LEFT | DT_VCENTER | DT_SINGLELINE);
-            c.text(right - 30, mid - 16, right - 8, mid + 16, "▾", MUTED, fonts.body, DT_CENTER | DT_VCENTER | DT_SINGLELINE);
+            c.round(
+                right - 176,
+                mid - 16,
+                right,
+                mid + 16,
+                5,
+                Some(CARD_HI),
+                Some(CARD_EDGE),
+            );
+            c.text(
+                right - 164,
+                mid - 16,
+                right - 30,
+                mid + 16,
+                choice_text(ui, *id),
+                TEXT,
+                fonts.body,
+                DT_LEFT | DT_VCENTER | DT_SINGLELINE,
+            );
+            c.text(
+                right - 30,
+                mid - 16,
+                right - 8,
+                mid + 16,
+                "▾",
+                MUTED,
+                fonts.body,
+                DT_CENTER | DT_VCENTER | DT_SINGLELINE,
+            );
         }
         Row::Slider(id) => {
             card(c, top, row.h, lw);
             let (label, desc) = slider_meta(*id);
             let (fraction, value) = slider_state(ui, *id);
-            c.text(left, top + 10, right - 90, top + 30, label, TEXT, fonts.body, DT_LEFT | DT_VCENTER | DT_SINGLELINE);
-            c.text(right - 90, top + 10, right, top + 30, &value, TEXT, fonts.body, DT_RIGHT | DT_VCENTER | DT_SINGLELINE);
-            c.text(left, top + 30, right, top + 54, desc, MUTED, fonts.small, DT_LEFT | DT_WORDBREAK);
+            c.text(
+                left,
+                top + 10,
+                right - 90,
+                top + 30,
+                label,
+                TEXT,
+                fonts.body,
+                DT_LEFT | DT_VCENTER | DT_SINGLELINE,
+            );
+            c.text(
+                right - 90,
+                top + 10,
+                right,
+                top + 30,
+                &value,
+                TEXT,
+                fonts.body,
+                DT_RIGHT | DT_VCENTER | DT_SINGLELINE,
+            );
+            c.text(
+                left,
+                top + 30,
+                right,
+                top + 54,
+                desc,
+                MUTED,
+                fonts.small,
+                DT_LEFT | DT_WORDBREAK,
+            );
             let (x0, x1) = slider_track(lw);
             draw_slider(c, x0, x1, top + 72, fraction, ui.accent);
         }
@@ -1495,7 +1668,16 @@ fn paint_row(c: &Canvas, ui: &Ui, row: &Laid, top: i32, lw: i32) {
                 ID_TEXT => style.text,
                 _ => style.acrylic_tint,
             };
-            c.text(left, top, right - 180, top + card_h, color_label(*id), TEXT, fonts.body, DT_LEFT | DT_VCENTER | DT_SINGLELINE);
+            c.text(
+                left,
+                top,
+                right - 180,
+                top + card_h,
+                color_label(*id),
+                TEXT,
+                fonts.body,
+                DT_LEFT | DT_VCENTER | DT_SINGLELINE,
+            );
             draw_swatch(c, right - 120 - 34, top + card_h / 2 - 9, color, ui.accent);
         }
         Row::Presets => {
@@ -1503,40 +1685,133 @@ fn paint_row(c: &Canvas, ui: &Ui, row: &Laid, top: i32, lw: i32) {
             for (index, preset) in PRESETS.iter().enumerate() {
                 let (l, t, r, b) = preset_rect(lw, index);
                 let selected = ui.preset_sel == Some(index);
-                c.round(l, top + t, r, top + b, 5, Some(CARD_HI), Some(if selected { ui.accent } else { CARD_EDGE }));
-                c.text(l, top + t, r, top + b, preset.name, TEXT, fonts.body, DT_CENTER | DT_VCENTER | DT_SINGLELINE | DT_END_ELLIPSIS);
+                c.round(
+                    l,
+                    top + t,
+                    r,
+                    top + b,
+                    5,
+                    Some(CARD_HI),
+                    Some(if selected { ui.accent } else { CARD_EDGE }),
+                );
+                c.text(
+                    l,
+                    top + t,
+                    r,
+                    top + b,
+                    preset.name,
+                    TEXT,
+                    fonts.body,
+                    DT_CENTER | DT_VCENTER | DT_SINGLELINE | DT_END_ELLIPSIS,
+                );
             }
             let blurb = ui
                 .preset_sel
                 .map(|index| PRESETS[index].blurb)
                 .unwrap_or("Pick a starting look. Every option below stays editable afterwards.");
-            c.text(left, top + 58, right, top + card_h - 6, blurb, MUTED, fonts.small, DT_LEFT | DT_WORDBREAK);
+            c.text(
+                left,
+                top + 58,
+                right,
+                top + card_h - 6,
+                blurb,
+                MUTED,
+                fonts.small,
+                DT_LEFT | DT_WORDBREAK,
+            );
         }
-        Row::RuleList => draw_list(c, ui, top, row.h, lw, ui.config.rules.iter().map(|rule| rule.process.as_str()), ui.rule, "No rules yet."),
-        Row::ExcludeList => draw_list(c, ui, top, row.h, lw, ui.config.exclude.iter().map(|item| item.as_str()), ui.exclude_sel, "Nothing excluded."),
+        Row::RuleList => draw_list(
+            c,
+            ui,
+            top,
+            row.h,
+            lw,
+            ui.config.rules.iter().map(|rule| rule.process.as_str()),
+            ui.rule,
+            "No rules yet.",
+        ),
+        Row::ExcludeList => draw_list(
+            c,
+            ui,
+            top,
+            row.h,
+            lw,
+            ui.config.exclude.iter().map(|item| item.as_str()),
+            ui.exclude_sel,
+            "Nothing excluded.",
+        ),
         Row::Action(id) => {
             card(c, top, row.h, lw);
             let (title, desc, button) = button_meta(*id);
             let (l, t, r, b) = action_pill(*id, lw, row.h);
             let text_right = l - 16;
-            c.text(left, top + 10, text_right, top + 30, title, TEXT, fonts.body, DT_LEFT | DT_VCENTER | DT_SINGLELINE | DT_END_ELLIPSIS);
-            c.text(left, top + 30, text_right, top + card_h - 4, desc, MUTED, fonts.small, DT_LEFT | DT_WORDBREAK);
+            c.text(
+                left,
+                top + 10,
+                text_right,
+                top + 30,
+                title,
+                TEXT,
+                fonts.body,
+                DT_LEFT | DT_VCENTER | DT_SINGLELINE | DT_END_ELLIPSIS,
+            );
+            c.text(
+                left,
+                top + 30,
+                text_right,
+                top + card_h - 4,
+                desc,
+                MUTED,
+                fonts.small,
+                DT_LEFT | DT_WORDBREAK,
+            );
             c.round(l, top + t, r, top + b, 5, Some(CARD_HI), Some(CARD_EDGE));
-            c.text(l, top + t, r, top + b, button, TEXT, fonts.body, DT_CENTER | DT_VCENTER | DT_SINGLELINE);
+            c.text(
+                l,
+                top + t,
+                r,
+                top + b,
+                button,
+                TEXT,
+                fonts.body,
+                DT_CENTER | DT_VCENTER | DT_SINGLELINE,
+            );
         }
         Row::AddField(id) => {
             card(c, top, row.h, lw);
             let (_, _, label) = button_meta(*id);
             let (l, t, r, b) = add_pill(lw);
             c.round(l, top + t, r, top + b, 5, Some(CARD_HI), Some(ui.accent));
-            c.text(l, top + t, r, top + b, label, TEXT, fonts.body, DT_CENTER | DT_VCENTER | DT_SINGLELINE);
+            c.text(
+                l,
+                top + t,
+                r,
+                top + b,
+                label,
+                TEXT,
+                fonts.body,
+                DT_CENTER | DT_VCENTER | DT_SINGLELINE,
+            );
         }
         Row::About(lines) => {
             card(c, top, row.h, lw);
             for (index, line) in lines.iter().enumerate() {
                 let y = top + 12 + index as i32 * 20;
-                let (font, color) = if index == 0 { (fonts.body, TEXT) } else { (fonts.small, MUTED) };
-                c.text(left, y, right, y + 20, line, color, font, DT_LEFT | DT_VCENTER | DT_SINGLELINE | DT_END_ELLIPSIS);
+                let (font, color) = if index == 0 {
+                    (fonts.body, TEXT)
+                } else {
+                    (fonts.small, MUTED)
+                };
+                c.text(
+                    left,
+                    y,
+                    right,
+                    y + 20,
+                    line,
+                    color,
+                    font,
+                    DT_LEFT | DT_VCENTER | DT_SINGLELINE | DT_END_ELLIPSIS,
+                );
             }
         }
     }
@@ -1586,7 +1861,15 @@ fn slider_state(ui: &Ui, id: Slider) -> (f32, String) {
 }
 
 fn draw_toggle(c: &Canvas, x: i32, y: i32, on: bool, accent: u32) {
-    c.round(x, y, x + 40, y + 20, 10, Some(if on { accent } else { TRACK }), None);
+    c.round(
+        x,
+        y,
+        x + 40,
+        y + 20,
+        10,
+        Some(if on { accent } else { TRACK }),
+        None,
+    );
     let cx = if on { x + 22 } else { x + 4 };
     draw_knob(c, cx + 7, y + 10, 7, 0x00FF_FFFF);
 }
@@ -1604,7 +1887,13 @@ fn draw_knob(c: &Canvas, cx: i32, cy: i32, radius: i32, color: u32) {
         let old = SelectObject(c.dc, brush);
         let null_pen = GetStockObject(NULL_PEN);
         let old_pen = SelectObject(c.dc, null_pen);
-        Ellipse(c.dc, c.px(cx - radius), c.px(cy - radius), c.px(cx + radius), c.px(cy + radius));
+        Ellipse(
+            c.dc,
+            c.px(cx - radius),
+            c.px(cy - radius),
+            c.px(cx + radius),
+            c.px(cy + radius),
+        );
         SelectObject(c.dc, old_pen);
         SelectObject(c.dc, old);
         DeleteObject(brush);
@@ -1641,12 +1930,38 @@ fn draw_list<'a>(
         any = true;
         let line_top = top + 8 + index as i32 * LIST_LINE;
         if selected == Some(index) {
-            c.round(MARGIN + 6, line_top, lw - MARGIN - 6, line_top + LIST_LINE, 4, Some(CARD_HI), Some(ui.accent));
+            c.round(
+                MARGIN + 6,
+                line_top,
+                lw - MARGIN - 6,
+                line_top + LIST_LINE,
+                4,
+                Some(CARD_HI),
+                Some(ui.accent),
+            );
         }
-        c.text(MARGIN + PAD, line_top, lw - MARGIN - PAD, line_top + LIST_LINE, item, TEXT, ui.fonts.body, DT_LEFT | DT_VCENTER | DT_SINGLELINE | DT_END_ELLIPSIS);
+        c.text(
+            MARGIN + PAD,
+            line_top,
+            lw - MARGIN - PAD,
+            line_top + LIST_LINE,
+            item,
+            TEXT,
+            ui.fonts.body,
+            DT_LEFT | DT_VCENTER | DT_SINGLELINE | DT_END_ELLIPSIS,
+        );
     }
     if !any {
-        c.text(MARGIN + PAD, top + 8, lw - MARGIN - PAD, top + 8 + LIST_LINE, empty, MUTED, ui.fonts.small, DT_LEFT | DT_VCENTER | DT_SINGLELINE);
+        c.text(
+            MARGIN + PAD,
+            top + 8,
+            lw - MARGIN - PAD,
+            top + 8 + LIST_LINE,
+            empty,
+            MUTED,
+            ui.fonts.small,
+            DT_LEFT | DT_VCENTER | DT_SINGLELINE,
+        );
     }
 }
 
@@ -1698,7 +2013,14 @@ fn paint_preview(c: &Canvas, ui: &Ui, lw_full: i32) {
     let (ox, oy) = (c.px(MARGIN), c.px(8));
     unsafe {
         SetViewportOrgEx(c.dc, ox, oy, std::ptr::null_mut());
-        let outer = CreateRoundRectRgn(ox, oy, ox + c.px(lw) + 1, oy + c.px(ph) + 1, c.px(10), c.px(10));
+        let outer = CreateRoundRectRgn(
+            ox,
+            oy,
+            ox + c.px(lw) + 1,
+            oy + c.px(ph) + 1,
+            c.px(10),
+            c.px(10),
+        );
         SelectClipRgn(c.dc, outer);
 
         // Wallpaper.
@@ -1706,13 +2028,42 @@ fn paint_preview(c: &Canvas, ui: &Ui, lw_full: i32) {
         c.fill(0, 0, third, ph, WALLPAPER[0]);
         c.fill(third, 0, third * 2, ph, WALLPAPER[1]);
         c.fill(third * 2, 0, lw, ph, WALLPAPER[2]);
-        c.text(12, 4, 200, 20, "Live preview", 0x00E6_DCD2, ui.fonts.small, DT_LEFT | DT_VCENTER | DT_SINGLELINE);
+        c.text(
+            12,
+            4,
+            200,
+            20,
+            "Live preview",
+            0x00E6_DCD2,
+            ui.fonts.small,
+            DT_LEFT | DT_VCENTER | DT_SINGLELINE,
+        );
 
         // Start menu mock.
         let (sl, st, sr, sb) = (lw - 20 - 180, 22, lw - 20, 114);
-        let start_fill = if black_shell { rgb(0, 0, 0) } else { rgb(44, 44, 50) };
-        c.round(sl, st, sr, sb, 8, Some(start_fill), Some(if black_shell { rgb(34, 34, 34) } else { rgb(70, 70, 78) }));
-        let search = if black_shell { rgb(24, 24, 24) } else { rgb(62, 62, 70) };
+        let start_fill = if black_shell {
+            rgb(0, 0, 0)
+        } else {
+            rgb(44, 44, 50)
+        };
+        c.round(
+            sl,
+            st,
+            sr,
+            sb,
+            8,
+            Some(start_fill),
+            Some(if black_shell {
+                rgb(34, 34, 34)
+            } else {
+                rgb(70, 70, 78)
+            }),
+        );
+        let search = if black_shell {
+            rgb(24, 24, 24)
+        } else {
+            rgb(62, 62, 70)
+        };
         c.round(sl + 12, st + 10, sr - 12, st + 26, 8, Some(search), None);
         for row in 0..2 {
             for col in 0..4 {
@@ -1756,11 +2107,28 @@ fn paint_preview(c: &Canvas, ui: &Ui, lw_full: i32) {
         fill_backdrop(c, &style, ui.accent, wl, wt + 28, wr, wb, lw);
         for (index, width) in [96, 140, 70].iter().enumerate() {
             let y = wt + 42 + index as i32 * 14;
-            c.round(wl + 14, y, (wl + 14 + width).min(wr - 14), y + 6, 3, Some(rgb(86, 86, 94)), None);
+            c.round(
+                wl + 14,
+                y,
+                (wl + 14 + width).min(wr - 14),
+                y + 6,
+                3,
+                Some(rgb(86, 86, 94)),
+                None,
+            );
         }
         SelectClipRgn(c.dc, outer);
         DeleteObject(inner);
-        c.text(wl + 12, wt, wl + 120, wt + 28, "Notepad", text_color, ui.fonts.small, DT_LEFT | DT_VCENTER | DT_SINGLELINE);
+        c.text(
+            wl + 12,
+            wt,
+            wl + 120,
+            wt + 28,
+            "Notepad",
+            text_color,
+            ui.fonts.small,
+            DT_LEFT | DT_VCENTER | DT_SINGLELINE,
+        );
         let by = wt + 14;
         c.line(wr - 62, by, wr - 52, by, text_color, 1);
         c.round(wr - 40, by - 5, wr - 30, by + 5, 0, None, Some(text_color));
@@ -1791,7 +2159,19 @@ fn paint_preview(c: &Canvas, ui: &Ui, lw_full: i32) {
             };
             c.round(l, tb_top + 8, l + 18, tb_top + 26, 4, Some(tint), None);
         }
-        c.round(lw - 78, tb_top + 10, lw - 14, tb_top + 24, 4, Some(if oled { rgb(26, 26, 26) } else { rgb(58, 58, 66) }), None);
+        c.round(
+            lw - 78,
+            tb_top + 10,
+            lw - 14,
+            tb_top + 24,
+            4,
+            Some(if oled {
+                rgb(26, 26, 26)
+            } else {
+                rgb(58, 58, 66)
+            }),
+            None,
+        );
 
         SelectClipRgn(c.dc, std::ptr::null_mut());
         DeleteObject(outer);
@@ -1944,9 +2324,17 @@ fn get_text(hwnd: HWND) -> String {
 }
 
 fn client_size(hwnd: HWND) -> (i32, i32) {
-    let mut rect = RECT { left: 0, top: 0, right: 0, bottom: 0 };
+    let mut rect = RECT {
+        left: 0,
+        top: 0,
+        right: 0,
+        bottom: 0,
+    };
     unsafe { GetClientRect(hwnd, &mut rect) };
-    ((rect.right - rect.left).max(1), (rect.bottom - rect.top).max(1))
+    (
+        (rect.right - rect.left).max(1),
+        (rect.bottom - rect.top).max(1),
+    )
 }
 
 fn dpi_of(hwnd: HWND) -> u32 {
@@ -1973,7 +2361,9 @@ fn place(width: i32, height: i32) -> (i32, i32, i32, i32) {
             return (CW_USEDEFAULT, CW_USEDEFAULT, width, height);
         }
         let (mut dpi_x, mut dpi_y) = (0u32, 0u32);
-        let dpi = if GetDpiForMonitor(monitor, MDT_EFFECTIVE_DPI, &mut dpi_x, &mut dpi_y) == 0 && dpi_x != 0 {
+        let dpi = if GetDpiForMonitor(monitor, MDT_EFFECTIVE_DPI, &mut dpi_x, &mut dpi_y) == 0
+            && dpi_x != 0
+        {
             dpi_x
         } else {
             96

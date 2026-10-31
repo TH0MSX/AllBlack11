@@ -45,7 +45,12 @@ fn main() {
     println!("cargo:rerun-if-changed=setup.manifest");
     println!("cargo:rerun-if-changed=../assets/allblack11.ico");
     let payload = std::env::var("ALLBLACK11_PAYLOAD").unwrap_or_default();
-    for name in ["AllBlack11.exe", "AllBlack11Hook.dll", "config.default.json", "LICENSE"] {
+    for name in [
+        "AllBlack11.exe",
+        "AllBlack11Hook.dll",
+        "config.default.json",
+        "LICENSE",
+    ] {
         if !PathBuf::from(&payload).join(name).is_file() {
             panic!(
                 "ALLBLACK11_PAYLOAD must point at a folder holding {name} (got '{payload}'). \

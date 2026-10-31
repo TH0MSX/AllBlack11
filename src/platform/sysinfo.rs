@@ -22,7 +22,11 @@ pub fn host_machine() -> u16 {
     let mut process_machine = 0u16;
     let mut native_machine = 0u16;
     let ok = unsafe {
-        IsWow64Process2(GetCurrentProcess(), &mut process_machine, &mut native_machine)
+        IsWow64Process2(
+            GetCurrentProcess(),
+            &mut process_machine,
+            &mut native_machine,
+        )
     };
     if ok == 0 {
         0

@@ -15,23 +15,27 @@
 mod win {
     use std::sync::atomic::{AtomicBool, AtomicIsize, AtomicU32, AtomicU8, AtomicUsize, Ordering};
 
-    use windows_sys::Win32::Foundation::{BOOL, FALSE, HINSTANCE, HWND, LPARAM, LRESULT, TRUE, WPARAM};
+    use windows_sys::Win32::Foundation::{
+        BOOL, FALSE, HINSTANCE, HWND, LPARAM, LRESULT, TRUE, WPARAM,
+    };
     use windows_sys::Win32::Graphics::Gdi::{
         CreateSolidBrush, DeleteObject, FillRect, GetCurrentObject, GetObjectW, GetStockObject,
-        SetBkColor, SetTextColor,
-        HBRUSH, HDC, LOGFONTW, OBJ_FONT,
+        SetBkColor, SetTextColor, HBRUSH, HDC, LOGFONTW, OBJ_FONT,
     };
-    use windows_sys::Win32::System::LibraryLoader::{DisableThreadLibraryCalls, GetModuleFileNameW};
+    use windows_sys::Win32::System::LibraryLoader::{
+        DisableThreadLibraryCalls, GetModuleFileNameW,
+    };
     use windows_sys::Win32::System::Memory::{MapViewOfFile, OpenFileMappingW, FILE_MAP_READ};
     use windows_sys::Win32::System::Threading::GetCurrentThreadId;
     use windows_sys::Win32::UI::Controls::SetWindowTheme;
     use windows_sys::Win32::UI::WindowsAndMessaging::{
-        CallNextHookEx, CallWindowProcW, DefWindowProcW, EnumChildWindows, GetAncestor, GetClassNameW,
-        GetClientRect, GetPropW, GetWindowLongPtrW, GetWindowTextW, RegisterWindowMessageW,
-        RemovePropW, SendMessageW, SetPropW, SetWindowLongPtrW, CWPSTRUCT, GA_ROOT, GWL_STYLE,
-        GWLP_WNDPROC, HC_ACTION, HWND_BROADCAST, WNDPROC, WM_CREATE, WM_CTLCOLORBTN, WM_CTLCOLORDLG,
-        WM_CTLCOLOREDIT, WM_CTLCOLORLISTBOX, WM_CTLCOLORMSGBOX, WM_CTLCOLORSCROLLBAR,
-        WM_CTLCOLORSTATIC, WM_ERASEBKGND, WM_INITDIALOG, WM_NCDESTROY, WM_SHOWWINDOW,
+        CallNextHookEx, CallWindowProcW, DefWindowProcW, EnumChildWindows, GetAncestor,
+        GetClassNameW, GetClientRect, GetPropW, GetWindowLongPtrW, GetWindowTextW,
+        RegisterWindowMessageW, RemovePropW, SendMessageW, SetPropW, SetWindowLongPtrW, CWPSTRUCT,
+        GA_ROOT, GWLP_WNDPROC, GWL_STYLE, HC_ACTION, HWND_BROADCAST, WM_CREATE, WM_CTLCOLORBTN,
+        WM_CTLCOLORDLG, WM_CTLCOLOREDIT, WM_CTLCOLORLISTBOX, WM_CTLCOLORMSGBOX,
+        WM_CTLCOLORSCROLLBAR, WM_CTLCOLORSTATIC, WM_ERASEBKGND, WM_INITDIALOG, WM_NCDESTROY,
+        WM_SHOWWINDOW, WNDPROC,
     };
 
     const MAGIC: u32 = 0xAB11_0001;
@@ -118,10 +122,8 @@ mod win {
             return;
         }
         let first = !STARTED.swap(true, Ordering::AcqRel);
-        let interesting = first
-            || message == WM_CREATE
-            || message == WM_INITDIALOG
-            || message == WM_SHOWWINDOW;
+        let interesting =
+            first || message == WM_CREATE || message == WM_INITDIALOG || message == WM_SHOWWINDOW;
         if interesting {
             consider(hwnd);
         }
@@ -189,7 +191,10 @@ mod win {
             set_theme(hwnd, wide("DarkMode_Explorer").as_ptr());
             SendMessageW(hwnd, TVM_SETBKCOLOR, 0, color_bg() as LPARAM);
             SendMessageW(hwnd, TVM_SETTEXTCOLOR, 0, color_text() as LPARAM);
-        } else if class == "Edit" || class == "ComboBox" || class == "RichEdit20W" || class == "RichEdit50W"
+        } else if class == "Edit"
+            || class == "ComboBox"
+            || class == "RichEdit20W"
+            || class == "RichEdit50W"
         {
             set_theme(hwnd, wide("DarkMode_CFD").as_ptr());
         } else if class == "Button"
@@ -430,7 +435,13 @@ mod win {
         if handle.is_null() {
             return None;
         }
-        let view = MapViewOfFile(handle, FILE_MAP_READ, 0, 0, std::mem::size_of::<SharedState>());
+        let view = MapViewOfFile(
+            handle,
+            FILE_MAP_READ,
+            0,
+            0,
+            std::mem::size_of::<SharedState>(),
+        );
         if view.Value.is_null() {
             return None;
         }
@@ -439,19 +450,34 @@ mod win {
     }
 
     unsafe fn color_bg() -> u32 {
-        shared().map(|state| state.bg).filter(|v| *v != 0).unwrap_or(0x001C_1C1C)
+        shared()
+            .map(|state| state.bg)
+            .filter(|v| *v != 0)
+            .unwrap_or(0x001C_1C1C)
     }
     unsafe fn color_text() -> u32 {
-        shared().map(|state| state.text).filter(|v| *v != 0).unwrap_or(0x00F2_F2F2)
+        shared()
+            .map(|state| state.text)
+            .filter(|v| *v != 0)
+            .unwrap_or(0x00F2_F2F2)
     }
     unsafe fn color_link() -> u32 {
-        shared().map(|state| state.link).filter(|v| *v != 0).unwrap_or(0x00FF_B56E)
+        shared()
+            .map(|state| state.link)
+            .filter(|v| *v != 0)
+            .unwrap_or(0x00FF_B56E)
     }
     unsafe fn color_heading() -> u32 {
-        shared().map(|state| state.heading).filter(|v| *v != 0).unwrap_or(0x00FF_FFFF)
+        shared()
+            .map(|state| state.heading)
+            .filter(|v| *v != 0)
+            .unwrap_or(0x00FF_FFFF)
     }
     unsafe fn color_edit_bg() -> u32 {
-        shared().map(|state| state.edit_bg).filter(|v| *v != 0).unwrap_or(0x002A_2A2A)
+        shared()
+            .map(|state| state.edit_bg)
+            .filter(|v| *v != 0)
+            .unwrap_or(0x002A_2A2A)
     }
 
     unsafe fn brush(color: u32) -> HBRUSH {

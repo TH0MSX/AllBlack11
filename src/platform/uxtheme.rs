@@ -8,7 +8,9 @@
 use std::sync::OnceLock;
 
 use windows_sys::Win32::Foundation::HWND;
-use windows_sys::Win32::System::LibraryLoader::{GetProcAddress, LoadLibraryExW, LOAD_LIBRARY_SEARCH_SYSTEM32};
+use windows_sys::Win32::System::LibraryLoader::{
+    GetProcAddress, LoadLibraryExW, LOAD_LIBRARY_SEARCH_SYSTEM32,
+};
 
 use super::wide::{pcw, to_wide};
 
@@ -56,7 +58,11 @@ fn ordinals() -> Option<&'static Ordinals> {
 fn load() -> Option<Ordinals> {
     unsafe {
         let name = to_wide("uxtheme.dll");
-        let module = LoadLibraryExW(pcw(&name), std::ptr::null_mut(), LOAD_LIBRARY_SEARCH_SYSTEM32);
+        let module = LoadLibraryExW(
+            pcw(&name),
+            std::ptr::null_mut(),
+            LOAD_LIBRARY_SEARCH_SYSTEM32,
+        );
         if module.is_null() {
             return None;
         }

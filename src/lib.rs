@@ -12,6 +12,7 @@ mod snapshot;
 mod timefmt;
 mod version;
 
+pub use arch::{classify, machine_name, ArchStatus, BUILD_MACHINE};
 pub use config::{
     base_style, bundled_default_json, parse_config, set_enabled_flag, Backdrop, Color, Config,
     Corners, PartialStyle, Rule, Style, FALLBACK_ACCENT_BGR,
@@ -21,7 +22,6 @@ pub use policy::{
     WS_DLGFRAME, WS_EX_LAYERED, WS_EX_NOREDIRECTIONBITMAP, WS_EX_TOOLWINDOW, WS_EX_TRANSPARENT,
     WS_POPUP,
 };
-pub use arch::{classify, machine_name, ArchStatus, BUILD_MACHINE};
 pub use presets::{apply as apply_preset, Preset, PRESETS};
 pub use shell::{blacken_shell_slots, ShellBackup, SHELL_SLOT_BYTES};
 pub use snapshot::{format_snapshots, parse_snapshots, same_process, SnapshotFile, StoredSnapshot};

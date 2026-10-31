@@ -82,7 +82,9 @@ fn read_backup() -> Result<Option<MetricsBackup>, String> {
         return Ok(None);
     }
     let text = std::fs::read_to_string(&path).map_err(|err| err.to_string())?;
-    serde_json::from_str(&text).map(Some).map_err(|err| err.to_string())
+    serde_json::from_str(&text)
+        .map(Some)
+        .map_err(|err| err.to_string())
 }
 
 fn write_backup(backup: &MetricsBackup) -> Result<(), String> {
@@ -117,16 +119,28 @@ fn read_caption() -> Result<Option<String>, String> {
         return Err(format!("could not read CaptionHeight ({status})"));
     }
     let chars = (size as usize / 2).saturating_sub(1);
-    Ok(Some(String::from_utf16_lossy(&buf[..chars.min(buf.len())]).trim_end_matches('\0').to_string()))
+    Ok(Some(
+        String::from_utf16_lossy(&buf[..chars.min(buf.len())])
+            .trim_end_matches('\0')
+            .to_string(),
+    ))
 }
 
 fn write_caption(text: &str) -> Result<(), String> {
     with_metrics_key(|key| {
         let name = to_wide(CAPTION);
         let wide = to_wide(text);
-        let bytes = unsafe { std::slice::from_raw_parts(wide.as_ptr() as *const u8, wide.len() * 2) };
+        let bytes =
+            unsafe { std::slice::from_raw_parts(wide.as_ptr() as *const u8, wide.len() * 2) };
         let status = unsafe {
-            RegSetValueExW(key, pcw(&name), 0, REG_SZ, bytes.as_ptr(), bytes.len() as u32)
+            RegSetValueExW(
+                key,
+                pcw(&name),
+                0,
+                REG_SZ,
+                bytes.as_ptr(),
+                bytes.len() as u32,
+            )
         };
         if status == ERROR_SUCCESS {
             Ok(())

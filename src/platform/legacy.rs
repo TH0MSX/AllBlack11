@@ -11,11 +11,13 @@
 use std::collections::HashMap;
 use std::sync::Mutex;
 
-use windows_sys::Win32::Foundation::{CloseHandle, FreeLibrary, BOOL, HANDLE, HMODULE, HWND, LPARAM, WPARAM};
+use windows_sys::Win32::Foundation::{
+    CloseHandle, FreeLibrary, BOOL, HANDLE, HMODULE, HWND, LPARAM, WPARAM,
+};
 use windows_sys::Win32::System::LibraryLoader::{GetProcAddress, LoadLibraryW};
 use windows_sys::Win32::System::Memory::{
-    CreateFileMappingW, MapViewOfFile, UnmapViewOfFile, FILE_MAP_ALL_ACCESS, MEMORY_MAPPED_VIEW_ADDRESS,
-    PAGE_READWRITE,
+    CreateFileMappingW, MapViewOfFile, UnmapViewOfFile, FILE_MAP_ALL_ACCESS,
+    MEMORY_MAPPED_VIEW_ADDRESS, PAGE_READWRITE,
 };
 use windows_sys::Win32::System::Threading::{
     OpenProcess, OpenProcessToken, PROCESS_QUERY_LIMITED_INFORMATION,
@@ -23,8 +25,8 @@ use windows_sys::Win32::System::Threading::{
 use windows_sys::Win32::UI::Controls::SetWindowTheme;
 use windows_sys::Win32::UI::WindowsAndMessaging::{
     EnumChildWindows, GetClassNameW, GetWindowTextW, GetWindowThreadProcessId, SendMessageTimeoutW,
-    SetWindowsHookExW, UnhookWindowsHookEx, HHOOK, HWND_BROADCAST, SMTO_ABORTIFHUNG, WH_CALLWNDPROC,
-    WM_NULL,
+    SetWindowsHookExW, UnhookWindowsHookEx, HHOOK, HWND_BROADCAST, SMTO_ABORTIFHUNG,
+    WH_CALLWNDPROC, WM_NULL,
 };
 
 use crate::config::{exe_matches, file_name};
@@ -186,7 +188,8 @@ fn stop() {
             (*live.shared).enabled = 0;
         }
         let name = to_wide("AllBlack11.HookStop");
-        let message = windows_sys::Win32::UI::WindowsAndMessaging::RegisterWindowMessageW(pcw(&name));
+        let message =
+            windows_sys::Win32::UI::WindowsAndMessaging::RegisterWindowMessageW(pcw(&name));
         if message != 0 {
             let mut result = 0usize;
             SendMessageTimeoutW(
@@ -301,7 +304,12 @@ unsafe fn hook_proc(
     >(address))
 }
 
-fn process_gate(pid: u32, class_name: &str, control_panel: bool, exclude: &[String]) -> Result<(), &'static str> {
+fn process_gate(
+    pid: u32,
+    class_name: &str,
+    control_panel: bool,
+    exclude: &[String],
+) -> Result<(), &'static str> {
     unsafe {
         let handle = OpenProcess(PROCESS_QUERY_LIMITED_INFORMATION, 0, pid);
         if handle.is_null() {
@@ -347,7 +355,9 @@ fn process_exe(handle: HANDLE) -> Option<String> {
 }
 
 unsafe fn token_is_elevated(process: HANDLE) -> bool {
-    use windows_sys::Win32::Security::{GetTokenInformation, TokenElevation, TOKEN_ELEVATION, TOKEN_QUERY};
+    use windows_sys::Win32::Security::{
+        GetTokenInformation, TokenElevation, TOKEN_ELEVATION, TOKEN_QUERY,
+    };
     let mut token = std::ptr::null_mut();
     if OpenProcessToken(process, TOKEN_QUERY, &mut token) == 0 {
         return true;

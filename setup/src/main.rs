@@ -33,8 +33,8 @@ mod win {
     use windows_sys::Win32::Foundation::{HWND, LPARAM, LRESULT, RECT, WPARAM};
     use windows_sys::Win32::Graphics::Gdi::{
         BeginPaint, CreateFontW, CreateSolidBrush, DeleteObject, DrawTextW, EndPaint, FillRect,
-        GetSysColorBrush, InvalidateRect, SetBkMode, SetTextColor, COLOR_WINDOW, HDC, HFONT, PAINTSTRUCT,
-        TRANSPARENT,
+        GetSysColorBrush, InvalidateRect, SetBkMode, SetTextColor, COLOR_WINDOW, HDC, HFONT,
+        PAINTSTRUCT, TRANSPARENT,
     };
     use windows_sys::Win32::System::LibraryLoader::GetModuleHandleW;
     use windows_sys::Win32::System::Registry::{
@@ -42,32 +42,43 @@ mod win {
         HKEY_CURRENT_USER, KEY_SET_VALUE, REG_DWORD, REG_OPTION_NON_VOLATILE, REG_SZ,
     };
     use windows_sys::Win32::System::Threading::{GetCurrentProcess, IsWow64Process2};
-    use windows_sys::Win32::UI::HiDpi::{AdjustWindowRectExForDpi, GetDpiForWindow, SetProcessDpiAwarenessContext, DPI_AWARENESS_CONTEXT_PER_MONITOR_AWARE_V2};
+    use windows_sys::Win32::UI::HiDpi::{
+        AdjustWindowRectExForDpi, GetDpiForWindow, SetProcessDpiAwarenessContext,
+        DPI_AWARENESS_CONTEXT_PER_MONITOR_AWARE_V2,
+    };
     use windows_sys::Win32::UI::WindowsAndMessaging::{
-        CreateWindowExW, DefWindowProcW, DestroyWindow, DispatchMessageW,
-        GetClientRect, GetMessageW, GetWindowLongPtrW, LoadCursorW, MessageBoxW, PostQuitMessage,
-        RegisterClassExW, SendMessageW, SetWindowLongPtrW, SetWindowPos, SetWindowTextW, ShowWindow,
-        TranslateMessage, CREATESTRUCTW, GWLP_USERDATA, IDC_ARROW, IDYES, MB_ICONERROR, MB_ICONINFORMATION,
-        MB_ICONQUESTION, MB_OK, MB_YESNO, MSG, SWP_NOZORDER, SW_SHOW, WM_COMMAND, WM_CREATE,
-        WM_CTLCOLORSTATIC, WM_DESTROY, WM_ERASEBKGND, WM_PAINT, WM_SETFONT, WNDCLASSEXW, WS_CAPTION,
-        WS_CHILD, WS_MINIMIZEBOX, WS_OVERLAPPED, WS_SYSMENU, WS_TABSTOP, WS_VISIBLE,
+        CreateWindowExW, DefWindowProcW, DestroyWindow, DispatchMessageW, GetClientRect,
+        GetMessageW, GetWindowLongPtrW, LoadCursorW, MessageBoxW, PostQuitMessage,
+        RegisterClassExW, SendMessageW, SetWindowLongPtrW, SetWindowPos, SetWindowTextW,
+        ShowWindow, TranslateMessage, CREATESTRUCTW, GWLP_USERDATA, IDC_ARROW, IDYES, MB_ICONERROR,
+        MB_ICONINFORMATION, MB_ICONQUESTION, MB_OK, MB_YESNO, MSG, SWP_NOZORDER, SW_SHOW,
+        WM_COMMAND, WM_CREATE, WM_CTLCOLORSTATIC, WM_DESTROY, WM_ERASEBKGND, WM_PAINT, WM_SETFONT,
+        WNDCLASSEXW, WS_CAPTION, WS_CHILD, WS_MINIMIZEBOX, WS_OVERLAPPED, WS_SYSMENU, WS_TABSTOP,
+        WS_VISIBLE,
     };
 
     // Embedded payload for this CPU type. ALLBLACK11_PAYLOAD is set by build.sh and the release workflow.
     static APP_EXE: &[u8] = include_bytes!(concat!(env!("ALLBLACK11_PAYLOAD"), "/AllBlack11.exe"));
-    static HOOK_DLL: &[u8] = include_bytes!(concat!(env!("ALLBLACK11_PAYLOAD"), "/AllBlack11Hook.dll"));
-    static DEFAULT_CONFIG: &[u8] = include_bytes!(concat!(env!("ALLBLACK11_PAYLOAD"), "/config.default.json"));
+    static HOOK_DLL: &[u8] =
+        include_bytes!(concat!(env!("ALLBLACK11_PAYLOAD"), "/AllBlack11Hook.dll"));
+    static DEFAULT_CONFIG: &[u8] =
+        include_bytes!(concat!(env!("ALLBLACK11_PAYLOAD"), "/config.default.json"));
     static LICENSE: &[u8] = include_bytes!(concat!(env!("ALLBLACK11_PAYLOAD"), "/LICENSE"));
 
     const VERSION: &str = env!("CARGO_PKG_VERSION");
     const NO_WINDOW: u32 = 0x0800_0000; // CREATE_NO_WINDOW
     const DETACHED: u32 = 0x0000_0008; // DETACHED_PROCESS
-    const UNINSTALL_KEY: &str = "Software\\Microsoft\\Windows\\CurrentVersion\\Uninstall\\AllBlack11";
+    const UNINSTALL_KEY: &str =
+        "Software\\Microsoft\\Windows\\CurrentVersion\\Uninstall\\AllBlack11";
     const RUN_KEY: &str = "Software\\Microsoft\\Windows\\CurrentVersion\\Run";
 
     const MACHINE_ARM64: u16 = 0xAA64;
     const MACHINE_AMD64: u16 = 0x8664;
-    const BUILD_MACHINE: u16 = if cfg!(target_arch = "aarch64") { MACHINE_ARM64 } else { MACHINE_AMD64 };
+    const BUILD_MACHINE: u16 = if cfg!(target_arch = "aarch64") {
+        MACHINE_ARM64
+    } else {
+        MACHINE_AMD64
+    };
 
     // ---- small helpers ------------------------------------------------------
 
@@ -83,7 +94,9 @@ mod win {
     }
 
     fn dest_dir() -> PathBuf {
-        PathBuf::from(std::env::var("LOCALAPPDATA").unwrap_or_default()).join("Programs").join("AllBlack11")
+        PathBuf::from(std::env::var("LOCALAPPDATA").unwrap_or_default())
+            .join("Programs")
+            .join("AllBlack11")
     }
 
     fn data_dir() -> PathBuf {
@@ -158,14 +171,28 @@ mod win {
         fn set_string(&self, name: &str, value: &str) {
             let (name, data) = (wide(name), wide(value));
             unsafe {
-                RegSetValueExW(self.0, name.as_ptr(), 0, REG_SZ, data.as_ptr() as *const u8, (data.len() * 2) as u32);
+                RegSetValueExW(
+                    self.0,
+                    name.as_ptr(),
+                    0,
+                    REG_SZ,
+                    data.as_ptr() as *const u8,
+                    (data.len() * 2) as u32,
+                );
             }
         }
 
         fn set_dword(&self, name: &str, value: u32) {
             let name = wide(name);
             unsafe {
-                RegSetValueExW(self.0, name.as_ptr(), 0, REG_DWORD, value.to_le_bytes().as_ptr(), 4);
+                RegSetValueExW(
+                    self.0,
+                    name.as_ptr(),
+                    0,
+                    REG_DWORD,
+                    value.to_le_bytes().as_ptr(),
+                    4,
+                );
             }
         }
 
@@ -202,7 +229,8 @@ mod win {
         if path.exists() && std::fs::remove_file(path).is_err() {
             let aside = path.with_extension("old");
             let _ = std::fs::remove_file(&aside);
-            std::fs::rename(path, &aside).map_err(|err| format!("{} is in use: {err}", path.display()))?;
+            std::fs::rename(path, &aside)
+                .map_err(|err| format!("{} is in use: {err}", path.display()))?;
         }
         std::fs::rename(&tmp, path).map_err(|err| format!("{}: {err}", path.display()))
     }
@@ -210,7 +238,10 @@ mod win {
     fn stop_running_app(dir: &Path) {
         let exe = dir.join("AllBlack11.exe");
         if exe.is_file() {
-            let _ = Command::new(&exe).arg("--exit").creation_flags(NO_WINDOW).status();
+            let _ = Command::new(&exe)
+                .arg("--exit")
+                .creation_flags(NO_WINDOW)
+                .status();
         }
         std::thread::sleep(Duration::from_millis(900));
         // Still there? End it. The app restores window frames when it receives --exit,
@@ -224,7 +255,8 @@ mod win {
         if let Ok(key) = Key::create(RUN_KEY) {
             key.delete_value("PepaTheme");
         }
-        let old = PathBuf::from(std::env::var("LOCALAPPDATA").unwrap_or_default()).join("Programs\\PepaTheme");
+        let old = PathBuf::from(std::env::var("LOCALAPPDATA").unwrap_or_default())
+            .join("Programs\\PepaTheme");
         if old.exists() {
             let _ = std::fs::remove_dir_all(old);
         }
@@ -237,9 +269,23 @@ mod win {
              $s.Description='AllBlack11';$s.Save()",
             link = link.display().to_string().replace('\'', "''"),
             target = target.display().to_string().replace('\'', "''"),
-            dir = target.parent().map(|p| p.display().to_string()).unwrap_or_default().replace('\'', "''"),
+            dir = target
+                .parent()
+                .map(|p| p.display().to_string())
+                .unwrap_or_default()
+                .replace('\'', "''"),
         );
-        quiet("powershell", &["-NoProfile", "-NonInteractive", "-WindowStyle", "Hidden", "-Command", &script])
+        quiet(
+            "powershell",
+            &[
+                "-NoProfile",
+                "-NonInteractive",
+                "-WindowStyle",
+                "Hidden",
+                "-Command",
+                &script,
+            ],
+        )
     }
 
     fn install(options: Options, report: &mut dyn FnMut(&str)) -> Result<(), String> {
@@ -260,7 +306,10 @@ mod win {
         let me = std::env::current_exe().map_err(|err| err.to_string())?;
         let installed_setup = dest.join("AllBlack11-Setup.exe");
         if me != installed_setup {
-            let _ = write_file(&installed_setup, &std::fs::read(&me).map_err(|err| err.to_string())?);
+            let _ = write_file(
+                &installed_setup,
+                &std::fs::read(&me).map_err(|err| err.to_string())?,
+            );
         }
 
         report("Preparing settings…");
@@ -268,7 +317,8 @@ mod win {
         let _ = std::fs::create_dir_all(&data);
         let config = data.join("config.json");
         if !config.exists() {
-            let legacy = PathBuf::from(std::env::var("APPDATA").unwrap_or_default()).join("PepaTheme");
+            let legacy =
+                PathBuf::from(std::env::var("APPDATA").unwrap_or_default()).join("PepaTheme");
             if legacy.join("config.json").is_file() {
                 let _ = std::fs::copy(legacy.join("config.json"), &config);
                 let snapshots = legacy.join("snapshots.json");
@@ -308,7 +358,10 @@ mod win {
         key.set_string("URLInfoAbout", "https://github.com/TH0MSX/AllBlack11");
         key.set_dword("NoModify", 1);
         key.set_dword("NoRepair", 1);
-        key.set_dword("EstimatedSize", ((APP_EXE.len() + HOOK_DLL.len() + 2 * 1024 * 1024) / 1024) as u32);
+        key.set_dword(
+            "EstimatedSize",
+            ((APP_EXE.len() + HOOK_DLL.len() + 2 * 1024 * 1024) / 1024) as u32,
+        );
 
         if options.launch {
             report("Starting AllBlack11…");
@@ -323,7 +376,10 @@ mod win {
         report("Restoring Windows settings…");
         if exe.is_file() {
             // Quits the app, puts back the shell values and CaptionHeight, keeps the config.
-            let _ = Command::new(&exe).args(["--restore", "--quiet"]).creation_flags(NO_WINDOW).status();
+            let _ = Command::new(&exe)
+                .args(["--restore", "--quiet"])
+                .creation_flags(NO_WINDOW)
+                .status();
         }
         quiet("taskkill", &["/F", "/IM", "AllBlack11.exe"]);
 
@@ -345,8 +401,14 @@ mod win {
         let running_from_dest = me.as_ref().is_some_and(|me| me.starts_with(&dest));
         if running_from_dest {
             // Setup is inside the folder it is deleting: let a helper finish once it exits.
-            let command = format!("ping -n 3 127.0.0.1 >nul & rmdir /s /q \"{}\"", dest.display());
-            let _ = Command::new("cmd").args(["/C", &command]).creation_flags(NO_WINDOW | DETACHED).spawn();
+            let command = format!(
+                "ping -n 3 127.0.0.1 >nul & rmdir /s /q \"{}\"",
+                dest.display()
+            );
+            let _ = Command::new("cmd")
+                .args(["/C", &command])
+                .creation_flags(NO_WINDOW | DETACHED)
+                .spawn();
         } else if dest.exists() {
             std::fs::remove_dir_all(&dest).map_err(|err| format!("{}: {err}", dest.display()))?;
         }
@@ -362,7 +424,12 @@ mod win {
         let silent = has("/S") || has("--silent");
 
         if has("--version") {
-            message(null_mut(), "AllBlack11 Setup", &format!("AllBlack11 {VERSION} ({})", machine_name(BUILD_MACHINE)), MB_OK | MB_ICONINFORMATION);
+            message(
+                null_mut(),
+                "AllBlack11 Setup",
+                &format!("AllBlack11 {VERSION} ({})", machine_name(BUILD_MACHINE)),
+                MB_OK | MB_ICONINFORMATION,
+            );
             return 0;
         }
         if has("--uninstall") {
@@ -388,7 +455,12 @@ mod win {
     fn run_uninstall(silent: bool, purge_flag: bool) -> i32 {
         let mut purge = purge_flag;
         if !silent {
-            let sure = message(null_mut(), "Uninstall AllBlack11", "Remove AllBlack11 and put back the Windows settings it changed?", MB_YESNO | MB_ICONQUESTION);
+            let sure = message(
+                null_mut(),
+                "Uninstall AllBlack11",
+                "Remove AllBlack11 and put back the Windows settings it changed?",
+                MB_YESNO | MB_ICONQUESTION,
+            );
             if sure != IDYES {
                 return 0;
             }
@@ -408,7 +480,12 @@ mod win {
             }
             Err(err) => {
                 if !silent {
-                    message(null_mut(), "AllBlack11", &format!("Uninstall did not finish: {err}"), MB_OK | MB_ICONERROR);
+                    message(
+                        null_mut(),
+                        "AllBlack11",
+                        &format!("Uninstall did not finish: {err}"),
+                        MB_OK | MB_ICONERROR,
+                    );
                 }
                 1
             }
@@ -460,23 +537,55 @@ mod win {
             info.hbrBackground = GetSysColorBrush(COLOR_WINDOW);
             info.lpszClassName = class.as_ptr();
             // Class icon comes from resource 1 (the same icon as the app).
-            info.hIcon = windows_sys::Win32::UI::WindowsAndMessaging::LoadIconW(instance, 1 as *const u16);
+            info.hIcon =
+                windows_sys::Win32::UI::WindowsAndMessaging::LoadIconW(instance, 1 as *const u16);
             RegisterClassExW(&info);
             let title = wide(&format!("AllBlack11 {} Setup", display_version()));
             let style = WS_OVERLAPPED | WS_CAPTION | WS_SYSMENU | WS_MINIMIZEBOX;
-            let hwnd = CreateWindowExW(0, class.as_ptr(), title.as_ptr(), style, 100, 100, 600, 500, null_mut(), null_mut(), instance, null());
+            let hwnd = CreateWindowExW(
+                0,
+                class.as_ptr(),
+                title.as_ptr(),
+                style,
+                100,
+                100,
+                600,
+                500,
+                null_mut(),
+                null_mut(),
+                instance,
+                null(),
+            );
             if hwnd.is_null() {
-                message(null_mut(), "AllBlack11 Setup", "Could not open the Setup window.", MB_OK | MB_ICONERROR);
+                message(
+                    null_mut(),
+                    "AllBlack11 Setup",
+                    "Could not open the Setup window.",
+                    MB_OK | MB_ICONERROR,
+                );
                 return 1;
             }
             let dpi = GetDpiForWindow(hwnd).max(96);
             let k = dpi as f32 / 96.0;
-            let mut rect = RECT { left: 0, top: 0, right: (W as f32 * k) as i32, bottom: (H as f32 * k) as i32 };
+            let mut rect = RECT {
+                left: 0,
+                top: 0,
+                right: (W as f32 * k) as i32,
+                bottom: (H as f32 * k) as i32,
+            };
             AdjustWindowRectExForDpi(&mut rect, style, 0, 0, dpi);
             let (width, height) = (rect.right - rect.left, rect.bottom - rect.top);
             let screen_w = windows_sys::Win32::UI::WindowsAndMessaging::GetSystemMetrics(0);
             let screen_h = windows_sys::Win32::UI::WindowsAndMessaging::GetSystemMetrics(1);
-            SetWindowPos(hwnd, null_mut(), (screen_w - width) / 2, ((screen_h - height) / 2).max(0), width, height, SWP_NOZORDER);
+            SetWindowPos(
+                hwnd,
+                null_mut(),
+                (screen_w - width) / 2,
+                ((screen_h - height) / 2).max(0),
+                width,
+                height,
+                SWP_NOZORDER,
+            );
             ShowWindow(hwnd, SW_SHOW);
             let mut msg: MSG = std::mem::zeroed();
             while GetMessageW(&mut msg, null_mut(), 0, 0) > 0 {
@@ -489,13 +598,55 @@ mod win {
 
     fn font(dpi: u32, px: i32, weight: i32) -> HFONT {
         let name = wide("Segoe UI");
-        unsafe { CreateFontW(-((px * dpi as i32 + 48) / 96), 0, 0, 0, weight, 0, 0, 0, 1, 0, 0, 5, 0, name.as_ptr()) }
+        unsafe {
+            CreateFontW(
+                -((px * dpi as i32 + 48) / 96),
+                0,
+                0,
+                0,
+                weight,
+                0,
+                0,
+                0,
+                1,
+                0,
+                0,
+                5,
+                0,
+                name.as_ptr(),
+            )
+        }
     }
 
-    unsafe fn child(parent: HWND, class: &str, text: &str, style: u32, x: i32, y: i32, w: i32, h: i32, id: usize, font: HFONT, k: f32) -> HWND {
+    unsafe fn child(
+        parent: HWND,
+        class: &str,
+        text: &str,
+        style: u32,
+        x: i32,
+        y: i32,
+        w: i32,
+        h: i32,
+        id: usize,
+        font: HFONT,
+        k: f32,
+    ) -> HWND {
         let (class, text) = (wide(class), wide(text));
         let px = |v: i32| (v as f32 * k).round() as i32;
-        let hwnd = CreateWindowExW(0, class.as_ptr(), text.as_ptr(), WS_CHILD | WS_VISIBLE | style, px(x), px(y), px(w), px(h), parent, id as *mut _, GetModuleHandleW(null()), null());
+        let hwnd = CreateWindowExW(
+            0,
+            class.as_ptr(),
+            text.as_ptr(),
+            WS_CHILD | WS_VISIBLE | style,
+            px(x),
+            px(y),
+            px(w),
+            px(h),
+            parent,
+            id as *mut _,
+            GetModuleHandleW(null()),
+            null(),
+        );
         SendMessageW(hwnd, WM_SETFONT, font as WPARAM, 1);
         hwnd
     }
@@ -505,7 +656,12 @@ mod win {
         unsafe { SetWindowTextW(hwnd, wide.as_ptr()) };
     }
 
-    unsafe extern "system" fn wndproc(hwnd: HWND, msg: u32, wparam: WPARAM, lparam: LPARAM) -> LRESULT {
+    unsafe extern "system" fn wndproc(
+        hwnd: HWND,
+        msg: u32,
+        wparam: WPARAM,
+        lparam: LPARAM,
+    ) -> LRESULT {
         if msg == WM_CREATE {
             let _ = &*(lparam as *const CREATESTRUCTW);
             let dpi = GetDpiForWindow(hwnd).max(96);
@@ -522,23 +678,138 @@ mod win {
             } else if mismatch {
                 "This is the x64 installer on an ARM64 PC. It works through emulation. The ARM64 setup is faster and lighter.".to_string()
             } else {
-                format!("Native {} build for this {} PC.", machine_name(BUILD_MACHINE), machine_name(machine))
+                format!(
+                    "Native {} build for this {} PC.",
+                    machine_name(BUILD_MACHINE),
+                    machine_name(machine)
+                )
             };
-            child(hwnd, "STATIC", &format!("Installs for your account only, in {}. No administrator rights.", dest_dir().display()), SS_LEFT, 28, HEADER_H + 14, W - 56, 40, 0, small, k);
-            child(hwnd, "STATIC", &cpu, SS_LEFT, 28, HEADER_H + 56, W - 56, 34, 0, small, k);
+            child(
+                hwnd,
+                "STATIC",
+                &format!(
+                    "Installs for your account only, in {}. No administrator rights.",
+                    dest_dir().display()
+                ),
+                SS_LEFT,
+                28,
+                HEADER_H + 14,
+                W - 56,
+                40,
+                0,
+                small,
+                k,
+            );
+            child(
+                hwnd,
+                "STATIC",
+                &cpu,
+                SS_LEFT,
+                28,
+                HEADER_H + 56,
+                W - 56,
+                34,
+                0,
+                small,
+                k,
+            );
             let boxes = [
-                child(hwnd, "BUTTON", "Start AllBlack11 when I sign in", WS_TABSTOP | BS_AUTOCHECKBOX, 28, HEADER_H + 106, W - 56, 24, ID_AUTOSTART, body, k),
-                child(hwnd, "BUTTON", "Add a Start menu shortcut", WS_TABSTOP | BS_AUTOCHECKBOX, 28, HEADER_H + 138, W - 56, 24, ID_SHORTCUT, body, k),
-                child(hwnd, "BUTTON", "Open AllBlack11 when Setup finishes", WS_TABSTOP | BS_AUTOCHECKBOX, 28, HEADER_H + 170, W - 56, 24, ID_LAUNCH, body, k),
+                child(
+                    hwnd,
+                    "BUTTON",
+                    "Start AllBlack11 when I sign in",
+                    WS_TABSTOP | BS_AUTOCHECKBOX,
+                    28,
+                    HEADER_H + 106,
+                    W - 56,
+                    24,
+                    ID_AUTOSTART,
+                    body,
+                    k,
+                ),
+                child(
+                    hwnd,
+                    "BUTTON",
+                    "Add a Start menu shortcut",
+                    WS_TABSTOP | BS_AUTOCHECKBOX,
+                    28,
+                    HEADER_H + 138,
+                    W - 56,
+                    24,
+                    ID_SHORTCUT,
+                    body,
+                    k,
+                ),
+                child(
+                    hwnd,
+                    "BUTTON",
+                    "Open AllBlack11 when Setup finishes",
+                    WS_TABSTOP | BS_AUTOCHECKBOX,
+                    28,
+                    HEADER_H + 170,
+                    W - 56,
+                    24,
+                    ID_LAUNCH,
+                    body,
+                    k,
+                ),
             ];
             for check in boxes {
                 SendMessageW(check, BM_SETCHECK, 1, 0);
             }
             child(hwnd, "STATIC", "Nothing is changed in Windows until you turn a feature on in Settings. Everything it changes can be undone from the same place, or by uninstalling.", SS_LEFT, 28, HEADER_H + 206, W - 56, 60, 0, small, k);
-            let status = child(hwnd, "STATIC", "", SS_LEFT, 28, H - 90, W - 56, 22, 0, small, k);
-            let install_button = child(hwnd, "BUTTON", if updating { "Update" } else { "Install" }, WS_TABSTOP | BS_DEFPUSHBUTTON, W - 28 - 110 - 96 - 12 - 110, H - 56, 110, 32, ID_INSTALL, body, k);
-            let uninstall_button = child(hwnd, "BUTTON", "Uninstall", WS_TABSTOP, W - 28 - 96 - 12 - 110, H - 56, 110, 32, ID_UNINSTALL, body, k);
-            let close_button = child(hwnd, "BUTTON", "Close", WS_TABSTOP, W - 28 - 96, H - 56, 96, 32, ID_CLOSE, body, k);
+            let status = child(
+                hwnd,
+                "STATIC",
+                "",
+                SS_LEFT,
+                28,
+                H - 90,
+                W - 56,
+                22,
+                0,
+                small,
+                k,
+            );
+            let install_button = child(
+                hwnd,
+                "BUTTON",
+                if updating { "Update" } else { "Install" },
+                WS_TABSTOP | BS_DEFPUSHBUTTON,
+                W - 28 - 110 - 96 - 12 - 110,
+                H - 56,
+                110,
+                32,
+                ID_INSTALL,
+                body,
+                k,
+            );
+            let uninstall_button = child(
+                hwnd,
+                "BUTTON",
+                "Uninstall",
+                WS_TABSTOP,
+                W - 28 - 96 - 12 - 110,
+                H - 56,
+                110,
+                32,
+                ID_UNINSTALL,
+                body,
+                k,
+            );
+            let close_button = child(
+                hwnd,
+                "BUTTON",
+                "Close",
+                WS_TABSTOP,
+                W - 28 - 96,
+                H - 56,
+                96,
+                32,
+                ID_CLOSE,
+                body,
+                k,
+            );
             if !updating {
                 windows_sys::Win32::UI::Input::KeyboardAndMouse::EnableWindow(uninstall_button, 0);
             }
@@ -567,7 +838,12 @@ mod win {
         let state = &mut *state;
         match msg {
             WM_ERASEBKGND => {
-                let mut rect = RECT { left: 0, top: 0, right: 0, bottom: 0 };
+                let mut rect = RECT {
+                    left: 0,
+                    top: 0,
+                    right: 0,
+                    bottom: 0,
+                };
                 GetClientRect(hwnd, &mut rect);
                 FillRect(wparam as HDC, &rect, state.white);
                 1
@@ -575,24 +851,52 @@ mod win {
             WM_PAINT => {
                 let mut ps: PAINTSTRUCT = std::mem::zeroed();
                 let dc = BeginPaint(hwnd, &mut ps);
-                let mut client = RECT { left: 0, top: 0, right: 0, bottom: 0 };
+                let mut client = RECT {
+                    left: 0,
+                    top: 0,
+                    right: 0,
+                    bottom: 0,
+                };
                 GetClientRect(hwnd, &mut client);
-                let header = RECT { left: 0, top: 0, right: client.right, bottom: (HEADER_H as f32 * state.k) as i32 };
+                let header = RECT {
+                    left: 0,
+                    top: 0,
+                    right: client.right,
+                    bottom: (HEADER_H as f32 * state.k) as i32,
+                };
                 FillRect(dc, &header, state.black);
                 let teal = CreateSolidBrush(0x0074_8501);
-                let line = RECT { left: 0, top: header.bottom - (3.0 * state.k) as i32, right: client.right, bottom: header.bottom };
+                let line = RECT {
+                    left: 0,
+                    top: header.bottom - (3.0 * state.k) as i32,
+                    right: client.right,
+                    bottom: header.bottom,
+                };
                 FillRect(dc, &line, teal);
                 DeleteObject(teal);
                 SetBkMode(dc, TRANSPARENT as i32);
-                let draw = |text: &str, font: HFONT, color: u32, left: i32, top: i32, bottom: i32| {
-                    windows_sys::Win32::Graphics::Gdi::SelectObject(dc, font);
-                    SetTextColor(dc, color);
-                    let mut rect = RECT { left: (left as f32 * state.k) as i32, top: (top as f32 * state.k) as i32, right: client.right, bottom: (bottom as f32 * state.k) as i32 };
-                    let text = wide(text);
-                    DrawTextW(dc, text.as_ptr(), -1, &mut rect, 0x0020 | 0x0800);
-                };
+                let draw =
+                    |text: &str, font: HFONT, color: u32, left: i32, top: i32, bottom: i32| {
+                        windows_sys::Win32::Graphics::Gdi::SelectObject(dc, font);
+                        SetTextColor(dc, color);
+                        let mut rect = RECT {
+                            left: (left as f32 * state.k) as i32,
+                            top: (top as f32 * state.k) as i32,
+                            right: client.right,
+                            bottom: (bottom as f32 * state.k) as i32,
+                        };
+                        let text = wide(text);
+                        DrawTextW(dc, text.as_ptr(), -1, &mut rect, 0x0020 | 0x0800);
+                    };
                 draw("AllBlack11", state.title_font, 0x00FF_FFFF, 28, 18, 58);
-                draw(&format!("{} · true black for Windows 11", display_version()), state.small_font, 0x00B0_B0B0, 30, 60, 84);
+                draw(
+                    &format!("{} · true black for Windows 11", display_version()),
+                    state.small_font,
+                    0x00B0_B0B0,
+                    30,
+                    60,
+                    84,
+                );
                 EndPaint(hwnd, &ps);
                 0
             }
@@ -622,15 +926,35 @@ mod win {
                         match result {
                             Ok(()) => {
                                 state.done = true;
-                                set_text(state.status, &format!("{} complete. You can close Setup.", if state.updating { "Update" } else { "Install" }));
+                                set_text(
+                                    state.status,
+                                    &format!(
+                                        "{} complete. You can close Setup.",
+                                        if state.updating { "Update" } else { "Install" }
+                                    ),
+                                );
                                 set_text(state.install_button, "Done");
-                                windows_sys::Win32::UI::Input::KeyboardAndMouse::EnableWindow(state.install_button, 0);
-                                windows_sys::Win32::UI::Input::KeyboardAndMouse::EnableWindow(state.uninstall_button, 1);
-                                windows_sys::Win32::UI::Input::KeyboardAndMouse::EnableWindow(state.close_button, 1);
+                                windows_sys::Win32::UI::Input::KeyboardAndMouse::EnableWindow(
+                                    state.install_button,
+                                    0,
+                                );
+                                windows_sys::Win32::UI::Input::KeyboardAndMouse::EnableWindow(
+                                    state.uninstall_button,
+                                    1,
+                                );
+                                windows_sys::Win32::UI::Input::KeyboardAndMouse::EnableWindow(
+                                    state.close_button,
+                                    1,
+                                );
                             }
                             Err(err) => {
                                 set_text(state.status, "Setup did not finish.");
-                                message(hwnd, "AllBlack11 Setup", &format!("Setup did not finish.\n\n{err}"), MB_OK | MB_ICONERROR);
+                                message(
+                                    hwnd,
+                                    "AllBlack11 Setup",
+                                    &format!("Setup did not finish.\n\n{err}"),
+                                    MB_OK | MB_ICONERROR,
+                                );
                                 busy(state, hwnd, false);
                             }
                         }

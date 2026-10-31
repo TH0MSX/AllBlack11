@@ -722,7 +722,8 @@ mod tests {
         let again = parse_config(&text).unwrap();
         assert!(!again.experimental_dark_legacy);
         assert!(again.caption_height.is_none());
-        let custom = parse_config(r#"{ "captionHeight": 28, "experimentalDarkLegacy": true }"#).unwrap();
+        let custom =
+            parse_config(r#"{ "captionHeight": 28, "experimentalDarkLegacy": true }"#).unwrap();
         assert_eq!(custom.caption_height, Some(28));
         assert!(custom.experimental_dark_legacy);
         assert_eq!(normalize_caption_height(Some(0)), None);

@@ -111,7 +111,9 @@ mod tests {
             Err("not-legacy")
         );
         assert!(is_control_panel_title("Control Panel"));
-        assert!(is_control_panel_title("Control Panel\\All Control Panel Items"));
+        assert!(is_control_panel_title(
+            "Control Panel\\All Control Panel Items"
+        ));
         assert!(!is_control_panel_title("Documents"));
     }
 }

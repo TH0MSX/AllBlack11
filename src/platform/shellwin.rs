@@ -37,7 +37,9 @@ pub fn load_backup() -> ShellBackup {
 }
 
 pub fn save_backup(backup: &ShellBackup) {
-    if let Err(err) = super::wide::write_atomic(&shell_backup_path(), &format!("{}\n", backup.to_json())) {
+    if let Err(err) =
+        super::wide::write_atomic(&shell_backup_path(), &format!("{}\n", backup.to_json()))
+    {
         super::wide::log_line("error", &format!("could not save shell-backup.json: {err}"));
     }
 }
