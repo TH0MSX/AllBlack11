@@ -25,6 +25,19 @@ pub struct Picked {
     pub warning: Option<String>,
 }
 
+/// A config file that predates schema 2 (no `schemaVersion`, or 1). 3.5 can read it, but a
+/// 3.0 build cannot read what 3.5 saves, so the original is copied aside once.
+pub fn is_pre_schema_2(text: &str) -> bool {
+    match serde_json::from_str::<serde_json::Value>(text) {
+        Ok(value) => value
+            .get("schemaVersion")
+            .and_then(|v| v.as_u64())
+            .map(|v| v < 2)
+            .unwrap_or(true),
+        Err(_) => false,
+    }
+}
+
 pub fn pick(primary: Option<&str>, last_known_good: Option<&str>) -> Picked {
     let defaults = || parse_config(bundled_default_json()).expect("bundled config");
     let Some(text) = primary else {

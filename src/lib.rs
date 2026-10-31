@@ -9,6 +9,7 @@ mod effects;
 mod explain;
 mod inject;
 mod lkg;
+mod menu_model;
 mod legacy_policy;
 mod policy;
 mod presets;
@@ -52,7 +53,8 @@ pub use rules::{
     describe_conflict, find_conflicts, glob_match, rank, resolve, why_it_won, Conflict, ConflictKind,
     Criterion, Resolved, RuleMatch, Source, WindowIdentity,
 };
-pub use lkg::{pick as pick_config, Picked, Source as ConfigSource};
+pub use menu_model::{flatten as flatten_menu, Drawn as MenuDrawn, Item as MenuItem, ItemKind as MenuItemKind};
+pub use lkg::{is_pre_schema_2, pick as pick_config, Picked, Source as ConfigSource};
 pub use presets::{apply as apply_preset, Preset, PRESETS};
 pub use shell::{blacken_shell_slots, ShellBackup, SHELL_SLOT_BYTES};
 pub use snapshot::{format_snapshots, parse_snapshots, same_process, SnapshotFile, StoredSnapshot};

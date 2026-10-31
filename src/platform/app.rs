@@ -610,7 +610,16 @@ fn load_config() -> (crate::Config, Option<String>) {
     };
     let picked = crate::pick_config(Some(&primary), cfgio::load_lkg().as_deref());
     match picked.source {
-        crate::ConfigSource::Primary => cfgio::save_lkg(&primary),
+        crate::ConfigSource::Primary => {
+            if crate::lkg::is_pre_schema_2(&primary) {
+                // 3.5 saves a newer format a 3.0 build cannot read. Keep the original once.
+                let backup = path.with_file_name("config.pre-3.5.json");
+                if !backup.exists() {
+                    let _ = wide::write_atomic(&backup, &primary);
+                }
+            }
+            cfgio::save_lkg(&primary)
+        }
         _ => {
             if let Some(warning) = &picked.warning {
                 log_line("error", warning);

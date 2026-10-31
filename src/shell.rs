@@ -87,6 +87,24 @@ pub fn slots_are_black(palette: &[u8]) -> bool {
             .all(|slot| slot == BLACK_SLOT)
 }
 
+/// The values AllBlack11 writes. Restoring only happens while the registry still holds them.
+pub const OLED_WRITTEN: u32 = 1;
+pub const COLOR_PREVALENCE_WRITTEN: u32 = 1;
+pub const ENABLE_TRANSPARENCY_WRITTEN: u32 = 1;
+pub const SYSTEM_LIGHT_WRITTEN: u32 = 0;
+pub const DWM_COLOR_PREVALENCE_WRITTEN: u32 = 0;
+
+/// Compare-before-restore: the value is still the one AllBlack11 wrote, so putting the saved
+/// original back cannot overwrite something you or another program changed since.
+pub fn still_ours(current: &DwordSlot, written: u32) -> bool {
+    current.present && current.value == written
+}
+
+/// Same check for the three palette slots AllBlack11 blackens.
+pub fn palette_still_ours(current: &BinarySlot) -> bool {
+    current.present && slots_are_black(&current.bytes)
+}
+
 pub fn dword_matches(slot: &DwordSlot, value: u32) -> bool {
     slot.present && slot.value == value
 }
@@ -161,6 +179,27 @@ mod tests {
         .unwrap();
         assert!(!legacy.oled_taskbar.unwrap().already_applied);
         assert!(!legacy.accent_palette.unwrap().already_applied);
+    }
+
+    #[test]
+    fn restore_only_while_the_value_is_still_the_one_we_wrote() {
+        let slot = |present, value| DwordSlot { present, value, already_applied: false };
+        assert!(still_ours(&slot(true, OLED_WRITTEN), OLED_WRITTEN));
+        // Changed by the user or another program since: leave it alone.
+        assert!(!still_ours(&slot(true, 0), OLED_WRITTEN));
+        // Deleted since: nothing of ours to restore over.
+        assert!(!still_ours(&slot(false, 0), OLED_WRITTEN));
+        // A black-shell value that is legitimately zero.
+        assert!(still_ours(&slot(true, 0), SYSTEM_LIGHT_WRITTEN));
+
+        let mut bytes = vec![0u8; 32];
+        blacken_shell_slots(&mut bytes);
+        let ours = BinarySlot { present: true, bytes: bytes.clone(), already_applied: false };
+        assert!(palette_still_ours(&ours));
+        bytes[17] = 0x40; // Windows or the user changed the accent
+        let changed = BinarySlot { present: true, bytes, already_applied: false };
+        assert!(!palette_still_ours(&changed));
+        assert!(!palette_still_ours(&BinarySlot { present: false, bytes: vec![], already_applied: false }));
     }
 
     #[test]

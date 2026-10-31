@@ -43,31 +43,7 @@ const DT_TOP: u32 = 0x0000;
 const DT_BOTTOM: u32 = 0x0008;
 const DT_END_ELLIPSIS: u32 = 0x8000;
 
-#[derive(Clone, Copy, PartialEq, Eq)]
-pub enum ItemKind {
-    Title,
-    Action,
-    Checked(bool),
-    Submenu,
-    Separator,
-}
-
-pub struct Item {
-    pub id: u32,
-    pub label: String,
-    /// Optional second line that says what the item does.
-    pub hint: String,
-    pub kind: ItemKind,
-    pub enabled: bool,
-    pub children: Vec<Item>,
-}
-
-struct Drawn {
-    label: String,
-    hint: String,
-    kind: ItemKind,
-    enabled: bool,
-}
+pub use crate::menu_model::{Drawn, Item, ItemKind};
 
 thread_local! {
     static DRAWN: RefCell<Vec<Drawn>> = const { RefCell::new(Vec::new()) };
@@ -80,7 +56,7 @@ pub fn popup(owner: HWND, dark: bool, high_contrast: bool, items: &[Item]) -> u3
         return system_popup(owner, items);
     }
     MENU_DARK.store(dark, Ordering::Relaxed);
-    DRAWN.with(|drawn| drawn.borrow_mut().clear());
+    DRAWN.with(|drawn| *drawn.borrow_mut() = crate::menu_model::flatten(items));
     unsafe {
         let menu = build_themed(items);
         if menu.is_null() {
@@ -215,23 +191,17 @@ fn build_themed(items: &[Item]) -> HMENU {
         if menu.is_null() {
             return menu;
         }
-        fill_themed(menu, items);
+        fill_themed(menu, items, &mut 0);
         menu
     }
 }
 
-fn fill_themed(menu: HMENU, items: &[Item]) {
+/// `next` is the running pre-order index into `menu_model::flatten(items)`: an item takes its
+/// number before its children do.
+fn fill_themed(menu: HMENU, items: &[Item], next: &mut usize) {
     for item in items {
-        let index = DRAWN.with(|drawn| {
-            let mut drawn = drawn.borrow_mut();
-            drawn.push(Drawn {
-                label: item.label.clone(),
-                hint: item.hint.clone(),
-                kind: item.kind,
-                enabled: item.enabled,
-            });
-            drawn.len() - 1
-        });
+        let index = *next;
+        *next += 1;
         let mut flags = MF_OWNERDRAW;
         if !item.enabled || item.kind == ItemKind::Title {
             flags |= MF_GRAYED | MF_DISABLED;
@@ -246,7 +216,7 @@ fn fill_themed(menu: HMENU, items: &[Item]) {
         unsafe {
             if item.kind == ItemKind::Submenu {
                 let child = CreatePopupMenu();
-                fill_themed(child, &item.children);
+                fill_themed(child, &item.children, next);
                 AppendMenuW(menu, flags | MF_POPUP, child as usize, data);
             } else {
                 AppendMenuW(menu, flags, item.id as usize, data);
@@ -294,17 +264,6 @@ fn fill_system(menu: HMENU, items: &[Item]) {
 
 fn item_at(index: usize) -> Option<Drawn> {
     DRAWN.with(|drawn| drawn.borrow().get(index).cloned())
-}
-
-impl Clone for Drawn {
-    fn clone(&self) -> Self {
-        Self {
-            label: self.label.clone(),
-            hint: self.hint.clone(),
-            kind: self.kind,
-            enabled: self.enabled,
-        }
-    }
 }
 
 fn paint_item(draw: &DRAWITEMSTRUCT, item: Drawn) {

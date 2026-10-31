@@ -469,7 +469,7 @@ impl Rule {
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub struct Config {
     /// 1 = files written by 1.x to 3.0. 2 = 3.5. Missing means 1.
-    #[serde(default = "schema_v1", skip_serializing_if = "is_schema_v2")]
+    #[serde(default = "schema_v1")]
     pub schema_version: u32,
     #[serde(default = "default_true")]
     pub enabled: bool,
@@ -512,10 +512,6 @@ pub const SCHEMA_VERSION: u32 = 2;
 
 fn schema_v1() -> u32 {
     1
-}
-
-fn is_schema_v2(value: &u32) -> bool {
-    *value >= SCHEMA_VERSION
 }
 
 /// Focus Look: a restrained active-window accent and calmer inactive windows. Event-driven
@@ -905,5 +901,64 @@ mod tests {
         assert!(config.shell.oled_taskbar);
         assert!(!config.shell.black_shell);
         assert_eq!(config.defaults.backdrop, Some(Backdrop::Mica));
+    }
+
+    #[test]
+    fn a_3_0_config_loads_unchanged_and_gets_the_new_sections_with_defaults() {
+        let old = r##"{
+          "comment": "x", "enabled": true, "logging": true, "reapplyOnForeground": true,
+          "default": {"enabled": true, "darkMode": true, "backdrop": "mica",
+                      "captionColor": "#000000", "borderColor": "accent", "textColor": "#FFFFFF"},
+          "shell": {"oledTaskbar": true, "blackShell": false},
+          "captionHeight": null, "experimentalDarkLegacy": false,
+          "rules": [{"process": "mmc.exe", "backdrop": "tintedAcrylic", "acrylicOpacity": 0.7}],
+          "exclude": ["GeForceNOW.exe"], "excludeClasses": []
+        }"##;
+        let config = parse_config(old).expect("3.0 config parses");
+        assert_eq!(config.schema_version, SCHEMA_VERSION);
+        assert_eq!(config.rules.len(), 1);
+        assert_eq!(config.rules[0].process, "mmc.exe");
+        assert!(config.shell.oled_taskbar);
+        // New 3.5 sections arrive switched off or at their quiet defaults.
+        assert!(!config.focus.enabled);
+        assert!(config.reduce_effects.on_battery_saver);
+        assert_eq!(config.legacy.palette, "graphite");
+        assert!(!config.legacy.emulated_x64);
+    }
+
+    #[test]
+    fn saving_records_the_schema_version_and_round_trips() {
+        let config = parse_config(r#"{"rules":[{"class":"Notepad","backdrop":"none","priority":3}]}"#).unwrap();
+        let text = serde_json::to_string_pretty(&config).unwrap();
+        assert!(text.contains("\"schemaVersion\": 2"), "{text}");
+        let again = parse_config(&text).unwrap();
+        assert_eq!(again.rules[0].class.as_deref(), Some("Notepad"));
+        assert_eq!(again.rules[0].priority, 3);
+        // A rule that matches only by class has no empty "process" key in the file.
+        assert!(!text.contains("\"process\""));
+    }
+
+    #[test]
+    fn the_shipped_default_config_parses_and_has_no_rules_without_matchers() {
+        let config = parse_config(bundled_default_json()).unwrap();
+        assert!(config.rules.iter().all(|rule| rule.has_matcher()));
+    }
+
+    #[test]
+    fn unknown_fields_and_future_versions_are_reported_not_ignored() {
+        let err = parse_config(r#"{"colour":"red"}"#).unwrap_err();
+        assert!(err.contains("colour"), "{err}");
+        let err = parse_config(r#"{"schemaVersion":3}"#).unwrap_err();
+        assert!(err.contains("newer AllBlack11"), "{err}");
+        assert!(parse_config(r#"{"focus":{"enabled":true,"bogus":1}}"#).is_err());
+        assert!(parse_config(r#"{"rules":[{"process":"a.exe","priority":5000}]}"#).is_err());
+    }
+
+    #[test]
+    fn pre_3_5_files_are_recognised_so_they_can_be_backed_up_once() {
+        assert!(crate::lkg::is_pre_schema_2(r#"{"enabled":true}"#));
+        assert!(crate::lkg::is_pre_schema_2(r#"{"schemaVersion":1}"#));
+        assert!(!crate::lkg::is_pre_schema_2(r#"{"schemaVersion":2}"#));
+        assert!(!crate::lkg::is_pre_schema_2("{broken"));
     }
 }
