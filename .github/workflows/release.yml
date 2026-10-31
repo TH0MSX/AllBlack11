@@ -14,38 +14,28 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        include:
-          - target: aarch64-pc-windows-msvc
-            zip: AllBlack11-arm64.zip
-          - target: x86_64-pc-windows-msvc
-            zip: AllBlack11-x64.zip
+        arch: [arm64, x64]
     steps:
       - uses: actions/checkout@v4
       - uses: dtolnay/rust-toolchain@stable
         with:
-          targets: ${{ matrix.target }}
+          targets: aarch64-pc-windows-msvc,x86_64-pc-windows-msvc
       - name: Install LLVM resource tools and cargo-xwin
         run: |
           sudo apt-get update
-          sudo apt-get install -y llvm-18 zip
+          sudo apt-get install -y llvm-18 clang lld zip
           curl -fsSL -o /tmp/cargo-xwin.tar.gz \
             https://github.com/rust-cross/cargo-xwin/releases/download/v0.23.1/cargo-xwin-v0.23.1.x86_64-unknown-linux-musl.tar.gz
           tar -xzf /tmp/cargo-xwin.tar.gz -C /tmp
           sudo install -m 755 /tmp/cargo-xwin /usr/local/bin/cargo-xwin
-      - name: Build
-        run: cargo xwin build --release --target ${{ matrix.target }}
-      - name: Pack
-        run: |
-          stage=$(mktemp -d)
-          cp "target/${{ matrix.target }}/release/AllBlack11.exe" "$stage/"
-          cargo xwin build --release --target ${{ matrix.target }} --manifest-path hook/Cargo.toml
-          cp "hook/target/${{ matrix.target }}/release/AllBlack11Hook.dll" "$stage/"
-          cp install.ps1 uninstall.ps1 README.md config.default.json LICENSE CHANGELOG.md "$stage/"
-          (cd "$stage" && zip -r "$GITHUB_WORKSPACE/${{ matrix.zip }}" .)
+      - name: Build, check the CPU type of every binary, and pack
+        run: ./build.sh ${{ matrix.arch }}
       - uses: actions/upload-artifact@v4
         with:
-          name: ${{ matrix.zip }}
-          path: ${{ matrix.zip }}
+          name: release-${{ matrix.arch }}
+          path: |
+            dist/AllBlack11-Setup-${{ matrix.arch }}.exe
+            dist/AllBlack11-${{ matrix.arch }}.zip
 
   release:
     needs: build
@@ -69,9 +59,19 @@ jobs:
             echo "CHANGELOG.md has no section for ${version}" >&2
             exit 1
           fi
+      - name: Is this a preview?
+        id: kind
+        run: |
+          case "$GITHUB_REF_NAME" in
+            *-*) echo "preview=true" >> "$GITHUB_OUTPUT" ;;
+            *)   echo "preview=false" >> "$GITHUB_OUTPUT" ;;
+          esac
       - uses: softprops/action-gh-release@v2
         with:
-          files: dist/*.zip
+          files: |
+            dist/*.exe
+            dist/*.zip
           body_path: notes.md
+          prerelease: ${{ steps.kind.outputs.preview }}
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

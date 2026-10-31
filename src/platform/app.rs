@@ -37,6 +37,7 @@ use windows_sys::Win32::UI::WindowsAndMessaging::{
     WINEVENT_SKIPOWNPROCESS, WM_APP, WM_CLOSE, WM_CONTEXTMENU, WM_DESTROY, WM_DRAWITEM, WM_ENDSESSION,
     WM_LBUTTONDBLCLK, WM_LBUTTONUP, WM_MEASUREITEM, WM_QUERYENDSESSION, WM_QUIT, WM_RBUTTONUP,
     WM_SETTINGCHANGE, WM_TIMER,
+    MessageBoxW, IDYES, MB_DEFBUTTON2, MB_ICONQUESTION, MB_SETFOREGROUND, MB_TOPMOST, MB_YESNO,
     WNDCLASSEXW, WS_CHILD, WS_DLGFRAME, WS_EX_LAYERED, WS_EX_NOACTIVATE, WS_EX_NOREDIRECTIONBITMAP,
     WS_EX_TOOLWINDOW, WS_EX_TRANSPARENT, WS_POPUP,
 };
@@ -64,6 +65,8 @@ use super::metrics;
 use super::registry;
 use super::settings;
 use super::shellwin;
+use super::sysinfo;
+use super::cfgio;
 use super::uxtheme;
 use super::wide::{
     self, config_path, fill_wide, log_line, migrate_legacy_config, pcw, snapshot_path, to_wide,
@@ -92,6 +95,11 @@ const CMD_EXIT: u32 = 6;
 const CMD_OLED: u32 = 7;
 const CMD_BLACK_SHELL: u32 = 8;
 const CMD_SETTINGS: u32 = 9;
+const CMD_RESTART_EXPLORER: u32 = 10;
+const CMD_OPEN_FOLDER: u32 = 11;
+const CMD_DIAGNOSTICS: u32 = 12;
+const CMD_PRESET_BASE: u32 = 20;
+const WM_EXPLORER_DONE: u32 = WM_APP + 7;
 const TIMER_ACCENT: usize = 3;
 const TIMER_CLICK: usize = 4;
 
@@ -155,11 +163,22 @@ struct App {
     swca_failed: HashSet<u32>,
 }
 
+/// `--quiet` keeps the recovery commands from popping a message box when they have no
+/// console, which is how Setup runs them.
+static QUIET: AtomicBool = AtomicBool::new(false);
+
+fn say(text: &str) {
+    if !QUIET.load(Ordering::Relaxed) {
+        wide::emit(text);
+    }
+}
+
 pub fn start() -> i32 {
     std::panic::set_hook(Box::new(|info| {
         log_line("panic", &info.to_string());
     }));
     let args: Vec<String> = std::env::args().skip(1).collect();
+    QUIET.store(args.iter().any(|arg| arg == "--quiet"), Ordering::Relaxed);
     if args
         .iter()
         .any(|arg| arg == "--help" || arg == "-h" || arg == "/?")
@@ -177,7 +196,13 @@ pub fn start() -> i32 {
     if args.iter().any(|arg| arg == "--exit") {
         return cmd_exit();
     }
-    if let Some(unknown) = args.first() {
+    if args.iter().any(|arg| arg == "--restart-explorer") {
+        return cmd_restart_explorer();
+    }
+    if args.iter().any(|arg| arg == "--restore") {
+        return cmd_restore();
+    }
+    if let Some(unknown) = args.iter().find(|arg| arg.as_str() != "--quiet") {
         wide::emit(&format!("Unknown argument: {unknown}\n\n{}", help_text()));
         return 2;
     }
@@ -199,7 +224,11 @@ fn help_text() -> String {
          AllBlack11.exe           Start the tray app\n\
          AllBlack11.exe --exit    Restore themed windows and quit\n\
          Settings                 Tray menu, or double-click the icon\n\
-         AllBlack11.exe --check   Validate config.json (also writes %APPDATA%\\AllBlack11\\check.txt)\n\
+         AllBlack11.exe --check   Validate config.json and print a diagnostics report\n\
+                                  (also writes %APPDATA%\\AllBlack11\\check.txt)\n\
+         AllBlack11.exe --restart-explorer  Restart the taskbar, Start and desktop\n\
+         AllBlack11.exe --quiet   With --restore or --restart-explorer: no message box\n\
+         AllBlack11.exe --restore Quit, undo the shell tweaks and CaptionHeight, keep the config\n\
          AllBlack11.exe --version Print the version\n\
          AllBlack11.exe --help    Show this help\n\
          \n\
@@ -232,6 +261,7 @@ fn cmd_check() -> i32 {
          AccentColorMenu: 0x{accent:08X} ({rgb})\n\
          Windows build: {build}\n\
          High contrast: {hc}\n\
+         Architecture: {arch}\n\
          Backdrop API (38): {backdrop}\n\
          \n\
          Cross-process DWM attributes this build will set:\n\
@@ -251,6 +281,7 @@ fn cmd_check() -> i32 {
         summary = summarize(&config, accent),
         rgb = hex_rgb(accent),
         hc = dwm::high_contrast_enabled(),
+        arch = sysinfo::arch_line(),
         backdrop = if build >= 22621 {
             "yes"
         } else {
@@ -265,6 +296,10 @@ fn cmd_check() -> i32 {
     let mut report = report;
     if build != 0 && build < 22000 {
         report.push_str("This PC is older than Windows 11. The tray app will refuse to start.\n");
+    }
+    if let Some(advice) = sysinfo::arch_status().advice() {
+        report.push_str(advice);
+        report.push('\n');
     }
     publish_check(&report, 0)
 }
@@ -282,6 +317,26 @@ fn publish_check(report: &str, code: i32) -> i32 {
     code
 }
 
+/// Write the same report as `--check` and open it in the default editor.
+fn cmd_check_to_file() {
+    let path = wide::config_dir().join("check.txt");
+    let config = cfgio::load();
+    let accent = registry::accent_bgr();
+    let build = dwm::windows_build();
+    let report = format!(
+        "AllBlack11 {version}\nArchitecture: {arch}\nWindows build: {build}\nHigh contrast: {hc}\n{summary}\nAccentColorMenu: 0x{accent:08X}\nConfig: {cfg}\nData folder: {dir}\n",
+        version = env!("CARGO_PKG_VERSION"),
+        arch = sysinfo::arch_line(),
+        hc = dwm::high_contrast_enabled(),
+        summary = summarize(&config, accent),
+        cfg = config_path().display(),
+        dir = wide::config_dir().display(),
+    );
+    if wide::write_atomic(&path, &report).is_ok() {
+        let _ = registry::open_file(&path);
+    }
+}
+
 fn cmd_exit() -> i32 {
     let name = to_wide("Local\\AllBlack11.Exit");
     let handle = unsafe { OpenEventW(EVENT_MODIFY_STATE, 0, pcw(&name)) };
@@ -292,6 +347,51 @@ fn cmd_exit() -> i32 {
         SetEvent(handle);
         CloseHandle(handle);
     }
+    0
+}
+
+fn cmd_restart_explorer() -> i32 {
+    match sysinfo::restart_explorer_blocking() {
+        Ok(text) => {
+            say(&format!("{text}\n"));
+            0
+        }
+        Err(err) => {
+            say(&format!("{err}\n"));
+            1
+        }
+    }
+}
+
+/// Recovery path that works without the tray: quit, put the shell registry values and
+/// CaptionHeight back from their backups, and switch the shell flags off in the config.
+fn cmd_restore() -> i32 {
+    cmd_exit();
+    std::thread::sleep(std::time::Duration::from_millis(1500));
+    let mut backup = shellwin::load_backup();
+    let mut notes = Vec::new();
+    match shellwin::disable_oled(&mut backup) {
+        Ok(()) => notes.push("OLED taskbar: restored".to_string()),
+        Err(err) => notes.push(format!("OLED taskbar: {err}")),
+    }
+    match shellwin::disable_black_shell(&mut backup) {
+        Ok(()) => notes.push("Black shell: restored".to_string()),
+        Err(err) => notes.push(format!("Black shell: {err}")),
+    }
+    match metrics::restore_caption_height() {
+        Ok(()) => notes.push("CaptionHeight: restored (sign out to see it)".to_string()),
+        Err(err) => notes.push(format!("CaptionHeight: {err}")),
+    }
+    let path = config_path();
+    if let Ok(text) = std::fs::read_to_string(&path) {
+        let off = set_shell_flag(&text, "oledTaskbar", false)
+            .and_then(|text| set_shell_flag(&text, "blackShell", false));
+        if let Ok(updated) = off {
+            let _ = wide::write_atomic(&path, &format!("{}\n", updated.trim_end()));
+        }
+    }
+    shellwin::broadcast_immersive_color();
+    say(&format!("{}\n", notes.join("\n")));
     0
 }
 
@@ -453,7 +553,7 @@ fn load_config() -> (crate::Config, Option<String>) {
     migrate_legacy_config();
     let bundled = || parse_config(bundled_default_json()).expect("bundled config");
     if !path.exists() {
-        if std::fs::write(&path, bundled_default_json()).is_err() {
+        if wide::write_atomic(&path, bundled_default_json()).is_err() {
             log_line("error", "could not write the default config");
         }
         return (bundled(), None);
@@ -571,7 +671,31 @@ unsafe extern "system" fn wndproc(hwnd: HWND, msg: u32, wparam: WPARAM, lparam: 
             return 1;
         }
         settings::WM_SETTINGS_APPLIED => {
-            with_app(|app| app.apply_external_config());
+            // Broadcast outside the state lock: this window receives its own broadcast.
+            if with_app(|app| app.apply_external_config()).unwrap_or(false) {
+                shellwin::broadcast_immersive_color();
+            }
+            return 0;
+        }
+        settings::WM_RUN_COMMAND => {
+            on_command(hwnd, wparam as u32);
+            return 0;
+        }
+        settings::WM_RESTART_EXPLORER => {
+            request_explorer_restart(hwnd);
+            return 0;
+        }
+        WM_EXPLORER_DONE => {
+            let ok = wparam != 0;
+            let text = sysinfo::take_result();
+            let repaint = with_app(|app| {
+                app.balloon("AllBlack11", &text, !ok);
+                app.reapply_black_palette()
+            })
+            .unwrap_or(false);
+            if repaint {
+                shellwin::broadcast_immersive_color();
+            }
             return 0;
         }
         WM_APPLY => {
@@ -689,35 +813,93 @@ fn show_menu(hwnd: HWND) {
         return;
     };
     uxtheme::allow_dark_menus(!contrast);
+    let arch = match sysinfo::arch_status() {
+        crate::ArchStatus::NativeArm64 => " · ARM64",
+        crate::ArchStatus::X64OnArm64 => " · x64 emulated",
+        crate::ArchStatus::NativeX64 => " · x64",
+        crate::ArchStatus::Other => "",
+    };
+    let presets: Vec<Item> = crate::PRESETS
+        .iter()
+        .enumerate()
+        .map(|(index, preset)| {
+            hinted(
+                CMD_PRESET_BASE + index as u32,
+                preset.name,
+                preset.blurb,
+                ItemKind::Action,
+                true,
+            )
+        })
+        .collect();
     let items = vec![
-        item(0, "AllBlack11", ItemKind::Title, false),
-        item(0, "", ItemKind::Separator, true),
         item(
+            0,
+            &format!("AllBlack11 {}{arch}", display_version()),
+            ItemKind::Title,
+            false,
+        ),
+        item(0, "", ItemKind::Separator, true),
+        hinted(
             CMD_ENABLE,
             if contrast { "Enabled (high contrast)" } else { "Enabled" },
+            "Master switch for dark title bars, borders and backdrops.",
             ItemKind::Checked(enabled),
             !contrast,
         ),
-        item(CMD_RELOAD, "Reload config", ItemKind::Action, true),
-        item(CMD_OPEN, "Open config", ItemKind::Action, true),
-        item(CMD_SETTINGS, "Settings…", ItemKind::Action, true),
-        item(CMD_RESET, "Reset all windows", ItemKind::Action, true),
+        hinted(
+            CMD_SETTINGS,
+            "Settings…",
+            "Every option, with a live preview and an explanation.",
+            ItemKind::Action,
+            true,
+        ),
+        submenu("Presets", presets),
         item(0, "", ItemKind::Separator, true),
-        Item {
-            id: 0,
-            label: "Shell".into(),
-            kind: ItemKind::Submenu,
-            enabled: true,
-            children: vec![
-                item(CMD_OLED, "OLED taskbar", ItemKind::Checked(oled), true),
-                item(
+        submenu(
+            "Shell",
+            vec![
+                hinted(
+                    CMD_OLED,
+                    "OLED taskbar",
+                    "Pure black taskbar through Windows' own OLED flag.",
+                    ItemKind::Checked(oled),
+                    true,
+                ),
+                hinted(
                     CMD_BLACK_SHELL,
                     "Black Start, taskbar & notification center",
+                    "Blacks out the accent palette. Undone when unchecked.",
                     ItemKind::Checked(black_shell),
                     true,
                 ),
+                item(0, "", ItemKind::Separator, true),
+                hinted(
+                    CMD_RESTART_EXPLORER,
+                    "Restart Explorer…",
+                    "Reloads taskbar, Start and desktop. File Explorer windows close.",
+                    ItemKind::Action,
+                    true,
+                ),
             ],
-        },
+        ),
+        submenu(
+            "Maintenance",
+            vec![
+                item(CMD_RELOAD, "Reload config", ItemKind::Action, true),
+                item(CMD_OPEN, "Open config", ItemKind::Action, true),
+                item(CMD_OPEN_FOLDER, "Open data folder", ItemKind::Action, true),
+                item(CMD_DIAGNOSTICS, "Write diagnostics report", ItemKind::Action, true),
+                item(0, "", ItemKind::Separator, true),
+                hinted(
+                    CMD_RESET,
+                    "Reset all windows",
+                    "Put every themed window back until the next reload.",
+                    ItemKind::Action,
+                    true,
+                ),
+            ],
+        ),
         item(0, "", ItemKind::Separator, true),
         item(
             CMD_AUTOSTART,
@@ -733,14 +915,67 @@ fn show_menu(hwnd: HWND) {
     settings::notify_external_change();
 }
 
+/// Version for display: the Cargo version without the `.0` patch of a preview.
+pub fn display_version() -> String {
+    let version = env!("CARGO_PKG_VERSION");
+    match version.split_once("-preview") {
+        Some((base, _)) => format!("{} Preview", base.trim_end_matches(".0")),
+        None => version.to_string(),
+    }
+}
+
 fn item(id: u32, label: &str, kind: ItemKind, enabled: bool) -> Item {
+    hinted(id, label, "", kind, enabled)
+}
+
+fn hinted(id: u32, label: &str, hint: &str, kind: ItemKind, enabled: bool) -> Item {
     Item {
         id,
         label: label.into(),
+        hint: hint.into(),
         kind,
         enabled,
         children: Vec::new(),
     }
+}
+
+fn submenu(label: &str, children: Vec<Item>) -> Item {
+    Item {
+        id: 0,
+        label: label.into(),
+        hint: String::new(),
+        kind: ItemKind::Submenu,
+        enabled: true,
+        children,
+    }
+}
+
+/// Ask, then restart Explorer on a worker thread. Called from the tray menu and Settings.
+fn request_explorer_restart(hwnd: HWND) {
+    if sysinfo::restart_in_progress() {
+        with_app(|app| app.balloon("AllBlack11", "Explorer is already restarting.", false));
+        return;
+    }
+    let title = to_wide("Restart Explorer");
+    let text = to_wide(
+        "This restarts the taskbar, Start menu and desktop (explorer.exe).\n\n\
+         Open File Explorer windows will close, so save anything in them first. \
+         Other apps keep running. Windows brings Explorer back by itself in a few seconds.\n\n\
+         Restart Explorer now?",
+    );
+    let answer = unsafe {
+        MessageBoxW(
+            null_mut(),
+            pcw(&text),
+            pcw(&title),
+            MB_YESNO | MB_ICONQUESTION | MB_DEFBUTTON2 | MB_TOPMOST | MB_SETFOREGROUND,
+        )
+    };
+    if answer != IDYES {
+        return;
+    }
+    with_app(|app| app.balloon("AllBlack11", "Restarting Explorer…", false));
+    sysinfo::restart_explorer_async(hwnd, WM_EXPLORER_DONE);
 }
 
 fn on_command(hwnd: HWND, command: u32) {
@@ -767,6 +1002,22 @@ fn on_command(hwnd: HWND, command: u32) {
         }
         CMD_SETTINGS => {
             settings::open(hwnd);
+        }
+        CMD_RESTART_EXPLORER => request_explorer_restart(hwnd),
+        CMD_OPEN_FOLDER => {
+            if let Err(err) = registry::open_file(&wide::config_dir()) {
+                with_app(|app| app.balloon("AllBlack11", &err, true));
+            }
+        }
+        CMD_DIAGNOSTICS => {
+            cmd_check_to_file();
+        }
+        id if (CMD_PRESET_BASE..CMD_PRESET_BASE + crate::PRESETS.len() as u32).contains(&id) => {
+            let broadcast = with_app(|app| app.apply_preset((id - CMD_PRESET_BASE) as usize))
+                .unwrap_or(false);
+            if broadcast {
+                shellwin::broadcast_immersive_color();
+            }
         }
         CMD_AUTOSTART => {
             let enabled = registry::autostart_enabled();
@@ -1048,7 +1299,7 @@ impl App {
         if let Some(parent) = self.config_file.parent() {
             let _ = std::fs::create_dir_all(parent);
         }
-        let _ = std::fs::write(&self.config_file, bundled_default_json());
+        let _ = wide::write_atomic(&self.config_file, bundled_default_json());
     }
 
     fn persist_enabled(&self) {
@@ -1060,7 +1311,7 @@ impl App {
         } else {
             set_enabled_flag(&text, self.config.enabled).unwrap_or_else(|_| text)
         };
-        if std::fs::write(&self.config_file, format!("{updated}\n")).is_err() {
+        if wide::write_atomic(&self.config_file, &format!("{updated}\n")).is_err() {
             log_line("error", "could not update enabled in config.json");
         }
     }
@@ -1105,25 +1356,26 @@ impl App {
         legacy::consider(key_to_hwnd(key), &self.config.exclude);
     }
 
-    fn apply_external_config(&mut self) {
+    /// Returns true when a shell value changed and Windows should be told.
+    fn apply_external_config(&mut self) -> bool {
         let old = self.config.clone();
         let text = match std::fs::read_to_string(&self.config_file) {
             Ok(text) => text,
             Err(err) => {
                 self.balloon("AllBlack11", &format!("Could not read config: {err}"), true);
-                return;
+                return false;
             }
         };
         let new = match parse_config(&text) {
             Ok(config) => config,
             Err(err) => {
                 self.balloon("AllBlack11", &format!("Config not applied: {err}"), true);
-                return;
+                return false;
             }
         };
         self.config = new;
         self.config.caption_height = normalize_caption_height(self.config.caption_height);
-        self.reconcile_shell(&old);
+        let shell_changed = self.reconcile_shell(&old);
         if normalize_caption_height(old.caption_height) != self.config.caption_height {
             if let Err(err) = metrics::apply_caption_height(self.config.caption_height) {
                 self.balloon("AllBlack11", &err, true);
@@ -1159,19 +1411,39 @@ impl App {
         }
         self.update_tray();
         uxtheme::allow_dark_menus(!self.high_contrast);
+        shell_changed
     }
 
-    fn reconcile_shell(&mut self, old: &crate::Config) {
+    /// Apply a preset from the tray: write the config, then take the same path as Settings.
+    fn apply_preset(&mut self, index: usize) -> bool {
+        let mut config = cfgio::load();
+        if !crate::apply_preset(&mut config, index) {
+            return false;
+        }
+        if let Err(err) = cfgio::store(&config) {
+            self.balloon("AllBlack11", &err, true);
+            return false;
+        }
+        let changed = self.apply_external_config();
+        if let Some(preset) = crate::PRESETS.get(index) {
+            self.balloon("AllBlack11", &format!("Preset applied: {}.", preset.name), false);
+        }
+        changed
+    }
+
+    fn reconcile_shell(&mut self, old: &crate::Config) -> bool {
         let want_oled = self.config.shell.oled_taskbar;
         let want_black = self.config.shell.black_shell;
+        let mut changed = false;
         if want_oled != old.shell.oled_taskbar {
             self.config.shell.oled_taskbar = old.shell.oled_taskbar;
-            let _ = self.set_oled(want_oled);
+            changed |= self.set_oled(want_oled);
         }
         if want_black != old.shell.black_shell {
             self.config.shell.black_shell = old.shell.black_shell;
-            let _ = self.set_black_shell(want_black);
+            changed |= self.set_black_shell(want_black);
         }
+        changed
     }
 
     fn handle_batch(&mut self, batch: Vec<(i64, u32)>) {
@@ -1445,10 +1717,7 @@ impl App {
         self.prune_dead();
         let items: Vec<StoredSnapshot> = self.originals.values().cloned().collect();
         let text = format_snapshots(&items);
-        if let Some(parent) = snapshot_path().parent() {
-            let _ = std::fs::create_dir_all(parent);
-        }
-        if std::fs::write(snapshot_path(), format!("{text}\n")).is_ok() {
+        if wide::write_atomic(&snapshot_path(), &format!("{text}\n")).is_ok() {
             self.dirty = false;
         }
     }
@@ -1593,7 +1862,7 @@ impl App {
     fn persist_shell(&self, field: &str, enabled: bool) {
         let text = std::fs::read_to_string(&self.config_file).unwrap_or_default();
         let updated = set_shell_flag(&text, field, enabled).unwrap_or(text);
-        if std::fs::write(&self.config_file, format!("{updated}\n")).is_err() {
+        if wide::write_atomic(&self.config_file, &format!("{updated}\n")).is_err() {
             log_line("error", "could not save the shell toggle");
         }
     }

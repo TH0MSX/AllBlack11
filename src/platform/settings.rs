@@ -1,48 +1,64 @@
-//! Native settings window. No WebView and no extra crate: one Win32 window, GDI
+//! Native Settings window. No WebView and no extra crate: one Win32 window, GDI
 //! painting, and a handful of EDIT controls.
 //!
-//! The frame uses Mica and immersive dark mode. The client is a solid near-black
-//! fill so text stays sharp on OLED and the window does not need a composition
-//! buffer of its own. Controls apply by rewriting `config.json` and posting
-//! `WM_SETTINGS_APPLIED` back to the tray window. Sliders commit when the thumb
-//! is released so a drag does not restyle every window on each pixel.
+//! Layout rule: every coordinate in this file is *logical* (96 dpi) and is scaled
+//! exactly once, in `Canvas`, `Ui::px`, and the mouse mapping. Painting, hit-testing,
+//! and the EDIT controls all read the same logical rectangles, so they cannot drift
+//! apart on a 150% or 200% ARM laptop panel.
+//!
+//! The top of the window is a pinned live preview (a mock window, Start menu and
+//! taskbar redrawn from the current config) and a status line. Everything under it
+//! scrolls. Controls apply by rewriting `config.json` and posting
+//! `WM_SETTINGS_APPLIED` to the tray window. Sliders commit on release.
 
 use std::sync::atomic::{AtomicIsize, Ordering};
 
 use windows_sys::Win32::Foundation::{HWND, LPARAM, LRESULT, POINT, RECT, WPARAM};
 use windows_sys::Win32::Graphics::Dwm::DwmSetWindowAttribute;
 use windows_sys::Win32::Graphics::Gdi::{
-    CreateFontW, CreatePen, CreateSolidBrush, DeleteObject, DrawTextW, Ellipse, FillRect,
-    GetStockObject, InvalidateRect, MonitorFromPoint, RoundRect, SelectObject, SetBkColor, SetBkMode,
-    SetTextColor, HBRUSH, HFONT, MONITORINFO, MONITOR_DEFAULTTONEAREST,
-    NULL_PEN, PS_SOLID, TRANSPARENT,
+    BitBlt, CreateCompatibleBitmap, CreateCompatibleDC, CreateFontW, CreatePen, CreateRectRgn,
+    CreateRoundRectRgn, CreateSolidBrush, DeleteDC, DeleteObject, DrawTextW, Ellipse, FillRect,
+    GetStockObject, IntersectClipRect, InvalidateRect, LineTo, MonitorFromPoint, MoveToEx,
+    RoundRect, SelectClipRgn, SelectObject, SetBkColor, SetBkMode, SetTextColor, SetViewportOrgEx, HBRUSH, HDC, HFONT,
+    MONITORINFO, MONITOR_DEFAULTTONEAREST, NULL_BRUSH, NULL_PEN, PS_SOLID, SRCCOPY, TRANSPARENT,
 };
 use windows_sys::Win32::System::LibraryLoader::GetModuleHandleW;
 use windows_sys::Win32::UI::Controls::SetWindowTheme;
-use windows_sys::Win32::UI::Input::KeyboardAndMouse::GetFocus;
-use windows_sys::Win32::UI::HiDpi::GetDpiForWindow;
+use windows_sys::Win32::UI::HiDpi::{GetDpiForMonitor, GetDpiForWindow, MDT_EFFECTIVE_DPI};
+use windows_sys::Win32::UI::Input::KeyboardAndMouse::{GetFocus, ReleaseCapture, SetCapture};
 use windows_sys::Win32::UI::WindowsAndMessaging::{
-    CreateWindowExW, DefWindowProcW, DestroyWindow, GetClientRect, GetCursorPos,
-    GetWindowTextW, LoadCursorW, PostMessageW, RegisterClassExW, SetForegroundWindow, SetWindowPos,
-    SetWindowTextW, ShowWindow, CREATESTRUCTW, CS_HREDRAW, CS_VREDRAW, CW_USEDEFAULT, EN_KILLFOCUS,
-    GWL_STYLE, HMENU, IDC_ARROW, SW_SHOW, SWP_NOZORDER, WM_CLOSE, WM_COMMAND, WM_CREATE,
-    WM_CTLCOLOREDIT,
-    WM_DESTROY, WM_ERASEBKGND, WM_KEYDOWN, WM_LBUTTONDOWN, WM_LBUTTONUP, WM_MOUSEMOVE, WM_MOUSEWHEEL,
-    WM_PAINT, WM_SETFONT, WNDCLASSEXW, WS_CAPTION, WS_CHILD, WS_CLIPCHILDREN, WS_MINIMIZEBOX,
-    WS_OVERLAPPED, WS_SYSMENU, WS_TABSTOP, WS_VISIBLE,
+    CreateWindowExW, DefWindowProcW, DestroyWindow, GetClientRect, GetCursorPos, GetWindowTextW,
+    LoadCursorW, PostMessageW, RegisterClassExW, SendMessageW, SetForegroundWindow, SetWindowPos,
+    SetWindowTextW, ShowWindow, CREATESTRUCTW, CS_HREDRAW, CS_VREDRAW, CW_USEDEFAULT, HMENU,
+    IDC_ARROW, MINMAXINFO, SWP_HIDEWINDOW, SWP_NOACTIVATE, SWP_NOZORDER, SWP_SHOWWINDOW, SW_SHOW,
+    WM_CLOSE, WM_COMMAND, WM_CREATE, WM_CTLCOLOREDIT, WM_DESTROY, WM_ERASEBKGND, WM_KEYDOWN,
+    WM_LBUTTONDOWN, WM_LBUTTONUP, WM_MOUSEMOVE, WM_MOUSEWHEEL, WM_PAINT, WM_SETFONT, WM_SIZE,
+    WNDCLASSEXW, WS_CHILD, WS_CLIPCHILDREN, WS_OVERLAPPEDWINDOW, WS_TABSTOP, WS_VISIBLE,
 };
 
 use crate::config::{
     base_style, file_name, normalize_caption_height, parse_color, Backdrop, Color, Config, Corners,
     Opacity, PartialStyle, Rule, Style,
 };
+use crate::{ArchStatus, PRESETS};
 
+use super::cfgio;
 use super::registry;
+use super::sysinfo;
 use super::uxtheme;
-use super::wide::{config_path, pcw, to_wide};
+use super::wide::{config_dir, log_path, pcw, to_wide};
 
 pub const WM_SETTINGS_APPLIED: u32 = windows_sys::Win32::UI::WindowsAndMessaging::WM_APP + 4;
 const WM_REFRESH: u32 = windows_sys::Win32::UI::WindowsAndMessaging::WM_APP + 5;
+pub const WM_RESTART_EXPLORER: u32 = windows_sys::Win32::UI::WindowsAndMessaging::WM_APP + 6;
+/// `wparam` is a tray command id the host should run, such as "write diagnostics".
+pub const WM_RUN_COMMAND: u32 = windows_sys::Win32::UI::WindowsAndMessaging::WM_APP + 8;
+pub const CMD_DIAGNOSTICS: u32 = 12;
+
+const WM_DPICHANGED: u32 = 0x02E0;
+const WM_GETMINMAXINFO: u32 = 0x0024;
+const EN_CHANGE: u16 = 0x0300;
+const EN_KILLFOCUS: u16 = 0x0200;
 
 const ID_CAPTION: u16 = 101;
 const ID_BORDER: u16 = 102;
@@ -51,13 +67,27 @@ const ID_TINT: u16 = 104;
 const ID_RULE: u16 = 105;
 const ID_EXCLUDE: u16 = 106;
 
-const BG: u32 = 0x001B_1B1B;
-const CARD: u32 = 0x0026_2626;
-const TEXT: u32 = 0x00F3_F3F3;
-const MUTED: u32 = 0x00A6_A6A6;
-const TRACK: u32 = 0x003C_3C3C;
-const ACCENT: u32 = 0x0074_8501;
-const EDIT_BG: u32 = 0x002E_2E2E;
+// Colors are COLORREF (0x00BBGGRR).
+const BG: u32 = 0x0000_0000;
+const CARD: u32 = 0x0012_1212;
+const CARD_EDGE: u32 = 0x0028_2828;
+const CARD_HI: u32 = 0x0024_2424;
+const TEXT: u32 = 0x00FF_FFFF;
+const MUTED: u32 = 0x00A0_A0A0;
+const TRACK: u32 = 0x0050_5050;
+const EDIT_BG: u32 = 0x001E_1E1E;
+/// Gap between cards, and card inner padding, in logical pixels.
+const GAP: i32 = 4;
+const PAD: i32 = 16;
+
+// Logical layout.
+const PREVIEW_H: i32 = 176;
+const STATUS_H: i32 = 28;
+const TOP: i32 = PREVIEW_H + STATUS_H;
+const MARGIN: i32 = 20;
+const MIN_W: i32 = 480;
+const MIN_H: i32 = 520;
+const LIST_LINE: i32 = 24;
 
 static SETTINGS: AtomicIsize = AtomicIsize::new(0);
 
@@ -70,19 +100,32 @@ struct Edits {
     exclude: HWND,
 }
 
+struct Fonts {
+    body: HFONT,
+    small: HFONT,
+    head: HFONT,
+}
+
 struct Ui {
     owner: HWND,
     config: Config,
     autostart: bool,
     rule: Option<usize>,
     exclude_sel: Option<usize>,
+    preset_sel: Option<usize>,
     scroll: i32,
     drag: Option<Slider>,
     status: String,
     edits: Edits,
-    font: HFONT,
+    fonts: Fonts,
     bg_brush: HBRUSH,
     edit_brush: HBRUSH,
+    /// Device pixels per logical pixel.
+    k: f32,
+    accent: u32,
+    build: u32,
+    arch_line: String,
+    arch: ArchStatus,
 }
 
 #[derive(Clone, Copy, PartialEq, Eq)]
@@ -94,13 +137,16 @@ enum Slider {
 enum Row {
     Header(&'static str),
     Note(&'static str),
-    Toggle(Toggle, &'static str),
-    Choice(Choice, &'static str),
-    Slider(Slider, &'static str),
-    Color(u16, &'static str),
+    Toggle(Toggle),
+    Choice(Choice),
+    Slider(Slider),
+    Color(u16),
+    Presets,
     RuleList,
     ExcludeList,
-    Button(Button, &'static str),
+    Action(Button),
+    AddField(Button),
+    About(Vec<String>),
 }
 
 #[derive(Clone, Copy, PartialEq, Eq)]
@@ -131,6 +177,10 @@ enum Button {
     RemoveRule,
     AddExclude,
     RemoveExclude,
+    RestartExplorer,
+    OpenFolder,
+    OpenLog,
+    Diagnostics,
 }
 
 struct Laid {
@@ -138,6 +188,163 @@ struct Laid {
     h: i32,
     row: Row,
 }
+
+// ---------------------------------------------------------------------------
+// Copy for every option: what it is, and what it will do.
+// ---------------------------------------------------------------------------
+
+fn toggle_meta(id: Toggle) -> (&'static str, &'static str) {
+    match id {
+        Toggle::Theme => (
+            "Theme windows",
+            "Master switch. Off puts every window back exactly as Windows drew it.",
+        ),
+        Toggle::DefaultOn => (
+            "Default look on",
+            "Applies the look below to every app that has no rule of its own.",
+        ),
+        Toggle::RuleOn => (
+            "This rule is on",
+            "Off leaves this one app untouched even when the default look is on.",
+        ),
+        Toggle::Dark => (
+            "Dark title bar",
+            "Dark caption buttons and system menu. Keeps light-theme apps from showing a white bar.",
+        ),
+        Toggle::Blur => (
+            "Blur while dragging",
+            "Tinted acrylic drops to a cheaper blur during a drag or resize, then returns. Smoother moves.",
+        ),
+        Toggle::Oled => (
+            "OLED taskbar",
+            "Sets Windows' own OLED taskbar flag so the taskbar paints pure black. Restored when you turn it off.",
+        ),
+        Toggle::Black => (
+            "Black Start, taskbar and notification center",
+            "Writes black into the accent palette and turns on transparency and the dark system theme. Your old values come back when you turn it off.",
+        ),
+        Toggle::Autostart => (
+            "Start with Windows",
+            "Launches AllBlack11 when you sign in. One value under HKCU Run. No administrator rights.",
+        ),
+        Toggle::Reapply => (
+            "Reapply when a window is focused",
+            "Re-checks a window each time you switch to it, so apps that repaint their frame stay black.",
+        ),
+        Toggle::Logging => (
+            "Write a log",
+            "Writes allblack11.log in the data folder, rotated at 256 KB. Handy when reporting a bug.",
+        ),
+        Toggle::Experimental => (
+            "Dark legacy windows",
+            "Recolors classic dialogs such as Run by loading a small DLL into non-elevated apps of the same CPU type. Off by default. Antivirus or anti-cheat software may object.",
+        ),
+    }
+}
+
+fn choice_desc(ui: &Ui, id: Choice) -> &'static str {
+    let style = ui.current_style();
+    match id {
+        Choice::Backdrop => match style.backdrop {
+            Backdrop::Auto => "Let Windows pick the material. Click to cycle.",
+            Backdrop::None => "No material. The app's own background shows. Click to cycle.",
+            Backdrop::Mica => "Soft, wallpaper-tinted surface. Needs Windows 11 22621 or newer. Click to cycle.",
+            Backdrop::MicaAlt => "Mica with a stronger, darker tint. Click to cycle.",
+            Backdrop::Acrylic => "Windows' frosted glass. Its tint cannot be changed. Click to cycle.",
+            Backdrop::TintedAcrylic => "Frosted glass in your own tint and opacity, set below. Click to cycle.",
+        },
+        Choice::Corners => match style.corners {
+            Corners::Default => "Windows decides, which is rounded on Windows 11. Click to cycle.",
+            Corners::Round => "Standard rounded corners. Click to cycle.",
+            Corners::Small => "A smaller corner radius. Click to cycle.",
+            Corners::Square => "Sharp corners, like Windows 10. Click to cycle.",
+        },
+    }
+}
+
+fn choice_title(id: Choice) -> &'static str {
+    match id {
+        Choice::Backdrop => "Backdrop",
+        Choice::Corners => "Corners",
+    }
+}
+
+fn color_label(id: u16) -> &'static str {
+    match id {
+        ID_CAPTION => "Title bar color",
+        ID_BORDER => "Border color",
+        ID_TEXT => "Title text color",
+        _ => "Acrylic tint",
+    }
+}
+
+fn slider_meta(id: Slider) -> (&'static str, &'static str) {
+    match id {
+        Slider::Opacity => (
+            "Acrylic opacity",
+            "How strongly the tint covers the blur. Only used by the tinted acrylic backdrop.",
+        ),
+        Slider::Caption => (
+            "Legacy title bar height",
+            "Changes the classic title bar height. Windows applies it at your next sign-in. System restores your value.",
+        ),
+    }
+}
+
+fn button_meta(id: Button) -> (&'static str, &'static str, &'static str) {
+    match id {
+        Button::UseDefault => (
+            "Editing one app",
+            "The look above changes only this app's rule.",
+            "Edit default look",
+        ),
+        Button::AddRule => ("", "", "Add rule"),
+        Button::RemoveRule => ("Remove the selected rule", "Pick a rule in the list first.", "Remove"),
+        Button::AddExclude => ("", "", "Add"),
+        Button::RemoveExclude => ("Remove the selected app", "Pick an app in the list first.", "Remove"),
+        Button::RestartExplorer => (
+            "Restart Explorer",
+            "Reloads the taskbar, Start menu and desktop. Open File Explorer windows close; other apps keep running. Use it when a shell change does not show up.",
+            "Restart Explorer…",
+        ),
+        Button::OpenFolder => ("Data folder", "Config, backups and the log live here.", "Open"),
+        Button::OpenLog => ("Log", "Exists once Write a log has been on.", "Open"),
+        Button::Diagnostics => (
+            "Diagnostics report",
+            "Version, CPU type, Windows build and your settings in one text file. Attach it to bug reports.",
+            "Write report",
+        ),
+    }
+}
+
+/// Rows include the gap under their card.
+fn row_height(row: &Row) -> i32 {
+    match row {
+        Row::Header(_) => 44,
+        Row::Note(text) => 10 + 16 * (text.len() as i32 / 70 + 1),
+        Row::Toggle(id) => {
+            let (_, desc) = toggle_meta(*id);
+            let lines = desc.len() as i32 / 68 + 1;
+            (44 + 15 * (lines - 1).max(0) + if lines > 1 { 4 } else { 0 }).max(56) + GAP
+        }
+        Row::Choice(_) => 60 + GAP,
+        Row::Slider(_) => 92 + GAP,
+        Row::Color(_) => 52 + GAP,
+        Row::Presets => 112 + GAP,
+        Row::RuleList | Row::ExcludeList => 0, // sized by the caller from the list length
+        Row::Action(id) => {
+            let (_, desc, _) = button_meta(*id);
+            let lines = desc.len() as i32 / 48 + 1;
+            (44 + 15 * lines).max(60) + GAP
+        }
+        Row::AddField(_) => 52 + GAP,
+        Row::About(lines) => 24 + 20 * lines.len() as i32 + GAP,
+    }
+}
+
+// ---------------------------------------------------------------------------
+// Window plumbing
+// ---------------------------------------------------------------------------
 
 pub fn open(owner: HWND) {
     let existing = SETTINGS.load(Ordering::Acquire);
@@ -153,12 +360,12 @@ pub fn open(owner: HWND) {
         register(instance);
         let class = to_wide("AllBlack11.Settings");
         let title = to_wide("AllBlack11 Settings");
-        let (x, y, w, h) = place(460, 700);
+        let (x, y, w, h) = place(560, 860);
         let hwnd = CreateWindowExW(
             0,
             pcw(&class),
             pcw(&title),
-            WS_OVERLAPPED | WS_CAPTION | WS_SYSMENU | WS_MINIMIZEBOX | WS_VISIBLE | WS_CLIPCHILDREN,
+            WS_OVERLAPPEDWINDOW | WS_VISIBLE | WS_CLIPCHILDREN,
             x,
             y,
             w,
@@ -204,6 +411,16 @@ unsafe extern "system" fn wndproc(hwnd: HWND, msg: u32, wparam: WPARAM, lparam: 
         set_ui(hwnd, Box::into_raw(ui));
         SETTINGS.store(hwnd as isize, Ordering::Release);
         style_window(hwnd);
+        if let Some(ui) = get_ui(hwnd).as_mut() {
+            ui.relayout(hwnd);
+        }
+        return 0;
+    }
+    if msg == WM_GETMINMAXINFO {
+        let info = &mut *(lparam as *mut MINMAXINFO);
+        let k = dpi_of(hwnd) as f32 / 96.0;
+        info.ptMinTrackSize.x = ((MIN_W + 16) as f32 * k) as i32;
+        info.ptMinTrackSize.y = ((MIN_H + 47) as f32 * k) as i32;
         return 0;
     }
     let ui = get_ui(hwnd);
@@ -212,95 +429,122 @@ unsafe extern "system" fn wndproc(hwnd: HWND, msg: u32, wparam: WPARAM, lparam: 
     }
     let ui = &mut *ui;
     match msg {
-        WM_ERASEBKGND => {
-            let mut rect = RECT { left: 0, top: 0, right: 0, bottom: 0 };
-            GetClientRect(hwnd, &mut rect);
-            FillRect(wparam as windows_sys::Win32::Graphics::Gdi::HDC, &rect, ui.bg_brush);
-            return 1;
-        }
+        WM_ERASEBKGND => 1,
         WM_PAINT => {
             paint(hwnd, ui);
-            return 0;
+            0
+        }
+        WM_SIZE => {
+            ui.relayout(hwnd);
+            0
+        }
+        WM_DPICHANGED => {
+            let dpi = (wparam & 0xFFFF) as u32;
+            ui.set_dpi(dpi);
+            let suggested = &*(lparam as *const RECT);
+            SetWindowPos(
+                hwnd,
+                std::ptr::null_mut(),
+                suggested.left,
+                suggested.top,
+                suggested.right - suggested.left,
+                suggested.bottom - suggested.top,
+                SWP_NOZORDER | SWP_NOACTIVATE,
+            );
+            ui.relayout(hwnd);
+            0
         }
         WM_MOUSEWHEEL => {
             let delta = ((wparam >> 16) as u16 as i16) as i32;
-            ui.scroll = (ui.scroll - delta / 120 * ui.s(48)).max(0);
-            ui.clamp_scroll(hwnd);
-            ui.position_edits(hwnd);
-            InvalidateRect(hwnd, std::ptr::null(), 1);
-            return 0;
+            ui.scroll -= delta * 64 / 120;
+            ui.relayout(hwnd);
+            0
         }
         WM_LBUTTONDOWN => {
-            let y = lparam_y(lparam) + ui.scroll;
-            let x = lparam_x(lparam);
-            if let Some(slider) = ui.hit_slider(x, y) {
-                ui.drag = Some(slider);
-                ui.set_slider(slider, x);
-                InvalidateRect(hwnd, std::ptr::null(), 1);
+            if let Some((lx, cy)) = ui.to_content(lparam) {
+                if let Some(slider) = ui.hit_slider(cy) {
+                    ui.drag = Some(slider);
+                    SetCapture(hwnd);
+                    ui.set_slider(hwnd, slider, lx);
+                    InvalidateRect(hwnd, std::ptr::null(), 0);
+                }
             }
-            return 0;
+            0
         }
         WM_MOUSEMOVE => {
             if let Some(slider) = ui.drag {
-                ui.set_slider(slider, lparam_x(lparam));
-                InvalidateRect(hwnd, std::ptr::null(), 1);
+                let lx = (lparam_x(lparam) as f32 / ui.k) as i32;
+                ui.set_slider(hwnd, slider, lx);
+                InvalidateRect(hwnd, std::ptr::null(), 0);
             }
-            return 0;
+            0
         }
         WM_LBUTTONUP => {
-            let y = lparam_y(lparam) + ui.scroll;
-            let x = lparam_x(lparam);
             if ui.drag.take().is_some() {
+                ReleaseCapture();
                 ui.commit();
-            } else {
-                ui.click(x, y);
+            } else if let Some((lx, cy)) = ui.to_content(lparam) {
+                ui.click(hwnd, lx, cy);
             }
-            InvalidateRect(hwnd, std::ptr::null(), 1);
-            return 0;
+            ui.relayout(hwnd);
+            0
         }
         WM_COMMAND => {
             let id = (wparam & 0xFFFF) as u16;
             let code = ((wparam >> 16) & 0xFFFF) as u16;
-            if code == EN_KILLFOCUS as u16 {
+            if code == EN_CHANGE {
+                if ui.edit_live(id) {
+                    InvalidateRect(hwnd, std::ptr::null(), 0);
+                }
+            } else if code == EN_KILLFOCUS {
                 ui.edit_committed(id);
-                InvalidateRect(hwnd, std::ptr::null(), 1);
+                InvalidateRect(hwnd, std::ptr::null(), 0);
             }
-            return 0;
+            0
         }
         WM_CTLCOLOREDIT => {
-            let dc = wparam as windows_sys::Win32::Graphics::Gdi::HDC;
+            let dc = wparam as HDC;
             SetTextColor(dc, TEXT);
             SetBkColor(dc, EDIT_BG);
-            return ui.edit_brush as LRESULT;
+            ui.edit_brush as LRESULT
         }
         WM_KEYDOWN => {
-            if wparam == 0x1B {
-                DestroyWindow(hwnd);
+            match wparam {
+                0x1B => {
+                    DestroyWindow(hwnd);
+                    return 0;
+                }
+                0x21 => ui.scroll -= ui.view_height(hwnd) - 40, // Page Up
+                0x22 => ui.scroll += ui.view_height(hwnd) - 40, // Page Down
+                0x26 => ui.scroll -= 48,                        // Up
+                0x28 => ui.scroll += 48,                        // Down
+                0x24 => ui.scroll = 0,                          // Home
+                0x23 => ui.scroll = i32::MAX / 2,               // End
+                _ => {}
             }
-            return 0;
+            ui.relayout(hwnd);
+            0
         }
         WM_REFRESH => {
             ui.reload_from_disk();
-            InvalidateRect(hwnd, std::ptr::null(), 1);
-            return 0;
+            ui.relayout(hwnd);
+            0
         }
         WM_CLOSE => {
             DestroyWindow(hwnd);
-            return 0;
+            0
         }
         WM_DESTROY => {
             SETTINGS.store(0, Ordering::Release);
             let ui = Box::from_raw(take_ui(hwnd));
-            if !ui.font.is_null() {
-                DeleteObject(ui.font);
-            }
+            ui.fonts.delete();
             if !ui.bg_brush.is_null() {
                 DeleteObject(ui.bg_brush);
             }
             if !ui.edit_brush.is_null() {
                 DeleteObject(ui.edit_brush);
             }
-            return 0;
+            0
         }
         _ => DefWindowProcW(hwnd, msg, wparam, lparam),
     }
@@ -350,65 +594,130 @@ fn lparam_y(lparam: LPARAM) -> i32 {
     ((lparam >> 16) as u16 as i16) as i32
 }
 
+impl Fonts {
+    fn make(dpi: u32) -> Self {
+        Self {
+            body: make_font(dpi, 15, 400),
+            small: make_font(dpi, 13, 400),
+            head: make_font(dpi, 16, 600),
+        }
+    }
+
+    fn delete(&self) {
+        for font in [self.body, self.small, self.head] {
+            if !font.is_null() {
+                unsafe { DeleteObject(font) };
+            }
+        }
+    }
+}
+
+// ---------------------------------------------------------------------------
+// State and behavior
+// ---------------------------------------------------------------------------
+
 impl Ui {
     fn new(hwnd: HWND, owner: HWND) -> Self {
-        let config = load_config();
         let dpi = dpi_of(hwnd);
-        let font = make_font(dpi);
+        let fonts = Fonts::make(dpi);
         let edits = Edits {
-            caption: make_edit(hwnd, ID_CAPTION, font),
-            border: make_edit(hwnd, ID_BORDER, font),
-            text: make_edit(hwnd, ID_TEXT, font),
-            tint: make_edit(hwnd, ID_TINT, font),
-            rule: make_edit(hwnd, ID_RULE, font),
-            exclude: make_edit(hwnd, ID_EXCLUDE, font),
+            caption: make_edit(hwnd, ID_CAPTION, fonts.body),
+            border: make_edit(hwnd, ID_BORDER, fonts.body),
+            text: make_edit(hwnd, ID_TEXT, fonts.body),
+            tint: make_edit(hwnd, ID_TINT, fonts.body),
+            rule: make_edit(hwnd, ID_RULE, fonts.body),
+            exclude: make_edit(hwnd, ID_EXCLUDE, fonts.body),
         };
         let ui = Self {
             owner,
             autostart: registry::autostart_enabled(),
             rule: None,
             exclude_sel: None,
+            preset_sel: None,
             scroll: 0,
             drag: None,
             status: String::new(),
-            config,
+            config: cfgio::load(),
             edits,
-            font,
+            fonts,
             bg_brush: unsafe { CreateSolidBrush(BG) },
             edit_brush: unsafe { CreateSolidBrush(EDIT_BG) },
+            k: dpi as f32 / 96.0,
+            accent: visible_accent(registry::accent_bgr()),
+            build: super::dwm::windows_build(),
+            arch_line: sysinfo::arch_line(),
+            arch: sysinfo::arch_status(),
         };
         ui.push_colors_to_edits();
         ui
     }
 
-    fn s(&self, px: i32) -> i32 {
-        let dpi = 96i32;
-        let _ = dpi;
-        px
+    fn px(&self, logical: i32) -> i32 {
+        (logical as f32 * self.k).round() as i32
     }
 
-    fn dpi(&self, hwnd: HWND) -> u32 {
-        let _ = hwnd;
-        dpi_of(hwnd)
+    fn set_dpi(&mut self, dpi: u32) {
+        self.k = dpi.max(96) as f32 / 96.0;
+        self.fonts.delete();
+        self.fonts = Fonts::make(dpi);
+        for edit in self.all_edits() {
+            unsafe { SendMessageW(edit, WM_SETFONT, self.fonts.body as WPARAM, 1) };
+        }
     }
 
-    fn scale(&self, hwnd: HWND, px: i32) -> i32 {
-        let dpi = self.dpi(hwnd) as i32;
-        (px * dpi.max(96) + 48) / 96
+    fn all_edits(&self) -> [HWND; 6] {
+        [
+            self.edits.caption,
+            self.edits.border,
+            self.edits.text,
+            self.edits.tint,
+            self.edits.rule,
+            self.edits.exclude,
+        ]
+    }
+
+    /// Client-area logical width.
+    fn lw(&self, hwnd: HWND) -> i32 {
+        ((client_size(hwnd).0 as f32 / self.k) as i32).max(MIN_W)
+    }
+
+    /// Height of the scrolling region, in logical pixels.
+    fn view_height(&self, hwnd: HWND) -> i32 {
+        ((client_size(hwnd).1 as f32 / self.k) as i32 - TOP).max(1)
+    }
+
+    fn relayout(&mut self, hwnd: HWND) {
+        let view = self.view_height(hwnd);
+        let max_scroll = (self.content_height() - view).max(0);
+        self.scroll = self.scroll.clamp(0, max_scroll);
+        self.position_edits(hwnd);
+        unsafe { InvalidateRect(hwnd, std::ptr::null(), 0) };
+    }
+
+    /// Mouse position to (logical x, content y). None above the scrolling region.
+    fn to_content(&self, lparam: LPARAM) -> Option<(i32, i32)> {
+        let lx = (lparam_x(lparam) as f32 / self.k) as i32;
+        let ly = (lparam_y(lparam) as f32 / self.k) as i32;
+        if ly < TOP {
+            return None;
+        }
+        Some((lx, ly - TOP + self.scroll))
     }
 
     fn reload_from_disk(&mut self) {
         let focus = unsafe { GetFocus() };
-        let editing = focus == self.edits.caption
-            || focus == self.edits.border
-            || focus == self.edits.text
-            || focus == self.edits.tint
-            || focus == self.edits.rule
-            || focus == self.edits.exclude;
-        self.config = load_config();
+        let editing = self.all_edits().contains(&focus);
+        self.config = cfgio::load();
         self.autostart = registry::autostart_enabled();
+        self.accent = visible_accent(registry::accent_bgr());
         if self.rule.is_some_and(|index| index >= self.config.rules.len()) {
             self.rule = None;
+        }
+        if self
+            .exclude_sel
+            .is_some_and(|index| index >= self.config.exclude.len())
+        {
+            self.exclude_sel = None;
         }
         if !editing {
             self.push_colors_to_edits();
@@ -456,31 +765,170 @@ impl Ui {
     }
 
     fn commit(&mut self) {
-        self.status.clear();
-        if let Err(err) = store_config(&self.config) {
-            self.status = err;
+        if let Err(err) = cfgio::store(&self.config) {
+            self.status = format!("Could not save: {err}");
             return;
         }
         unsafe { PostMessageW(self.owner, WM_SETTINGS_APPLIED, 0, 0) };
     }
 
-    fn click(&mut self, x: i32, y: i32) {
-        let rows = self.rows_at_width(520);
-        for row in &rows {
-            if y < row.y || y >= row.y + row.h {
+    // --- layout -----------------------------------------------------------
+
+    fn rows(&self) -> Vec<Laid> {
+        let mut y = 8;
+        let mut out: Vec<Laid> = Vec::new();
+        let mut push = |row: Row, h: Option<i32>| {
+            let h = h.unwrap_or_else(|| row_height(&row));
+            out.push(Laid { y, h, row });
+            y += h;
+        };
+        let list_height = |len: usize| (len.max(1) as i32) * LIST_LINE + 16 + GAP;
+
+        push(Row::Header("Quick looks"), None);
+        push(Row::Presets, None);
+
+        push(
+            Row::Header(if self.rule.is_some() {
+                "Look for one app"
+            } else {
+                "Window look"
+            }),
+            None,
+        );
+        push(Row::Toggle(Toggle::Theme), None);
+        if self.rule.is_some() {
+            push(Row::Toggle(Toggle::RuleOn), None);
+            push(Row::Action(Button::UseDefault), None);
+        } else {
+            push(Row::Toggle(Toggle::DefaultOn), None);
+        }
+        push(Row::Toggle(Toggle::Dark), None);
+        push(Row::Choice(Choice::Backdrop), None);
+        push(Row::Choice(Choice::Corners), None);
+        for id in [ID_CAPTION, ID_BORDER, ID_TEXT, ID_TINT] {
+            push(Row::Color(id), None);
+        }
+        push(
+            Row::Note("Colors take #RRGGBB, accent, none or default. They apply as soon as the value is valid."),
+            None,
+        );
+        push(Row::Slider(Slider::Opacity), None);
+        push(Row::Toggle(Toggle::Blur), None);
+
+        push(Row::Header("Shell"), None);
+        push(Row::Toggle(Toggle::Oled), None);
+        push(Row::Toggle(Toggle::Black), None);
+        push(Row::Action(Button::RestartExplorer), None);
+
+        push(Row::Header("Title bar height"), None);
+        push(Row::Slider(Slider::Caption), None);
+
+        push(Row::Header("Startup and behavior"), None);
+        push(Row::Toggle(Toggle::Autostart), None);
+        push(Row::Toggle(Toggle::Reapply), None);
+        push(Row::Toggle(Toggle::Logging), None);
+
+        push(Row::Header("Per-app rules"), None);
+        push(
+            Row::Note("Pick a rule to edit its look above. A rule only overrides what it sets."),
+            None,
+        );
+        push(Row::RuleList, Some(list_height(self.config.rules.len())));
+        push(Row::AddField(Button::AddRule), None);
+        push(Row::Action(Button::RemoveRule), None);
+
+        push(Row::Header("Never theme these apps"), None);
+        push(
+            Row::Note("Games and launchers belong here. Use the exe name, such as steam.exe."),
+            None,
+        );
+        push(Row::ExcludeList, Some(list_height(self.config.exclude.len())));
+        push(Row::AddField(Button::AddExclude), None);
+        push(Row::Action(Button::RemoveExclude), None);
+
+        push(Row::Header("Experimental"), None);
+        push(Row::Toggle(Toggle::Experimental), None);
+        if self.arch == ArchStatus::NativeArm64 {
+            push(
+                Row::Note("On ARM64 this covers native ARM64 apps only. Apps running under x64 emulation are skipped."),
+                None,
+            );
+        }
+
+        push(Row::Header("About"), None);
+        let mut about = vec![
+            format!("AllBlack11 {}", env!("CARGO_PKG_VERSION")),
+            self.arch_line.clone(),
+            format!(
+                "Windows build {} · {}",
+                self.build,
+                if self.build >= 22621 {
+                    "Mica and backdrops supported"
+                } else {
+                    "Mica needs build 22621 or newer"
+                }
+            ),
+        ];
+        if let Some(advice) = self.arch.advice() {
+            about.push(advice.to_string());
+        }
+        push(Row::About(about), None);
+        push(Row::Action(Button::OpenFolder), None);
+        push(Row::Action(Button::OpenLog), None);
+        push(Row::Action(Button::Diagnostics), None);
+        out
+    }
+
+    fn content_height(&self) -> i32 {
+        self.rows().last().map(|row| row.y + row.h + 24).unwrap_or(0)
+    }
+
+    // --- input ------------------------------------------------------------
+
+    fn click(&mut self, hwnd: HWND, lx: i32, cy: i32) {
+        let lw = self.lw(hwnd);
+        for row in self.rows() {
+            if cy < row.y || cy >= row.y + row.h {
                 continue;
             }
+            let local = cy - row.y;
             match &row.row {
-                Row::Toggle(id, _) => self.toggle(*id),
-                Row::Choice(id, _) => self.cycle(*id),
-                Row::Button(id, _) => self.button(*id),
-                Row::RuleList => self.pick_rule(y - row.y),
-                Row::ExcludeList => self.pick_exclude(y - row.y),
+                Row::Toggle(id) => self.toggle(*id),
+                Row::Choice(id) => self.cycle(*id),
+                Row::Presets => {
+                    if let Some(index) = preset_at(lw, lx, local) {
+                        self.apply_preset(index);
+                    }
+                }
+                Row::Action(id) => {
+                    let (l, t, r, b) = action_pill(*id, lw, row.h);
+                    if lx >= l && lx < r && local >= t && local < b {
+                        self.button(*id);
+                    }
+                }
+                Row::AddField(id) => {
+                    let (l, t, r, b) = add_pill(lw);
+                    if lx >= l && lx < r && local >= t && local < b {
+                        self.button(*id);
+                    }
+                }
+                Row::RuleList => self.pick_rule((local - 8) / LIST_LINE),
+                Row::ExcludeList => self.pick_exclude((local - 8) / LIST_LINE),
                 _ => {}
             }
-            let _ = x;
             return;
         }
+    }
+
+    fn apply_preset(&mut self, index: usize) {
+        if !crate::apply_preset(&mut self.config, index) {
+            return;
+        }
+        self.rule = None;
+        self.preset_sel = Some(index);
+        self.push_colors_to_edits();
+        self.status = format!("Applied preset: {}", PRESETS[index].name);
+        self.commit();
     }
 
     fn toggle(&mut self, id: Toggle) {
@@ -491,11 +939,9 @@ impl Ui {
                 self.config.defaults.enabled = Some(on);
             }
             Toggle::RuleOn => {
-                if let Some(index) = self.rule {
-                    if let Some(rule) = self.config.rules.get_mut(index) {
-                        let on = !rule.style.enabled.unwrap_or(true);
-                        rule.style.enabled = Some(on);
-                    }
+                if let Some(rule) = self.rule.and_then(|index| self.config.rules.get_mut(index)) {
+                    let on = !rule.style.enabled.unwrap_or(true);
+                    rule.style.enabled = Some(on);
                 }
             }
             Toggle::Dark => {
@@ -508,8 +954,14 @@ impl Ui {
                 style.tinted_acrylic_on_move_fallback = !style.tinted_acrylic_on_move_fallback;
                 self.write_style(style);
             }
-            Toggle::Oled => self.config.shell.oled_taskbar = !self.config.shell.oled_taskbar,
-            Toggle::Black => self.config.shell.black_shell = !self.config.shell.black_shell,
+            Toggle::Oled => {
+                self.config.shell.oled_taskbar = !self.config.shell.oled_taskbar;
+                self.status = "Taskbar changes can need an Explorer restart. See Restart Explorer below.".into();
+            }
+            Toggle::Black => {
+                self.config.shell.black_shell = !self.config.shell.black_shell;
+                self.status = "Start and notification center update as Windows redraws them. Restart Explorer if they do not.".into();
+            }
             Toggle::Autostart => {
                 let next = !self.autostart;
                 if let Err(err) = registry::set_autostart(next) {
@@ -518,9 +970,9 @@ impl Ui {
                 }
                 self.autostart = next;
                 self.status = if next {
-                    "Start with Windows is on.".into()
+                    "AllBlack11 will start when you sign in.".into()
                 } else {
-                    "Start with Windows is off.".into()
+                    "AllBlack11 will not start automatically.".into()
                 };
                 return;
             }
@@ -529,9 +981,9 @@ impl Ui {
             Toggle::Experimental => {
                 self.config.experimental_dark_legacy = !self.config.experimental_dark_legacy;
                 self.status = if self.config.experimental_dark_legacy {
-                    "Experimental dark dialogs are on. Classic dialogs may be recolored in-process.".into()
+                    "Dark legacy windows are on. Classic dialogs may be recolored in-process.".into()
                 } else {
-                    "Experimental dark dialogs are off. Injected hooks are removed.".into()
+                    "Dark legacy windows are off. The hook is unloaded.".into()
                 };
             }
         }
@@ -579,17 +1031,20 @@ impl Ui {
                 }
                 set_text(self.edits.rule, "");
                 self.push_colors_to_edits();
+                self.status = "Rule added. Edit its look under Look for one app.".into();
                 self.commit();
             }
             Button::RemoveRule => {
-                if let Some(index) = self.rule {
-                    if index < self.config.rules.len() {
-                        self.config.rules.remove(index);
-                    }
-                    self.rule = None;
-                    self.push_colors_to_edits();
-                    self.commit();
+                let Some(index) = self.rule else {
+                    self.status = "Pick a rule in the list first.".into();
+                    return;
+                };
+                if index < self.config.rules.len() {
+                    self.config.rules.remove(index);
                 }
+                self.rule = None;
+                self.push_colors_to_edits();
+                self.commit();
             }
             Button::AddExclude => {
                 let name = file_name(&get_text(self.edits.exclude)).trim().to_string();
@@ -604,49 +1059,94 @@ impl Ui {
                 self.commit();
             }
             Button::RemoveExclude => {
-                if let Some(index) = self.exclude_sel {
-                    if index < self.config.exclude.len() {
-                        self.config.exclude.remove(index);
-                    }
-                    self.exclude_sel = None;
-                    self.commit();
+                let Some(index) = self.exclude_sel else {
+                    self.status = "Pick an app in the list first.".into();
+                    return;
+                };
+                if index < self.config.exclude.len() {
+                    self.config.exclude.remove(index);
                 }
+                self.exclude_sel = None;
+                self.commit();
+            }
+            Button::RestartExplorer => {
+                // The tray host asks for confirmation and owns the restart.
+                self.status = "Waiting for your answer…".into();
+                unsafe { PostMessageW(self.owner, WM_RESTART_EXPLORER, 0, 0) };
+            }
+            Button::OpenFolder => {
+                self.status = match registry::open_file(&config_dir()) {
+                    Ok(()) => "Opened the data folder.".into(),
+                    Err(err) => err,
+                };
+            }
+            Button::OpenLog => {
+                let path = log_path();
+                self.status = if path.exists() {
+                    match registry::open_file(&path) {
+                        Ok(()) => "Opened the log.".into(),
+                        Err(err) => err,
+                    }
+                } else {
+                    "There is no log yet. Turn on Write a log first.".into()
+                };
+            }
+            Button::Diagnostics => {
+                unsafe { PostMessageW(self.owner, WM_RUN_COMMAND, CMD_DIAGNOSTICS as usize, 0) };
+                self.status = "Writing the diagnostics report…".into();
             }
         }
+    }
+
+    /// Validate while typing, without ever showing an error for a half-typed value.
+    fn edit_live(&mut self, id: u16) -> bool {
+        let Some(hwnd) = self.color_edit(id) else {
+            return false;
+        };
+        let Ok(color) = parse_color(get_text(hwnd).trim()) else {
+            return false;
+        };
+        let mut style = self.current_style();
+        let slot = match id {
+            ID_CAPTION => &mut style.caption,
+            ID_BORDER => &mut style.border,
+            ID_TEXT => &mut style.text,
+            _ => &mut style.acrylic_tint,
+        };
+        if *slot == color {
+            return false;
+        }
+        *slot = color;
+        self.write_style(style);
+        self.status.clear();
+        self.commit();
+        true
     }
 
     fn edit_committed(&mut self, id: u16) {
-        let hwnd = match id {
-            ID_CAPTION => self.edits.caption,
-            ID_BORDER => self.edits.border,
-            ID_TEXT => self.edits.text,
-            ID_TINT => self.edits.tint,
-            _ => return,
+        let Some(hwnd) = self.color_edit(id) else {
+            return;
         };
         let text = get_text(hwnd);
-        match parse_color(text.trim()) {
-            Ok(color) => {
-                let mut style = self.current_style();
-                match id {
-                    ID_CAPTION => style.caption = color,
-                    ID_BORDER => style.border = color,
-                    ID_TEXT => style.text = color,
-                    ID_TINT => style.acrylic_tint = color,
-                    _ => {}
-                }
-                self.write_style(style);
-                self.status.clear();
-                self.commit();
-            }
-            Err(err) => {
-                self.status = err;
-                self.push_colors_to_edits();
-            }
+        if let Err(err) = parse_color(text.trim()) {
+            self.status = err;
+            self.push_colors_to_edits();
         }
     }
 
-    fn set_slider(&mut self, slider: Slider, x: i32) {
-        let fraction = ((x - 150) as f32 / 280.0).clamp(0.0, 1.0);
+    fn color_edit(&self, id: u16) -> Option<HWND> {
+        match id {
+            ID_CAPTION => Some(self.edits.caption),
+            ID_BORDER => Some(self.edits.border),
+            ID_TEXT => Some(self.edits.text),
+            ID_TINT => Some(self.edits.tint),
+            _ => None,
+        }
+    }
+
+    fn set_slider(&mut self, hwnd: HWND, slider: Slider, lx: i32) {
+        let (x0, x1) = slider_track(self.lw(hwnd));
+        let fraction = ((lx - x0) as f32 / (x1 - x0).max(1) as f32).clamp(0.0, 1.0);
         match slider {
             Slider::Opacity => {
                 let mut style = self.current_style();
@@ -664,11 +1164,11 @@ impl Ui {
         }
     }
 
-    fn hit_slider(&self, x: i32, y: i32) -> Option<Slider> {
-        for row in self.rows_at_width(520) {
-            if y >= row.y && y < row.y + row.h {
-                if let Row::Slider(id, _) = row.row {
-                    if x > 140 {
+    fn hit_slider(&self, cy: i32) -> Option<Slider> {
+        for row in self.rows() {
+            if cy >= row.y && cy < row.y + row.h {
+                if let Row::Slider(id) = row.row {
+                    if cy >= row.y + 56 {
                         return Some(id);
                     }
                 }
@@ -677,196 +1177,362 @@ impl Ui {
         None
     }
 
-    fn pick_rule(&mut self, local_y: i32) {
-        let index = (local_y / 24) as usize;
-        if index < self.config.rules.len() {
-            self.rule = Some(index);
+    fn pick_rule(&mut self, index: i32) {
+        if index >= 0 && (index as usize) < self.config.rules.len() {
+            self.rule = Some(index as usize);
             self.push_colors_to_edits();
         }
     }
 
-    fn pick_exclude(&mut self, local_y: i32) {
-        let index = (local_y / 24) as usize;
-        if index < self.config.exclude.len() {
-            self.exclude_sel = Some(index);
+    fn pick_exclude(&mut self, index: i32) {
+        if index >= 0 && (index as usize) < self.config.exclude.len() {
+            self.exclude_sel = Some(index as usize);
         }
     }
 
+    /// Place or hide each EDIT. An EDIT is a real child window, so it must be hidden
+    /// while its row is scrolled out of view or under the pinned preview.
     fn position_edits(&self, hwnd: HWND) {
-        let rows = self.rows_at_width(client_width(hwnd));
-        for row in &rows {
-            if let Row::Color(id, _) = row.row {
-                let edit = self.edit_hwnd(id);
-                place_edit(edit, client_width(hwnd) - self.scale(hwnd, 128), row.y - self.scroll + 6, self.scale(hwnd, 112), self.scale(hwnd, 22));
+        let lw = self.lw(hwnd);
+        let (_, client_h) = client_size(hwnd);
+        let mut targets: Vec<(HWND, Option<(i32, i32, i32, i32)>)> =
+            self.all_edits().iter().map(|edit| (*edit, None)).collect();
+        for row in self.rows() {
+            let top = row.y - self.scroll + TOP;
+            let spot = |l: i32, t: i32, w: i32, h: i32| {
+                let rect = (self.px(l), self.px(top + t), self.px(w), self.px(h));
+                let visible = rect.1 >= self.px(TOP) && rect.1 + rect.3 <= client_h;
+                visible.then_some(rect)
+            };
+            let wanted = match row.row {
+                Row::Color(id) => self
+                    .color_edit(id)
+                    .map(|edit| (edit, spot(lw - MARGIN - PAD - 120, 12, 120, 28))),
+                Row::AddField(Button::AddRule) => Some((
+                    self.edits.rule,
+                    spot(MARGIN + PAD, 12, lw - 2 * MARGIN - 2 * PAD - 96, 28),
+                )),
+                Row::AddField(Button::AddExclude) => Some((
+                    self.edits.exclude,
+                    spot(MARGIN + PAD, 12, lw - 2 * MARGIN - 2 * PAD - 96, 28),
+                )),
+                _ => None,
+            };
+            if let Some((edit, rect)) = wanted {
+                if let Some(slot) = targets.iter_mut().find(|slot| slot.0 == edit) {
+                    slot.1 = rect;
+                }
             }
-            if let Row::Button(Button::AddRule, _) = row.row {
-                place_edit(self.edits.rule, self.scale(hwnd, 16), row.y - self.scroll + 4, self.scale(hwnd, 220), self.scale(hwnd, 22));
+        }
+        for (edit, rect) in targets {
+            match rect {
+                Some((x, y, w, h)) => place_edit(edit, x, y, w, h, true),
+                None => place_edit(edit, 0, 0, 0, 0, false),
             }
-            if let Row::Button(Button::AddExclude, _) = row.row {
-                place_edit(self.edits.exclude, self.scale(hwnd, 16), row.y - self.scroll + 4, self.scale(hwnd, 220), self.scale(hwnd, 22));
+        }
+    }
+}
+
+// ---------------------------------------------------------------------------
+// Shared geometry (logical), used by painting and by hit-testing.
+// ---------------------------------------------------------------------------
+
+fn slider_track(lw: i32) -> (i32, i32) {
+    (MARGIN + 6, lw - MARGIN - 6)
+}
+
+/// Right-aligned button inside a card. Rectangles are relative to the row's top.
+fn action_pill(id: Button, lw: i32, row_h: i32) -> (i32, i32, i32, i32) {
+    let (_, _, label) = button_meta(id);
+    let width = (label.chars().count() as i32 * 8 + 32).clamp(92, 220);
+    let card_h = row_h - GAP;
+    let right = lw - MARGIN - PAD;
+    (right - width, (card_h - 32) / 2, right, (card_h - 32) / 2 + 32)
+}
+
+fn add_pill(lw: i32) -> (i32, i32, i32, i32) {
+    (lw - MARGIN - PAD - 84, 10, lw - MARGIN - PAD, 42)
+}
+
+fn preset_rect(lw: i32, index: usize) -> (i32, i32, i32, i32) {
+    let gap = 8;
+    let inner = lw - 2 * MARGIN - 2 * PAD;
+    let width = (inner - 3 * gap) / 4;
+    let left = MARGIN + PAD + index as i32 * (width + gap);
+    (left, 14, left + width, 48)
+}
+
+fn preset_at(lw: i32, lx: i32, local_y: i32) -> Option<usize> {
+    (0..PRESETS.len()).find(|&index| {
+        let (l, t, r, b) = preset_rect(lw, index);
+        lx >= l && lx < r && local_y >= t && local_y < b
+    })
+}
+
+// ---------------------------------------------------------------------------
+// Painting
+// ---------------------------------------------------------------------------
+
+struct Canvas {
+    dc: HDC,
+    k: f32,
+}
+
+const DT_LEFT: u32 = 0x0000;
+const DT_CENTER: u32 = 0x0001;
+const DT_RIGHT: u32 = 0x0002;
+const DT_VCENTER: u32 = 0x0004;
+const DT_SINGLELINE: u32 = 0x0020;
+const DT_WORDBREAK: u32 = 0x0010;
+const DT_NOPREFIX: u32 = 0x0800;
+const DT_END_ELLIPSIS: u32 = 0x8000;
+
+impl Canvas {
+    fn px(&self, v: i32) -> i32 {
+        (v as f32 * self.k).round() as i32
+    }
+
+    fn rect(&self, l: i32, t: i32, r: i32, b: i32) -> RECT {
+        RECT {
+            left: self.px(l),
+            top: self.px(t),
+            right: self.px(r),
+            bottom: self.px(b),
+        }
+    }
+
+    fn fill(&self, l: i32, t: i32, r: i32, b: i32, color: u32) {
+        unsafe {
+            let brush = CreateSolidBrush(color);
+            FillRect(self.dc, &self.rect(l, t, r, b), brush);
+            DeleteObject(brush);
+        }
+    }
+
+    /// Rounded rectangle. `radius` is the corner radius in logical pixels.
+    #[allow(clippy::too_many_arguments)]
+    fn round(&self, l: i32, t: i32, r: i32, b: i32, radius: i32, fill: Option<u32>, stroke: Option<u32>) {
+        unsafe {
+            let brush = match fill {
+                Some(color) => CreateSolidBrush(color),
+                None => GetStockObject(NULL_BRUSH) as HBRUSH,
+            };
+            let pen = match stroke {
+                Some(color) => CreatePen(PS_SOLID, self.px(1).max(1), color),
+                None => GetStockObject(NULL_PEN),
+            };
+            let old_brush = SelectObject(self.dc, brush);
+            let old_pen = SelectObject(self.dc, pen);
+            let rect = self.rect(l, t, r, b);
+            let d = self.px(radius * 2);
+            RoundRect(self.dc, rect.left, rect.top, rect.right, rect.bottom, d, d);
+            SelectObject(self.dc, old_pen);
+            SelectObject(self.dc, old_brush);
+            if fill.is_some() {
+                DeleteObject(brush);
+            }
+            if stroke.is_some() {
+                DeleteObject(pen);
             }
         }
     }
 
-    fn edit_hwnd(&self, id: u16) -> HWND {
-        match id {
-            ID_CAPTION => self.edits.caption,
-            ID_BORDER => self.edits.border,
-            ID_TEXT => self.edits.text,
-            _ => self.edits.tint,
+    fn line(&self, x1: i32, y1: i32, x2: i32, y2: i32, color: u32, width: i32) {
+        unsafe {
+            let pen = CreatePen(PS_SOLID, self.px(width).max(1), color);
+            let old = SelectObject(self.dc, pen);
+            MoveToEx(self.dc, self.px(x1), self.px(y1), std::ptr::null_mut());
+            LineTo(self.dc, self.px(x2), self.px(y2));
+            SelectObject(self.dc, old);
+            DeleteObject(pen);
         }
     }
 
-    fn clamp_scroll(&mut self, hwnd: HWND) {
-        let mut rect = RECT { left: 0, top: 0, right: 0, bottom: 0 };
-        unsafe { GetClientRect(hwnd, &mut rect) };
-        let view = (rect.bottom - rect.top).max(1);
-        let content = self.content_height().max(view);
-        let max_scroll = content - view;
-        if self.scroll > max_scroll {
-            self.scroll = max_scroll;
+    #[allow(clippy::too_many_arguments)]
+    fn text(&self, l: i32, t: i32, r: i32, b: i32, text: &str, color: u32, font: HFONT, flags: u32) {
+        unsafe {
+            let old = SelectObject(self.dc, font);
+            SetTextColor(self.dc, color);
+            let mut rect = self.rect(l, t, r, b);
+            let wide = to_wide(text);
+            DrawTextW(self.dc, wide.as_ptr(), -1, &mut rect, flags | DT_NOPREFIX);
+            SelectObject(self.dc, old);
         }
-        if self.scroll < 0 {
-            self.scroll = 0;
-        }
-    }
-
-    fn content_height(&self) -> i32 {
-        self.rows_at_width(520).last().map(|row| row.y + row.h + 16).unwrap_or(0)
-    }
-
-    fn rows_at_width(&self, _width: i32) -> Vec<Laid> {
-        let mut y = 12;
-        let mut out = Vec::new();
-        let push = |out: &mut Vec<Laid>, y: &mut i32, h: i32, row: Row| {
-            out.push(Laid { y: *y, h, row });
-            *y += h;
-        };
-        let editing = match self.rule.and_then(|index| self.config.rules.get(index)) {
-            Some(rule) => format!("Frames — {}", rule.process),
-            None => "Frames — all apps".into(),
-        };
-        let _ = editing;
-        push(&mut out, &mut y, 28, Row::Header(if self.rule.is_some() { "Frames for one app" } else { "Frames" }));
-        push(&mut out, &mut y, 32, Row::Toggle(Toggle::Theme, "Theme windows"));
-        if self.rule.is_some() {
-            push(&mut out, &mut y, 32, Row::Toggle(Toggle::RuleOn, "This rule is on"));
-            push(&mut out, &mut y, 28, Row::Button(Button::UseDefault, "Edit the default instead"));
-        } else {
-            push(&mut out, &mut y, 32, Row::Toggle(Toggle::DefaultOn, "Default frames on"));
-        }
-        push(&mut out, &mut y, 32, Row::Toggle(Toggle::Dark, "Dark title bar"));
-        push(&mut out, &mut y, 32, Row::Choice(Choice::Backdrop, "Backdrop"));
-        push(&mut out, &mut y, 32, Row::Choice(Choice::Corners, "Corners"));
-        push(&mut out, &mut y, 32, Row::Color(ID_CAPTION, "Caption"));
-        push(&mut out, &mut y, 32, Row::Color(ID_BORDER, "Border"));
-        push(&mut out, &mut y, 32, Row::Color(ID_TEXT, "Text"));
-        push(&mut out, &mut y, 32, Row::Color(ID_TINT, "Acrylic tint"));
-        push(&mut out, &mut y, 40, Row::Slider(Slider::Opacity, "Acrylic opacity"));
-        push(&mut out, &mut y, 32, Row::Toggle(Toggle::Blur, "Blur while dragging"));
-        push(&mut out, &mut y, 28, Row::Header("Legacy title bar"));
-        push(&mut out, &mut y, 40, Row::Slider(Slider::Caption, "Caption height"));
-        push(&mut out, &mut y, 36, Row::Note("Sign out and back in for CaptionHeight. System restores the previous value."));
-        push(&mut out, &mut y, 28, Row::Header("Shell"));
-        push(&mut out, &mut y, 32, Row::Toggle(Toggle::Oled, "OLED taskbar"));
-        push(&mut out, &mut y, 32, Row::Toggle(Toggle::Black, "Black Start, taskbar and notification center"));
-        push(&mut out, &mut y, 28, Row::Header("Startup"));
-        push(&mut out, &mut y, 32, Row::Toggle(Toggle::Autostart, "Start with Windows"));
-        push(&mut out, &mut y, 32, Row::Toggle(Toggle::Reapply, "Reapply when a window is focused"));
-        push(&mut out, &mut y, 32, Row::Toggle(Toggle::Logging, "Write a log"));
-        push(&mut out, &mut y, 28, Row::Header("Per-app rules"));
-        push(&mut out, &mut y, 24 * 4, Row::RuleList);
-        push(&mut out, &mut y, 32, Row::Button(Button::AddRule, "Add"));
-        push(&mut out, &mut y, 28, Row::Button(Button::RemoveRule, "Remove selected rule"));
-        push(&mut out, &mut y, 28, Row::Header("Exclusions"));
-        push(&mut out, &mut y, 24 * 4, Row::ExcludeList);
-        push(&mut out, &mut y, 32, Row::Button(Button::AddExclude, "Add"));
-        push(&mut out, &mut y, 28, Row::Button(Button::RemoveExclude, "Remove selected exclusion"));
-        push(&mut out, &mut y, 28, Row::Header("Experimental"));
-        push(&mut out, &mut y, 32, Row::Toggle(Toggle::Experimental, "Dark legacy windows"));
-        push(
-            &mut out,
-            &mut y,
-            64,
-            Row::Note("Off by default. Uses a same-architecture hook DLL. Not for games, launchers, or elevated processes. Antivirus products may flag it."),
-        );
-        if !self.status.is_empty() {
-            push(&mut out, &mut y, 40, Row::Note("Status"));
-        }
-        out
     }
 }
 
 fn paint(hwnd: HWND, ui: &mut Ui) {
     unsafe {
-        let mut paint: windows_sys::Win32::Graphics::Gdi::PAINTSTRUCT = std::mem::zeroed();
-        let dc = windows_sys::Win32::Graphics::Gdi::BeginPaint(hwnd, &mut paint);
-        let mut client = RECT { left: 0, top: 0, right: 0, bottom: 0 };
-        GetClientRect(hwnd, &mut client);
-        FillRect(dc, &client, ui.bg_brush);
-        let previous = SelectObject(dc, ui.font);
+        let mut ps: windows_sys::Win32::Graphics::Gdi::PAINTSTRUCT = std::mem::zeroed();
+        let screen = windows_sys::Win32::Graphics::Gdi::BeginPaint(hwnd, &mut ps);
+        let (w, h) = client_size(hwnd);
+        let dc = CreateCompatibleDC(screen);
+        let bitmap = CreateCompatibleBitmap(screen, w.max(1), h.max(1));
+        let old_bitmap = SelectObject(dc, bitmap);
         SetBkMode(dc, TRANSPARENT as i32);
-        let width = client.right - client.left;
-        ui.position_edits(hwnd);
-        for row in ui.rows_at_width(width) {
-            let top = row.y - ui.scroll;
-            if top > client.bottom || top + row.h < 0 {
+
+        let full = RECT { left: 0, top: 0, right: w, bottom: h };
+        FillRect(dc, &full, ui.bg_brush);
+
+        let canvas = Canvas { dc, k: ui.k };
+        let lw = ui.lw(hwnd);
+
+        // Scrolling rows, clipped under the pinned preview.
+        IntersectClipRect(dc, 0, canvas.px(TOP), w, h);
+        for row in ui.rows() {
+            let top = row.y - ui.scroll + TOP;
+            if canvas.px(top) > h || canvas.px(top + row.h) < canvas.px(TOP) {
                 continue;
             }
-            paint_row(dc, ui, &row, top, width);
+            paint_row(&canvas, ui, &row, top, lw);
         }
-        if !previous.is_null() {
-            SelectObject(dc, previous);
-        }
-        windows_sys::Win32::Graphics::Gdi::EndPaint(hwnd, &paint);
+        paint_scrollbar(&canvas, ui, hwnd, lw);
+        SelectClipRgn(dc, std::ptr::null_mut());
+
+        paint_preview(&canvas, ui, lw);
+        paint_status(&canvas, ui, lw);
+
+        BitBlt(screen, 0, 0, w, h, dc, 0, 0, SRCCOPY);
+        SelectObject(dc, old_bitmap);
+        DeleteObject(bitmap);
+        DeleteDC(dc);
+        windows_sys::Win32::Graphics::Gdi::EndPaint(hwnd, &ps);
     }
 }
 
-unsafe fn paint_row(dc: windows_sys::Win32::Graphics::Gdi::HDC, ui: &Ui, row: &Laid, top: i32, width: i32) {
-        let rect = RECT { left: 16, top, right: width - 16, bottom: top + row.h };
-        match &row.row {
-            Row::Header(text) => draw_label(dc, &rect, text, TEXT),
-            Row::Note(text) => {
-                if *text == "Status" {
-                    draw_label(dc, &rect, &ui.status, ACCENT);
-                } else {
-                    draw_label(dc, &rect, text, MUTED);
-                }
-            }
-            Row::Toggle(id, label) => {
-                draw_label(dc, &rect, label, TEXT);
-                draw_toggle(dc, width - 64, top + 6, toggle_on(ui, *id));
-            }
-            Row::Choice(id, label) => {
-                draw_label(dc, &rect, label, TEXT);
-                let value = choice_text(ui, *id);
-                let mut value_rect = rect;
-                value_rect.left = width - 180;
-                draw_label(dc, &value_rect, &value, ACCENT);
-            }
-            Row::Slider(id, label) => {
-                draw_label(dc, &rect, label, TEXT);
-                let (fraction, caption) = slider_state(ui, *id);
-                draw_slider(dc, 160, top + 16, width - 180, fraction);
-                let mut value_rect = rect;
-                value_rect.left = width - 70;
-                draw_label(dc, &value_rect, &caption, MUTED);
-            }
-            Row::Color(_, label) => {
-                let style = ui.current_style();
-                let color = match *label {
-                    "Caption" => style.caption,
-                    "Border" => style.border,
-                    "Text" => style.text,
-                    _ => style.acrylic_tint,
-                };
-                draw_label(dc, &rect, label, TEXT);
-                draw_swatch(dc, width - 156, top + 8, color);
-            }
-            Row::RuleList => draw_list(dc, &rect, ui.config.rules.iter().map(|rule| rule.process.as_str()), ui.rule),
-            Row::ExcludeList => draw_list(dc, &rect, ui.config.exclude.iter().map(|item| item.as_str()), ui.exclude_sel),
-            Row::Button(_, label) => draw_label(dc, &rect, label, ACCENT),
+fn paint_scrollbar(c: &Canvas, ui: &Ui, hwnd: HWND, lw: i32) {
+    let view = ui.view_height(hwnd);
+    let content = ui.content_height();
+    if content <= view {
+        return;
+    }
+    let track = view - 8;
+    let thumb = (track as f32 * view as f32 / content as f32).max(28.0) as i32;
+    let max_scroll = (content - view).max(1);
+    let offset = ((track - thumb) as f32 * ui.scroll as f32 / max_scroll as f32) as i32;
+    let top = TOP + 4 + offset;
+    c.round(lw - 7, top, lw - 3, top + thumb, 2, Some(TRACK), None);
+}
+
+fn paint_status(c: &Canvas, ui: &Ui, lw: i32) {
+    c.fill(0, PREVIEW_H, lw, TOP, BG);
+    let (text, color) = if ui.status.is_empty() {
+        ("Changes apply as you make them.", MUTED)
+    } else {
+        (ui.status.as_str(), ui.accent)
+    };
+    c.text(
+        MARGIN,
+        PREVIEW_H,
+        lw - MARGIN,
+        TOP,
+        text,
+        color,
+        ui.fonts.small,
+        DT_LEFT | DT_VCENTER | DT_SINGLELINE | DT_END_ELLIPSIS,
+    );
+}
+
+fn card(c: &Canvas, top: i32, h: i32, lw: i32) {
+    c.round(MARGIN, top, lw - MARGIN, top + h - GAP, 5, Some(CARD), Some(CARD_EDGE));
+}
+
+fn paint_row(c: &Canvas, ui: &Ui, row: &Laid, top: i32, lw: i32) {
+    let fonts = &ui.fonts;
+    let left = MARGIN + PAD;
+    let right = lw - MARGIN - PAD;
+    let card_h = row.h - GAP;
+    match &row.row {
+        Row::Header(text) => {
+            c.text(MARGIN, top + 14, lw - MARGIN, top + 40, text, TEXT, fonts.head, DT_LEFT | DT_VCENTER | DT_SINGLELINE);
         }
+        Row::Note(text) => {
+            c.text(MARGIN + 2, top + 2, lw - MARGIN, top + row.h, text, MUTED, fonts.small, DT_LEFT | DT_WORDBREAK);
+        }
+        Row::Toggle(id) => {
+            card(c, top, row.h, lw);
+            let (label, desc) = toggle_meta(*id);
+            let on = toggle_on(ui, *id);
+            c.text(left, top + 10, right - 120, top + 30, label, TEXT, fonts.body, DT_LEFT | DT_VCENTER | DT_SINGLELINE | DT_END_ELLIPSIS);
+            c.text(left, top + 30, right - 120, top + card_h - 4, desc, MUTED, fonts.small, DT_LEFT | DT_WORDBREAK);
+            // "On" text, then the switch, both right-aligned and vertically centered.
+            let mid = top + card_h / 2;
+            c.text(right - 100, mid - 12, right - 52, mid + 12, if on { "On" } else { "Off" }, TEXT, fonts.body, DT_RIGHT | DT_VCENTER | DT_SINGLELINE);
+            draw_toggle(c, right - 40, mid - 10, on, ui.accent);
+        }
+        Row::Choice(id) => {
+            card(c, top, row.h, lw);
+            c.text(left, top + 10, right - 190, top + 30, choice_title(*id), TEXT, fonts.body, DT_LEFT | DT_VCENTER | DT_SINGLELINE);
+            c.text(left, top + 30, right - 190, top + card_h - 4, choice_desc(ui, *id), MUTED, fonts.small, DT_LEFT | DT_WORDBREAK);
+            let mid = top + card_h / 2;
+            c.round(right - 176, mid - 16, right, mid + 16, 5, Some(CARD_HI), Some(CARD_EDGE));
+            c.text(right - 164, mid - 16, right - 30, mid + 16, choice_text(ui, *id), TEXT, fonts.body, DT_LEFT | DT_VCENTER | DT_SINGLELINE);
+            c.text(right - 30, mid - 16, right - 8, mid + 16, "▾", MUTED, fonts.body, DT_CENTER | DT_VCENTER | DT_SINGLELINE);
+        }
+        Row::Slider(id) => {
+            card(c, top, row.h, lw);
+            let (label, desc) = slider_meta(*id);
+            let (fraction, value) = slider_state(ui, *id);
+            c.text(left, top + 10, right - 90, top + 30, label, TEXT, fonts.body, DT_LEFT | DT_VCENTER | DT_SINGLELINE);
+            c.text(right - 90, top + 10, right, top + 30, &value, TEXT, fonts.body, DT_RIGHT | DT_VCENTER | DT_SINGLELINE);
+            c.text(left, top + 30, right, top + 54, desc, MUTED, fonts.small, DT_LEFT | DT_WORDBREAK);
+            let (x0, x1) = slider_track(lw);
+            draw_slider(c, x0, x1, top + 72, fraction, ui.accent);
+        }
+        Row::Color(id) => {
+            card(c, top, row.h, lw);
+            let style = ui.current_style();
+            let color = match *id {
+                ID_CAPTION => style.caption,
+                ID_BORDER => style.border,
+                ID_TEXT => style.text,
+                _ => style.acrylic_tint,
+            };
+            c.text(left, top, right - 180, top + card_h, color_label(*id), TEXT, fonts.body, DT_LEFT | DT_VCENTER | DT_SINGLELINE);
+            draw_swatch(c, right - 120 - 34, top + card_h / 2 - 9, color, ui.accent);
+        }
+        Row::Presets => {
+            card(c, top, row.h, lw);
+            for (index, preset) in PRESETS.iter().enumerate() {
+                let (l, t, r, b) = preset_rect(lw, index);
+                let selected = ui.preset_sel == Some(index);
+                c.round(l, top + t, r, top + b, 5, Some(CARD_HI), Some(if selected { ui.accent } else { CARD_EDGE }));
+                c.text(l, top + t, r, top + b, preset.name, TEXT, fonts.body, DT_CENTER | DT_VCENTER | DT_SINGLELINE | DT_END_ELLIPSIS);
+            }
+            let blurb = ui
+                .preset_sel
+                .map(|index| PRESETS[index].blurb)
+                .unwrap_or("Pick a starting look. Every option below stays editable afterwards.");
+            c.text(left, top + 58, right, top + card_h - 6, blurb, MUTED, fonts.small, DT_LEFT | DT_WORDBREAK);
+        }
+        Row::RuleList => draw_list(c, ui, top, row.h, lw, ui.config.rules.iter().map(|rule| rule.process.as_str()), ui.rule, "No rules yet."),
+        Row::ExcludeList => draw_list(c, ui, top, row.h, lw, ui.config.exclude.iter().map(|item| item.as_str()), ui.exclude_sel, "Nothing excluded."),
+        Row::Action(id) => {
+            card(c, top, row.h, lw);
+            let (title, desc, button) = button_meta(*id);
+            let (l, t, r, b) = action_pill(*id, lw, row.h);
+            let text_right = l - 16;
+            c.text(left, top + 10, text_right, top + 30, title, TEXT, fonts.body, DT_LEFT | DT_VCENTER | DT_SINGLELINE | DT_END_ELLIPSIS);
+            c.text(left, top + 30, text_right, top + card_h - 4, desc, MUTED, fonts.small, DT_LEFT | DT_WORDBREAK);
+            c.round(l, top + t, r, top + b, 5, Some(CARD_HI), Some(CARD_EDGE));
+            c.text(l, top + t, r, top + b, button, TEXT, fonts.body, DT_CENTER | DT_VCENTER | DT_SINGLELINE);
+        }
+        Row::AddField(id) => {
+            card(c, top, row.h, lw);
+            let (_, _, label) = button_meta(*id);
+            let (l, t, r, b) = add_pill(lw);
+            c.round(l, top + t, r, top + b, 5, Some(CARD_HI), Some(ui.accent));
+            c.text(l, top + t, r, top + b, label, TEXT, fonts.body, DT_CENTER | DT_VCENTER | DT_SINGLELINE);
+        }
+        Row::About(lines) => {
+            card(c, top, row.h, lw);
+            for (index, line) in lines.iter().enumerate() {
+                let y = top + 12 + index as i32 * 20;
+                let (font, color) = if index == 0 { (fonts.body, TEXT) } else { (fonts.small, MUTED) };
+                c.text(left, y, right, y + 20, line, color, font, DT_LEFT | DT_VCENTER | DT_SINGLELINE | DT_END_ELLIPSIS);
+            }
+        }
+    }
 }
 
 fn toggle_on(ui: &Ui, id: Toggle) -> bool {
@@ -890,11 +1556,11 @@ fn toggle_on(ui: &Ui, id: Toggle) -> bool {
     }
 }
 
-fn choice_text(ui: &Ui, id: Choice) -> String {
+fn choice_text(ui: &Ui, id: Choice) -> &'static str {
     let style = ui.current_style();
     match id {
-        Choice::Backdrop => backdrop_label(style.backdrop).into(),
-        Choice::Corners => corners_label(style.corners).into(),
+        Choice::Backdrop => backdrop_label(style.backdrop),
+        Choice::Corners => corners_label(style.corners),
     }
 }
 
@@ -912,100 +1578,250 @@ fn slider_state(ui: &Ui, id: Slider) -> (f32, String) {
     }
 }
 
-fn draw_label(dc: windows_sys::Win32::Graphics::Gdi::HDC, rect: &RECT, text: &str, color: u32) {
-    unsafe {
-        SetTextColor(dc, color);
-        let mut rect = *rect;
-        let wide = to_wide(text);
-        DrawTextW(dc, wide.as_ptr(), -1, &mut rect, 0x0020 | 0x0004 | 0x0800 | 0x0010);
-    }
+fn draw_toggle(c: &Canvas, x: i32, y: i32, on: bool, accent: u32) {
+    c.round(x, y, x + 40, y + 20, 10, Some(if on { accent } else { TRACK }), None);
+    let cx = if on { x + 22 } else { x + 4 };
+    draw_knob(c, cx + 7, y + 10, 7, 0x00FF_FFFF);
 }
 
-fn draw_toggle(dc: windows_sys::Win32::Graphics::Gdi::HDC, x: i32, y: i32, on: bool) {
+fn draw_slider(c: &Canvas, x0: i32, x1: i32, y: i32, fraction: f32, accent: u32) {
+    c.round(x0, y - 2, x1, y + 2, 2, Some(TRACK), None);
+    let thumb = x0 + (fraction.clamp(0.0, 1.0) * (x1 - x0) as f32) as i32;
+    c.round(x0, y - 2, thumb.max(x0 + 3), y + 2, 2, Some(accent), None);
+    draw_knob(c, thumb, y, 8, 0x00FF_FFFF);
+}
+
+fn draw_knob(c: &Canvas, cx: i32, cy: i32, radius: i32, color: u32) {
     unsafe {
-        let fill = CreateSolidBrush(if on { ACCENT } else { TRACK });
-        let old = SelectObject(dc, fill);
-        let pen = CreatePen(PS_SOLID, 1, if on { ACCENT } else { TRACK });
-        let old_pen = SelectObject(dc, pen);
-        RoundRect(dc, x, y, x + 40, y + 20, 20, 20);
-        SelectObject(dc, old_pen);
-        SelectObject(dc, old);
-        DeleteObject(pen);
-        DeleteObject(fill);
-        let knob = CreateSolidBrush(0x00FF_FFFF);
-        let old = SelectObject(dc, knob);
+        let brush = CreateSolidBrush(color);
+        let old = SelectObject(c.dc, brush);
         let null_pen = GetStockObject(NULL_PEN);
-        let old_pen = SelectObject(dc, null_pen);
-        let cx = if on { x + 24 } else { x + 4 };
-        Ellipse(dc, cx, y + 3, cx + 14, y + 17);
-        SelectObject(dc, old_pen);
-        SelectObject(dc, old);
-        DeleteObject(knob);
-    }
-}
-
-fn draw_slider(dc: windows_sys::Win32::Graphics::Gdi::HDC, x: i32, y: i32, width: i32, fraction: f32) {
-    unsafe {
-        let track = CreateSolidBrush(TRACK);
-        let rect = RECT { left: x, top: y, right: x + width, bottom: y + 4 };
-        FillRect(dc, &rect, track);
-        DeleteObject(track);
-        let thumb_x = x + (fraction.clamp(0.0, 1.0) * width as f32) as i32;
-        let knob = CreateSolidBrush(ACCENT);
-        let old = SelectObject(dc, knob);
-        let pen = CreatePen(PS_SOLID, 1, ACCENT);
-        let old_pen = SelectObject(dc, pen);
-        Ellipse(dc, thumb_x - 6, y - 5, thumb_x + 6, y + 9);
-        SelectObject(dc, old_pen);
-        SelectObject(dc, old);
-        DeleteObject(pen);
-        DeleteObject(knob);
-        let _ = rect;
-    }
-}
-
-fn draw_swatch(dc: windows_sys::Win32::Graphics::Gdi::HDC, x: i32, y: i32, color: Color) {
-    let rgb = match color {
-        Color::Rgb { r, g, b } => (b as u32) << 16 | (g as u32) << 8 | r as u32,
-        Color::Accent => ACCENT,
-        Color::None => 0x0044_4444,
-        Color::Default => 0x0088_8888,
-    };
-    unsafe {
-        let brush = CreateSolidBrush(rgb);
-        let rect = RECT { left: x, top: y, right: x + 18, bottom: y + 14 };
-        FillRect(dc, &rect, brush);
+        let old_pen = SelectObject(c.dc, null_pen);
+        Ellipse(c.dc, c.px(cx - radius), c.px(cy - radius), c.px(cx + radius), c.px(cy + radius));
+        SelectObject(c.dc, old_pen);
+        SelectObject(c.dc, old);
         DeleteObject(brush);
     }
 }
 
+fn draw_swatch(c: &Canvas, x: i32, y: i32, color: Color, accent: u32) {
+    let (fill, hatched) = match color {
+        Color::Rgb { r, g, b } => (rgb(r, g, b), false),
+        Color::Accent => (accent, false),
+        Color::None => (0x0044_4444, true),
+        Color::Default => (0x0088_8888, true),
+    };
+    c.round(x, y, x + 22, y + 18, 4, Some(fill), Some(0x0070_7070));
+    if hatched {
+        c.line(x + 4, y + 14, x + 18, y + 4, 0x00D0_D0D0, 1);
+    }
+}
+
+#[allow(clippy::too_many_arguments)]
 fn draw_list<'a>(
-    dc: windows_sys::Win32::Graphics::Gdi::HDC,
-    rect: &RECT,
+    c: &Canvas,
+    ui: &Ui,
+    top: i32,
+    height: i32,
+    lw: i32,
     items: impl Iterator<Item = &'a str>,
     selected: Option<usize>,
+    empty: &str,
 ) {
+    card(c, top, height, lw);
+    let mut any = false;
+    for (index, item) in items.enumerate() {
+        any = true;
+        let line_top = top + 8 + index as i32 * LIST_LINE;
+        if selected == Some(index) {
+            c.round(MARGIN + 6, line_top, lw - MARGIN - 6, line_top + LIST_LINE, 4, Some(CARD_HI), Some(ui.accent));
+        }
+        c.text(MARGIN + PAD, line_top, lw - MARGIN - PAD, line_top + LIST_LINE, item, TEXT, ui.fonts.body, DT_LEFT | DT_VCENTER | DT_SINGLELINE | DT_END_ELLIPSIS);
+    }
+    if !any {
+        c.text(MARGIN + PAD, top + 8, lw - MARGIN - PAD, top + 8 + LIST_LINE, empty, MUTED, ui.fonts.small, DT_LEFT | DT_VCENTER | DT_SINGLELINE);
+    }
+}
+
+// --- live preview -----------------------------------------------------------
+
+fn rgb(r: u8, g: u8, b: u8) -> u32 {
+    u32::from(r) | (u32::from(g) << 8) | (u32::from(b) << 16)
+}
+
+fn blend(a: u32, b: u32, t: f32) -> u32 {
+    let mix = |shift: u32| -> u32 {
+        let x = ((a >> shift) & 0xFF) as f32;
+        let y = ((b >> shift) & 0xFF) as f32;
+        (x * (1.0 - t) + y * t).round().clamp(0.0, 255.0) as u32
+    };
+    mix(0) | (mix(8) << 8) | (mix(16) << 16)
+}
+
+/// Keep an accent that is nearly black readable on a black window.
+fn visible_accent(color: u32) -> u32 {
+    let sum = (color & 0xFF) + ((color >> 8) & 0xFF) + ((color >> 16) & 0xFF);
+    if sum < 220 {
+        blend(color, 0x00FF_FFFF, 0.5)
+    } else {
+        color
+    }
+}
+
+fn resolve(color: Color, accent: u32, fallback: u32) -> u32 {
+    match color {
+        Color::Rgb { r, g, b } => rgb(r, g, b),
+        Color::Accent => accent,
+        Color::Default | Color::None => fallback,
+    }
+}
+
+/// Deep blue, teal, plum, as COLORREF.
+const WALLPAPER: [u32; 3] = [0x005C_300F, 0x0064_5C0F, 0x0070_2C46];
+
+fn paint_preview(c: &Canvas, ui: &Ui, lw_full: i32) {
+    let style = ui.current_style();
+    let black_shell = ui.config.shell.black_shell;
+    let oled = ui.config.shell.oled_taskbar || black_shell;
+
+    // The preview is an inset rounded card. Everything inside is drawn relative to
+    // its top-left corner, so `lw` below is the card's width.
+    let lw = lw_full - 2 * MARGIN;
+    let ph = PREVIEW_H - 16;
+    let (ox, oy) = (c.px(MARGIN), c.px(8));
     unsafe {
-        let card = CreateSolidBrush(CARD);
-        FillRect(dc, rect, card);
-        DeleteObject(card);
-        for (index, item) in items.enumerate().take(4) {
-            let mut line = RECT {
-                left: rect.left + 8,
-                top: rect.top + index as i32 * 24,
-                right: rect.right - 8,
-                bottom: rect.top + index as i32 * 24 + 24,
-            };
-            if selected == Some(index) {
-                let hi = CreateSolidBrush(0x0032_3232);
-                FillRect(dc, &line, hi);
-                DeleteObject(hi);
+        SetViewportOrgEx(c.dc, ox, oy, std::ptr::null_mut());
+        let outer = CreateRoundRectRgn(ox, oy, ox + c.px(lw) + 1, oy + c.px(ph) + 1, c.px(10), c.px(10));
+        SelectClipRgn(c.dc, outer);
+
+        // Wallpaper.
+        let third = lw / 3;
+        c.fill(0, 0, third, ph, WALLPAPER[0]);
+        c.fill(third, 0, third * 2, ph, WALLPAPER[1]);
+        c.fill(third * 2, 0, lw, ph, WALLPAPER[2]);
+        c.text(12, 4, 200, 20, "Live preview", 0x00E6_DCD2, ui.fonts.small, DT_LEFT | DT_VCENTER | DT_SINGLELINE);
+
+        // Start menu mock.
+        let (sl, st, sr, sb) = (lw - 20 - 180, 22, lw - 20, 114);
+        let start_fill = if black_shell { rgb(0, 0, 0) } else { rgb(44, 44, 50) };
+        c.round(sl, st, sr, sb, 8, Some(start_fill), Some(if black_shell { rgb(34, 34, 34) } else { rgb(70, 70, 78) }));
+        let search = if black_shell { rgb(24, 24, 24) } else { rgb(62, 62, 70) };
+        c.round(sl + 12, st + 10, sr - 12, st + 26, 8, Some(search), None);
+        for row in 0..2 {
+            for col in 0..4 {
+                let l = sl + 14 + col * 38;
+                let t = st + 38 + row * 28;
+                let tile = if row == 0 && col == 0 {
+                    ui.accent
+                } else if black_shell {
+                    rgb(26, 26, 26)
+                } else {
+                    rgb(68, 68, 76)
+                };
+                c.round(l, t, l + 28, t + 20, 5, Some(tile), None);
             }
-            draw_label(dc, &line, item, TEXT);
-            let _ = &mut line;
+        }
+
+        // Mock window.
+        let (wl, wt, wr, wb) = (20, 22, lw - 20 - 180 - 16, 114);
+        let radius = match style.corners {
+            Corners::Default | Corners::Round => 9,
+            Corners::Small => 4,
+            Corners::Square => 0,
+        };
+        let caption = resolve(style.caption, ui.accent, rgb(32, 32, 32));
+        let text_color = resolve(style.text, ui.accent, rgb(255, 255, 255));
+        // Clip regions are in device coordinates, so add the viewport origin by hand.
+        let inner = if radius == 0 {
+            CreateRectRgn(ox + c.px(wl), oy + c.px(wt), ox + c.px(wr), oy + c.px(wb))
+        } else {
+            CreateRoundRectRgn(
+                ox + c.px(wl),
+                oy + c.px(wt),
+                ox + c.px(wr) + 1,
+                oy + c.px(wb) + 1,
+                c.px(radius * 2),
+                c.px(radius * 2),
+            )
+        };
+        SelectClipRgn(c.dc, inner);
+        c.fill(wl, wt, wr, wt + 28, caption);
+        fill_backdrop(c, &style, ui.accent, wl, wt + 28, wr, wb, lw);
+        for (index, width) in [96, 140, 70].iter().enumerate() {
+            let y = wt + 42 + index as i32 * 14;
+            c.round(wl + 14, y, (wl + 14 + width).min(wr - 14), y + 6, 3, Some(rgb(86, 86, 94)), None);
+        }
+        SelectClipRgn(c.dc, outer);
+        DeleteObject(inner);
+        c.text(wl + 12, wt, wl + 120, wt + 28, "Notepad", text_color, ui.fonts.small, DT_LEFT | DT_VCENTER | DT_SINGLELINE);
+        let by = wt + 14;
+        c.line(wr - 62, by, wr - 52, by, text_color, 1);
+        c.round(wr - 40, by - 5, wr - 30, by + 5, 0, None, Some(text_color));
+        c.line(wr - 20, by - 5, wr - 10, by + 5, text_color, 1);
+        c.line(wr - 20, by + 5, wr - 10, by - 5, text_color, 1);
+        if style.border != Color::None {
+            let border = resolve(style.border, ui.accent, rgb(90, 90, 96));
+            c.round(wl, wt, wr, wb, radius, None, Some(border));
+        }
+
+        // Taskbar mock.
+        let tb_top = ph - 34;
+        let bar = if oled { rgb(0, 0, 0) } else { rgb(38, 38, 44) };
+        c.fill(0, tb_top, lw, ph, bar);
+        if !oled {
+            c.fill(0, tb_top, lw, tb_top + 1, rgb(62, 62, 70));
+        }
+        let icons = 6;
+        let start_x = lw / 2 - icons * 16;
+        for index in 0..icons {
+            let l = start_x + index * 32;
+            let tint = if index == 0 {
+                ui.accent
+            } else if oled {
+                rgb(70, 70, 76)
+            } else {
+                rgb(120, 120, 130)
+            };
+            c.round(l, tb_top + 8, l + 18, tb_top + 26, 4, Some(tint), None);
+        }
+        c.round(lw - 78, tb_top + 10, lw - 14, tb_top + 24, 4, Some(if oled { rgb(26, 26, 26) } else { rgb(58, 58, 66) }), None);
+
+        SelectClipRgn(c.dc, std::ptr::null_mut());
+        DeleteObject(outer);
+        SetViewportOrgEx(c.dc, 0, 0, std::ptr::null_mut());
+    }
+    // Hairline border around the card.
+    c.round(MARGIN, 8, MARGIN + lw, 8 + ph, 5, None, Some(CARD_EDGE));
+}
+
+#[allow(clippy::too_many_arguments)]
+fn fill_backdrop(c: &Canvas, style: &Style, accent: u32, l: i32, t: i32, r: i32, b: i32, lw: i32) {
+    let solid = |color: u32| c.fill(l, t, r, b, color);
+    let through = |overlay: u32, amount: f32| {
+        let third = lw / 3;
+        let bands = [(0, third), (third, third * 2), (third * 2, lw)];
+        for (index, (x0, x1)) in bands.iter().enumerate() {
+            let (from, to) = ((*x0).max(l), (*x1).min(r));
+            if from < to {
+                c.fill(from, t, to, b, blend(WALLPAPER[index], overlay, amount));
+            }
+        }
+    };
+    match style.backdrop {
+        Backdrop::None => solid(rgb(32, 32, 32)),
+        Backdrop::Auto | Backdrop::Mica => solid(rgb(30, 36, 42)),
+        Backdrop::MicaAlt => solid(rgb(22, 26, 30)),
+        Backdrop::Acrylic => through(rgb(40, 40, 44), 0.6),
+        Backdrop::TintedAcrylic => {
+            let tint = resolve(style.acrylic_tint, accent, rgb(0, 0, 0));
+            through(tint, f32::from(style.acrylic_opacity) / 255.0);
         }
     }
 }
+
+// ---------------------------------------------------------------------------
+// Labels, config helpers, and Win32 helpers
+// ---------------------------------------------------------------------------
 
 fn next_backdrop(value: Backdrop) -> Backdrop {
     match value {
@@ -1056,25 +1872,6 @@ fn color_token(color: Color) -> String {
     }
 }
 
-fn load_config() -> Config {
-    let path = config_path();
-    if let Ok(text) = std::fs::read_to_string(&path) {
-        if let Ok(config) = crate::config::parse_config(&text) {
-            return config;
-        }
-    }
-    crate::config::parse_config(crate::config::bundled_default_json()).expect("bundled config")
-}
-
-fn store_config(config: &Config) -> Result<(), String> {
-    let path = config_path();
-    if let Some(parent) = path.parent() {
-        std::fs::create_dir_all(parent).map_err(|err| err.to_string())?;
-    }
-    let text = serde_json::to_string_pretty(config).map_err(|err| err.to_string())?;
-    std::fs::write(path, format!("{text}\n")).map_err(|err| err.to_string())
-}
-
 fn make_edit(parent: HWND, id: u16, font: HFONT) -> HWND {
     unsafe {
         let class = to_wide("EDIT");
@@ -1082,9 +1879,9 @@ fn make_edit(parent: HWND, id: u16, font: HFONT) -> HWND {
             0,
             pcw(&class),
             std::ptr::null(),
-            WS_CHILD | WS_VISIBLE | WS_TABSTOP | 0x0080,
+            WS_CHILD | WS_VISIBLE | WS_TABSTOP | 0x0080, // ES_AUTOHSCROLL
             0,
-            -40,
+            -100,
             10,
             10,
             parent,
@@ -1096,23 +1893,31 @@ fn make_edit(parent: HWND, id: u16, font: HFONT) -> HWND {
         SetWindowTheme(hwnd, pcw(&theme), std::ptr::null());
         uxtheme::allow_window(hwnd, true);
         if !font.is_null() {
-            windows_sys::Win32::UI::WindowsAndMessaging::SendMessageW(hwnd, WM_SETFONT, font as WPARAM, 1);
+            SendMessageW(hwnd, WM_SETFONT, font as WPARAM, 1);
         }
         hwnd
     }
 }
 
-fn make_font(dpi: u32) -> HFONT {
+fn make_font(dpi: u32, logical_px: i32, weight: i32) -> HFONT {
     unsafe {
-        let height = -((15 * dpi.max(96) as i32 + 48) / 96);
+        let height = -((logical_px * dpi.max(96) as i32 + 48) / 96);
         let name = to_wide("Segoe UI");
-        CreateFontW(height, 0, 0, 0, 400, 0, 0, 0, 1, 0, 0, 5, 0, pcw(&name))
+        CreateFontW(height, 0, 0, 0, weight, 0, 0, 0, 1, 0, 0, 5, 0, pcw(&name))
     }
 }
 
-fn place_edit(hwnd: HWND, x: i32, y: i32, w: i32, h: i32) {
+fn place_edit(hwnd: HWND, x: i32, y: i32, w: i32, h: i32, show: bool) {
     unsafe {
-        SetWindowPos(hwnd, std::ptr::null_mut(), x, y, w, h, SWP_NOZORDER);
+        SetWindowPos(
+            hwnd,
+            std::ptr::null_mut(),
+            x,
+            y,
+            w.max(1),
+            h.max(1),
+            SWP_NOZORDER | SWP_NOACTIVATE | if show { SWP_SHOWWINDOW } else { SWP_HIDEWINDOW },
+        );
     }
 }
 
@@ -1131,10 +1936,10 @@ fn get_text(hwnd: HWND) -> String {
     }
 }
 
-fn client_width(hwnd: HWND) -> i32 {
+fn client_size(hwnd: HWND) -> (i32, i32) {
     let mut rect = RECT { left: 0, top: 0, right: 0, bottom: 0 };
     unsafe { GetClientRect(hwnd, &mut rect) };
-    (rect.right - rect.left).max(320)
+    ((rect.right - rect.left).max(1), (rect.bottom - rect.top).max(1))
 }
 
 fn dpi_of(hwnd: HWND) -> u32 {
@@ -1148,6 +1953,8 @@ fn dpi_of(hwnd: HWND) -> u32 {
     }
 }
 
+/// Center a window of logical size `width` x `height` on the monitor under the cursor,
+/// scaled to that monitor and shrunk to fit its work area.
 fn place(width: i32, height: i32) -> (i32, i32, i32, i32) {
     unsafe {
         let mut cursor = POINT { x: 0, y: 0 };
@@ -1158,14 +1965,20 @@ fn place(width: i32, height: i32) -> (i32, i32, i32, i32) {
         if windows_sys::Win32::Graphics::Gdi::GetMonitorInfoW(monitor, &mut info) == 0 {
             return (CW_USEDEFAULT, CW_USEDEFAULT, width, height);
         }
+        let (mut dpi_x, mut dpi_y) = (0u32, 0u32);
+        let dpi = if GetDpiForMonitor(monitor, MDT_EFFECTIVE_DPI, &mut dpi_x, &mut dpi_y) == 0 && dpi_x != 0 {
+            dpi_x
+        } else {
+            96
+        };
         let work = info.rcWork;
-        let x = work.left + ((work.right - work.left) - width) / 2;
-        let y = work.top + ((work.bottom - work.top) - height) / 2;
-        (x, y, width, height)
+        let k = dpi as f32 / 96.0;
+        let avail_w = work.right - work.left;
+        let avail_h = work.bottom - work.top;
+        let w = ((width as f32 * k) as i32).min(avail_w - 24);
+        let h = ((height as f32 * k) as i32).min(avail_h - 24);
+        let x = work.left + (avail_w - w) / 2;
+        let y = work.top + (avail_h - h) / 2;
+        (x, y, w, h)
     }
-}
-
-#[allow(dead_code)]
-fn _style(style: u32) -> u32 {
-    style & GWL_STYLE as u32
 }

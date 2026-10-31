@@ -1,33 +1,49 @@
 #!/bin/sh
-# Cross-compile AllBlack11 from Linux and pack the zip artifacts.
+# Cross-compile AllBlack11 from Linux and pack the release files into ./dist.
+#   ./build.sh            ARM64 and x64
+#   ./build.sh arm64      ARM64 only
+#   ./build.sh x64        x64 only
+# Needs: rustup targets aarch64/x86_64-pc-windows-msvc, cargo-xwin, llvm (llvm-rc, llvm-cvtres), python3.
 set -eu
 cd "$(dirname "$0")"
 
+which="${1:-all}"
+case "$which" in
+  all|arm64|x64) ;;
+  *) echo "usage: $0 [all|arm64|x64]" >&2; exit 2 ;;
+esac
+
 cargo test --lib
 
-export CARGO_BUILD_JOBS="${CARGO_BUILD_JOBS:-1}"
-export XWIN_CACHE_DIR="${XWIN_CACHE_DIR:-$HOME/.cache/xwin}"
-mkdir -p "$XWIN_CACHE_DIR"
+export CARGO_BUILD_JOBS="${CARGO_BUILD_JOBS:-2}"
+rm -rf dist
+mkdir -p dist
 
-cargo xwin build --release --target aarch64-pc-windows-msvc
-cargo xwin build --release --target x86_64-pc-windows-msvc
+build_one() {
+  arch="$1"; target="$2"
+  cargo xwin build --release --target "$target"
+  cargo xwin build --release --target "$target" --manifest-path hook/Cargo.toml
+  payload="dist/payload-$arch"
+  mkdir -p "$payload"
+  cp "target/$target/release/AllBlack11.exe" "hook/target/$target/release/AllBlack11Hook.dll" \
+     config.default.json LICENSE "$payload/"
+  ALLBLACK11_PAYLOAD="$(pwd)/$payload" \
+    cargo xwin build --release --target "$target" --manifest-path setup/Cargo.toml
+}
 
-python3 - <<'PY'
-import shutil, struct, zipfile
+[ "$which" = all ] || [ "$which" = arm64 ] && build_one arm64 aarch64-pc-windows-msvc
+[ "$which" = all ] || [ "$which" = x64 ] && build_one x64 x86_64-pc-windows-msvc
+
+WHICH="$which" python3 - <<'PY'
+import os, shutil, struct, zipfile
 from pathlib import Path
 
 root = Path(".").resolve()
-out = Path("/opt/cursor/artifacts")
-out.mkdir(parents=True, exist_ok=True)
 dist = root / "dist"
-if dist.exists():
-    shutil.rmtree(dist)
-dist.mkdir()
-
 common = ["install.ps1", "uninstall.ps1", "README.md", "config.default.json", "LICENSE", "CHANGELOG.md"]
 builds = {
-    "aarch64-pc-windows-msvc": ("AllBlack11-arm64.zip", 0xAA64),
-    "x86_64-pc-windows-msvc": ("AllBlack11-x64.zip", 0x8664),
+    "arm64": ("aarch64-pc-windows-msvc", 0xAA64),
+    "x64": ("x86_64-pc-windows-msvc", 0x8664),
 }
 
 def machine(path: Path) -> int:
@@ -35,19 +51,35 @@ def machine(path: Path) -> int:
     pe = struct.unpack_from("<I", data, 0x3C)[0]
     return struct.unpack_from("<H", data, pe + 4)[0]
 
-for target, (zip_name, expect) in builds.items():
-    exe = root / "target" / target / "release" / "AllBlack11.exe"
-    got = machine(exe)
+def check(path: Path, expect: int) -> None:
+    got = machine(path)
     if got != expect:
-        raise SystemExit(f"{exe} machine 0x{got:04X}, expected 0x{expect:04X}")
-    stage = dist / zip_name.replace(".zip", "")
+        raise SystemExit(f"{path} machine 0x{got:04X}, expected 0x{expect:04X}")
+
+which = os.environ["WHICH"]
+for arch, (target, expect) in builds.items():
+    if which not in ("all", arch):
+        continue
+    exe = root / "target" / target / "release" / "AllBlack11.exe"
+    dll = root / "hook" / "target" / target / "release" / "AllBlack11Hook.dll"
+    setup = root / "setup" / "target" / target / "release" / "AllBlack11-Setup.exe"
+    for item in (exe, dll, setup):
+        check(item, expect)
+    installer = dist / f"AllBlack11-Setup-{arch}.exe"
+    shutil.copy2(setup, installer)
+    stage = dist / f"AllBlack11-{arch}"
     stage.mkdir()
     shutil.copy2(exe, stage / "AllBlack11.exe")
+    shutil.copy2(dll, stage / "AllBlack11Hook.dll")
     for name in common:
         shutil.copy2(root / name, stage / name)
-    archive = out / zip_name
+    archive = dist / f"AllBlack11-{arch}.zip"
     with zipfile.ZipFile(archive, "w", compression=zipfile.ZIP_DEFLATED) as zf:
         for path in sorted(stage.iterdir()):
             zf.write(path, path.name)
-    print(f"{archive}  exe={exe.stat().st_size} bytes  machine=0x{got:04X}")
+    shutil.rmtree(stage)
+    shutil.rmtree(dist / f"payload-{arch}")
+    print(f"{arch}: machine=0x{expect:04X}")
+    print(f"  {installer.name}  {installer.stat().st_size} bytes")
+    print(f"  {archive.name}  {archive.stat().st_size} bytes")
 PY

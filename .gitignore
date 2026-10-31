@@ -4,3 +4,4 @@
 *.zip
 *.exe
 .xwin-cache
+setup/target

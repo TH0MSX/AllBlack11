@@ -1,10 +1,12 @@
 //! AllBlack11 core: config, window policy, and the snapshot file used to undo changes.
 //! The Win32 tray loop lives in `platform` and is compiled only for Windows.
 
+mod arch;
 mod caption;
 mod config;
 mod inject;
 mod policy;
+mod presets;
 mod shell;
 mod snapshot;
 mod timefmt;
@@ -18,6 +20,8 @@ pub use policy::{
     WS_DLGFRAME, WS_EX_LAYERED, WS_EX_NOREDIRECTIONBITMAP, WS_EX_TOOLWINDOW, WS_EX_TRANSPARENT,
     WS_POPUP,
 };
+pub use arch::{classify, machine_name, ArchStatus, BUILD_MACHINE};
+pub use presets::{apply as apply_preset, Preset, PRESETS};
 pub use shell::{blacken_shell_slots, ShellBackup, SHELL_SLOT_BYTES};
 pub use snapshot::{format_snapshots, parse_snapshots, same_process, SnapshotFile, StoredSnapshot};
 pub use timefmt::format_unix_utc;

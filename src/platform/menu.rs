@@ -9,11 +9,11 @@ use windows_sys::Win32::Foundation::{HWND, LPARAM, LRESULT, POINT, RECT, WPARAM}
 use windows_sys::Win32::Graphics::Dwm::DwmSetWindowAttribute;
 use windows_sys::Win32::Graphics::Gdi::{
     CreateFontW, CreatePen, CreateSolidBrush, DeleteObject, DrawTextW, FillRect, GetStockObject,
-    GetTextExtentPoint32W, RoundRect, SelectObject, SetBkMode, SetTextColor, HDC, HFONT, NULL_BRUSH,
+    GetTextExtentPoint32W, MonitorFromPoint, MONITOR_DEFAULTTONEAREST, RoundRect, SelectObject, SetBkMode, SetTextColor, HDC, HFONT, NULL_BRUSH,
     PS_SOLID, TRANSPARENT,
 };
 use windows_sys::Win32::System::Threading::GetCurrentThreadId;
-use windows_sys::Win32::UI::HiDpi::GetDpiForWindow;
+use windows_sys::Win32::UI::HiDpi::{GetDpiForMonitor, GetDpiForWindow, MDT_EFFECTIVE_DPI};
 use windows_sys::Win32::UI::Controls::{
     DRAWITEMSTRUCT, MEASUREITEMSTRUCT, ODA_SELECT, ODS_DISABLED, ODS_GRAYED, ODS_SELECTED, ODT_MENU,
 };
@@ -39,6 +39,9 @@ const CLEARTYPE_QUALITY: u32 = 5;
 const DT_SINGLELINE: u32 = 0x0020;
 const DT_VCENTER: u32 = 0x0004;
 const DT_NOPREFIX: u32 = 0x0800;
+const DT_TOP: u32 = 0x0000;
+const DT_BOTTOM: u32 = 0x0008;
+const DT_END_ELLIPSIS: u32 = 0x8000;
 
 #[derive(Clone, Copy, PartialEq, Eq)]
 pub enum ItemKind {
@@ -52,6 +55,8 @@ pub enum ItemKind {
 pub struct Item {
     pub id: u32,
     pub label: String,
+    /// Optional second line that says what the item does.
+    pub hint: String,
     pub kind: ItemKind,
     pub enabled: bool,
     pub children: Vec<Item>,
@@ -59,6 +64,7 @@ pub struct Item {
 
 struct Drawn {
     label: String,
+    hint: String,
     kind: ItemKind,
     enabled: bool,
 }
@@ -127,26 +133,36 @@ pub fn on_measure(lparam: LPARAM) -> bool {
             measure.itemWidth = scale(dpi, 160) as u32;
             return true;
         }
-        let font = menu_font(dpi);
         let mut dc_size = (scale(dpi, 160), 0i32);
         if let Some(dc) = paint_dc() {
-            let previous = SelectObject(dc, font);
-            let mut size = windows_sys::Win32::Foundation::SIZE { cx: 0, cy: 0 };
-            let wide = to_wide(&item.label);
-            GetTextExtentPoint32W(dc, wide.as_ptr(), (wide.len() - 1) as i32, &mut size);
-            dc_size = (size.cx, size.cy);
-            if !previous.is_null() {
-                SelectObject(dc, previous);
+            let text_size = |font: HFONT, text: &str| -> (i32, i32) {
+                let previous = SelectObject(dc, font);
+                let mut size = windows_sys::Win32::Foundation::SIZE { cx: 0, cy: 0 };
+                let wide = to_wide(text);
+                GetTextExtentPoint32W(dc, wide.as_ptr(), (wide.len() - 1) as i32, &mut size);
+                if !previous.is_null() {
+                    SelectObject(dc, previous);
+                }
+                (size.cx, size.cy)
+            };
+            dc_size = text_size(menu_font(dpi, false), &item.label);
+            if !item.hint.is_empty() {
+                let hint = text_size(menu_font(dpi, true), &item.hint);
+                dc_size.0 = dc_size.0.max(hint.0);
             }
             windows_sys::Win32::Graphics::Gdi::ReleaseDC(std::ptr::null_mut(), dc);
         }
         let height = if item.kind == ItemKind::Title {
             scale(dpi, 28)
-        } else {
+        } else if item.hint.is_empty() {
             scale(dpi, 34).max(dc_size.1 + scale(dpi, 12))
+        } else {
+            scale(dpi, 52).max(dc_size.1 * 2 + scale(dpi, 14))
         };
         measure.itemHeight = height as u32;
-        measure.itemWidth = (dc_size.0 + scale(dpi, 28 + 16 + 18)) as u32;
+        // Keep a long hint from stretching the menu across the screen.
+        let widest = dc_size.0.min(scale(dpi, 330));
+        measure.itemWidth = (widest + scale(dpi, 28 + 16 + 18)) as u32;
         true
     }
 }
@@ -205,6 +221,7 @@ fn fill_themed(menu: HMENU, items: &[Item]) {
             let mut drawn = drawn.borrow_mut();
             drawn.push(Drawn {
                 label: item.label.clone(),
+                hint: item.hint.clone(),
                 kind: item.kind,
                 enabled: item.enabled,
             });
@@ -288,6 +305,7 @@ impl Clone for Drawn {
     fn clone(&self) -> Self {
         Self {
             label: self.label.clone(),
+            hint: self.hint.clone(),
             kind: self.kind,
             enabled: self.enabled,
         }
@@ -344,7 +362,7 @@ fn paint_item(draw: &DRAWITEMSTRUCT, item: Drawn) {
         }
         DeleteObject(brush);
         let dpi = current_dpi();
-        let font = menu_font(dpi);
+        let font = menu_font(dpi, false);
         let previous = SelectObject(draw.hDC, font);
         SetBkMode(draw.hDC, TRANSPARENT as i32);
         SetTextColor(draw.hDC, text);
@@ -368,13 +386,41 @@ fn paint_item(draw: &DRAWITEMSTRUCT, item: Drawn) {
             rect.right -= scale(dpi, 18);
         }
         let wide = to_wide(&item.label);
-        DrawTextW(
-            draw.hDC,
-            wide.as_ptr(),
-            -1,
-            &mut rect,
-            DT_SINGLELINE | DT_VCENTER | DT_NOPREFIX,
-        );
+        if item.hint.is_empty() {
+            DrawTextW(
+                draw.hDC,
+                wide.as_ptr(),
+                -1,
+                &mut rect,
+                DT_SINGLELINE | DT_VCENTER | DT_NOPREFIX,
+            );
+        } else {
+            // Label on top, the muted explanation underneath.
+            let mut top = rect;
+            top.bottom = rect.top + (rect.bottom - rect.top) * 11 / 20;
+            DrawTextW(
+                draw.hDC,
+                wide.as_ptr(),
+                -1,
+                &mut top,
+                DT_SINGLELINE | DT_BOTTOM | DT_NOPREFIX,
+            );
+            let mut low = rect;
+            low.top = top.bottom - scale(dpi, 1);
+            low.right -= scale(dpi, 4);
+            SelectObject(draw.hDC, menu_font(dpi, true));
+            SetTextColor(draw.hDC, if dark { 0x0099_9999 } else { 0x0066_6666 });
+            let hint = to_wide(&item.hint);
+            DrawTextW(
+                draw.hDC,
+                hint.as_ptr(),
+                -1,
+                &mut low,
+                DT_SINGLELINE | DT_TOP | DT_NOPREFIX | DT_END_ELLIPSIS,
+            );
+            SelectObject(draw.hDC, font);
+            SetTextColor(draw.hDC, text);
+        }
         if item.kind == ItemKind::Submenu {
             let arrow = to_wide("›");
             let mut arrow_rect = draw.rcItem;
@@ -399,8 +445,17 @@ fn scale(dpi: u32, px: i32) -> i32 {
     (px * dpi + 48) / 96
 }
 
+/// DPI of the monitor the menu opens on. The foreground window can sit on another
+/// monitor with a different scale.
 fn current_dpi() -> u32 {
     unsafe {
+        let mut point = POINT { x: 0, y: 0 };
+        GetCursorPos(&mut point);
+        let monitor = MonitorFromPoint(point, MONITOR_DEFAULTTONEAREST);
+        let (mut x, mut y) = (0u32, 0u32);
+        if !monitor.is_null() && GetDpiForMonitor(monitor, MDT_EFFECTIVE_DPI, &mut x, &mut y) == 0 && x != 0 {
+            return x;
+        }
         let hwnd = windows_sys::Win32::UI::WindowsAndMessaging::GetForegroundWindow();
         let dpi = GetDpiForWindow(hwnd);
         if dpi == 0 {
@@ -411,16 +466,17 @@ fn current_dpi() -> u32 {
     }
 }
 
-fn menu_font(dpi: u32) -> HFONT {
+fn menu_font(dpi: u32, small: bool) -> HFONT {
     use std::sync::atomic::{AtomicIsize, AtomicU32, Ordering};
-    static FONT: AtomicIsize = AtomicIsize::new(0);
-    static FONT_DPI: AtomicU32 = AtomicU32::new(0);
-    let cached = FONT.load(Ordering::Acquire);
-    if cached != 0 && FONT_DPI.load(Ordering::Acquire) == dpi {
+    static FONTS: [AtomicIsize; 2] = [AtomicIsize::new(0), AtomicIsize::new(0)];
+    static FONT_DPI: [AtomicU32; 2] = [AtomicU32::new(0), AtomicU32::new(0)];
+    let slot = usize::from(small);
+    let cached = FONTS[slot].load(Ordering::Acquire);
+    if cached != 0 && FONT_DPI[slot].load(Ordering::Acquire) == dpi {
         return cached as HFONT;
     }
     unsafe {
-        let height = -scale(dpi, 14);
+        let height = -scale(dpi, if small { 12 } else { 14 });
         let name = to_wide("Segoe UI");
         let font = CreateFontW(
             height,
@@ -441,8 +497,8 @@ fn menu_font(dpi: u32) -> HFONT {
         if font.is_null() {
             return GetStockObject(17) as HFONT; // DEFAULT_GUI_FONT
         }
-        let previous = FONT.swap(font as isize, Ordering::AcqRel);
-        FONT_DPI.store(dpi, Ordering::Release);
+        let previous = FONTS[slot].swap(font as isize, Ordering::AcqRel);
+        FONT_DPI[slot].store(dpi, Ordering::Release);
         if previous != 0 {
             DeleteObject(previous as HFONT);
         }

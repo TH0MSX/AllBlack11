@@ -3,6 +3,7 @@
 #   powershell -ExecutionPolicy Bypass -File .\install.ps1
 # Skip the HKCU Run entry with -NoAutostart.
 # Also retires a previous PepaTheme install (Run key and Programs folder).
+# Prefer AllBlack11-Setup-<arch>.exe for a regular install with an Apps entry.
 
 param(
     [switch]$NoAutostart
@@ -133,6 +134,14 @@ if ($machine -eq 0x8664 -and $os -eq "Arm64") {
 }
 if ($machine -ne 0xAA64 -and $machine -ne 0x8664) {
     Write-Error ("Unrecognized executable architecture: 0x{0:X4}" -f $machine)
+}
+
+$hookSource = Join-Path $here "AllBlack11Hook.dll"
+if (Test-Path $hookSource) {
+    $hookMachine = Get-PeMachine $hookSource
+    if ($hookMachine -ne $machine) {
+        Write-Error ("AllBlack11Hook.dll is 0x{0:X4} but AllBlack11.exe is 0x{1:X4}. The zip is mixed up." -f $hookMachine, $machine)
+    }
 }
 
 Remove-LegacyPepaTheme

@@ -9,6 +9,7 @@
 //! not elevated, protected, or excluded.
 
 mod app;
+mod cfgio;
 mod composition;
 mod dwm;
 mod icon;
@@ -18,6 +19,7 @@ mod metrics;
 mod registry;
 mod settings;
 mod shellwin;
+mod sysinfo;
 mod uxtheme;
 mod wide;
 

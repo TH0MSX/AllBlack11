@@ -37,10 +37,9 @@ pub fn load_backup() -> ShellBackup {
 }
 
 pub fn save_backup(backup: &ShellBackup) {
-    if let Some(parent) = shell_backup_path().parent() {
-        let _ = std::fs::create_dir_all(parent);
+    if let Err(err) = super::wide::write_atomic(&shell_backup_path(), &format!("{}\n", backup.to_json())) {
+        super::wide::log_line("error", &format!("could not save shell-backup.json: {err}"));
     }
-    let _ = std::fs::write(shell_backup_path(), format!("{}\n", backup.to_json()));
 }
 
 pub fn broadcast_immersive_color() {
