@@ -129,6 +129,9 @@ impl Ui {
         b.push(Row::Note(
             "A quick look runs for 15 seconds first. Keep it, or it goes back by itself.",
         ));
+        b.push(Row::Header("Command palette"));
+        b.push(Row::Action(Button::OpenPalette));
+        b.push(Row::Toggle(Toggle::PaletteHotkey));
         b.push(Row::Header("Windows"));
         b.push(Row::Toggle(Toggle::Theme));
         b.push(Row::Toggle(Toggle::Autostart));
@@ -1729,6 +1732,14 @@ impl Ui {
                     "Identity accents are off.".into()
                 };
             }
+            Toggle::PaletteHotkey => {
+                self.config.features.palette_hotkey = !self.config.features.palette_hotkey;
+                self.status = if self.config.features.palette_hotkey {
+                    "Ctrl+Alt+Space now opens the command palette.".into()
+                } else {
+                    "The palette hotkey is off.".into()
+                };
+            }
             Toggle::DayNight => {
                 self.config.features.day_night.enabled = !self.config.features.day_night.enabled;
                 self.status = if self.config.features.day_night.enabled {
@@ -1880,6 +1891,7 @@ impl Ui {
                 }
             }
             Button::CopyReport => self.copy_report(),
+            Button::OpenPalette => palette_ui::open(self.owner),
             Button::NextAccent | Button::ClearAccent => self.change_accent(id),
             Button::PaletteFromImage => self.palette_from_image(),
             Button::TryScene => self.try_scene(),

@@ -52,6 +52,27 @@ use windows_sys::Win32::UI::WindowsAndMessaging::WM_TIMER;
 
 #[path = "settings_pages.rs"]
 mod pages;
+#[path = "cmdpal.rs"]
+mod palette_ui;
+
+static PENDING_PAGE: std::sync::atomic::AtomicUsize =
+    std::sync::atomic::AtomicUsize::new(usize::MAX);
+const WM_GOTO_PAGE: u32 = windows_sys::Win32::UI::WindowsAndMessaging::WM_APP + 21;
+
+/// Open the command palette (or close it if it is open).
+pub fn open_palette(owner: HWND) {
+    palette_ui::open(owner);
+}
+
+/// Open Settings on page `index` (0 Overview .. 5 Safety).
+pub fn open_page(owner: HWND, index: usize) {
+    PENDING_PAGE.store(index, Ordering::Release);
+    open(owner);
+    let hwnd = SETTINGS.load(Ordering::Acquire);
+    if hwnd != 0 {
+        unsafe { PostMessageW(hwnd as HWND, WM_GOTO_PAGE, 0, 0) };
+    }
+}
 
 pub const WM_SETTINGS_APPLIED: u32 = windows_sys::Win32::UI::WindowsAndMessaging::WM_APP + 4;
 const WM_REFRESH: u32 = windows_sys::Win32::UI::WindowsAndMessaging::WM_APP + 5;
@@ -200,6 +221,7 @@ enum Toggle {
     ShowTitles,
     IdentityAccents,
     DayNight,
+    PaletteHotkey,
 }
 
 #[derive(Clone, Copy, PartialEq, Eq)]
@@ -248,6 +270,7 @@ enum Button {
     UndoShell,
     OpenHarness,
     DemoMaterials,
+    OpenPalette,
     NextAccent,
     ClearAccent,
     PaletteFromImage,
@@ -341,6 +364,10 @@ fn toggle_meta(id: Toggle) -> (&'static str, &'static str) {
         Toggle::IdentityAccents => (
             "Identity accents (optional)",
             "Gives each app its own thin border color so windows are easy to tell apart. Only the border changes, and only where no rule sets one. Off by default.",
+        ),
+        Toggle::PaletteHotkey => (
+            "Command palette hotkey (optional)",
+            "Ctrl+Alt+Space opens the command palette from anywhere. It registers one system hotkey and nothing else: no keyboard hook, no input is read. Off by default. The tray item and Ctrl+K in Settings always work.",
         ),
         Toggle::DayNight => (
             "Day / Night scenes (optional)",
@@ -482,6 +509,11 @@ fn button_meta(id: Button) -> (&'static str, &'static str, &'static str) {
             "Materials demonstration",
             "Opens a window that applies this look to itself, with a transparent, an opaque and a half-transparent panel. It shows how Windows materials behave. It does not show how another app will look.",
             "Open demonstration",
+        ),
+        Button::OpenPalette => (
+            "Command palette",
+            "Search every action: pick a window, switch scenes, pause, restore, open a page. Also Ctrl+K in Settings and the tray menu.",
+            "Open",
         ),
         Button::NextAccent => ("", "", "Change accent"),
         Button::ClearAccent => ("", "", "Automatic"),
@@ -759,6 +791,11 @@ unsafe extern "system" fn wndproc(hwnd: HWND, msg: u32, wparam: WPARAM, lparam: 
                     }
                     return 0;
                 }
+                0x4B if ctrl => {
+                    // Ctrl+K: the command palette.
+                    palette_ui::open(ui.owner);
+                    return 0;
+                }
                 0x09 if ctrl => {
                     // Ctrl+Tab and Ctrl+Shift+Tab switch pages.
                     let count = Page::ALL.len();
@@ -804,6 +841,13 @@ unsafe extern "system" fn wndproc(hwnd: HWND, msg: u32, wparam: WPARAM, lparam: 
         WM_TIMER => {
             if wparam == TIMER_UI {
                 ui.on_timer(hwnd);
+            }
+            0
+        }
+        WM_GOTO_PAGE => {
+            let index = PENDING_PAGE.swap(usize::MAX, Ordering::AcqRel);
+            if let Some(page) = Page::ALL.get(index) {
+                ui.set_page(hwnd, *page);
             }
             0
         }
@@ -1213,6 +1257,7 @@ impl Ui {
             | Toggle::EmulatedX64
             | Toggle::IdentityAccents
             | Toggle::DayNight
+            | Toggle::PaletteHotkey
             | Toggle::ShowTitles => {
                 self.toggle_ext(id);
                 return;
@@ -2108,6 +2153,7 @@ fn toggle_on(ui: &Ui, id: Toggle) -> bool {
         Toggle::ShowTitles => ui.ext.show_titles,
         Toggle::IdentityAccents => ui.config.features.identity_accents,
         Toggle::DayNight => ui.config.features.day_night.enabled,
+        Toggle::PaletteHotkey => ui.config.features.palette_hotkey,
     }
 }
 

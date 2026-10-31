@@ -93,19 +93,20 @@ const HOOK_FLAGS: u32 = WINEVENT_OUTOFCONTEXT | WINEVENT_SKIPOWNPROCESS;
 const CMD_ENABLE: u32 = 1;
 const CMD_RELOAD: u32 = 2;
 const CMD_OPEN: u32 = 3;
-const CMD_RESET: u32 = 4;
+pub(super) const CMD_RESET: u32 = 4;
 const CMD_AUTOSTART: u32 = 5;
 const CMD_EXIT: u32 = 6;
 const CMD_OLED: u32 = 7;
 const CMD_BLACK_SHELL: u32 = 8;
 const CMD_SETTINGS: u32 = 9;
-const CMD_RESTART_EXPLORER: u32 = 10;
-const CMD_OPEN_FOLDER: u32 = 11;
-const CMD_DIAGNOSTICS: u32 = 12;
-const CMD_PAUSE: u32 = 13;
-const CMD_SCENE_UNDO: u32 = 14;
+pub(super) const CMD_RESTART_EXPLORER: u32 = 10;
+pub(super) const CMD_OPEN_FOLDER: u32 = 11;
+pub(super) const CMD_DIAGNOSTICS: u32 = 12;
+pub(super) const CMD_PALETTE: u32 = 15;
+pub(super) const CMD_PAUSE: u32 = 13;
+pub(super) const CMD_SCENE_UNDO: u32 = 14;
 /// Tray scene items: scenes first, then up to `TRAY_LOOKS` saved looks.
-const CMD_SCENE_BASE: u32 = 200;
+pub(super) const CMD_SCENE_BASE: u32 = 200;
 const TRAY_LOOKS: usize = 8;
 const CMD_PRESET_BASE: u32 = 20;
 const WM_EXPLORER_DONE: u32 = WM_APP + 7;
@@ -114,6 +115,7 @@ const TIMER_CLICK: usize = 4;
 const TIMER_TRIAL: usize = 5;
 /// One-shot timer for the next Day/Night boundary. Re-armed after every evaluation.
 const TIMER_SCHEDULE: usize = 6;
+const HOTKEY_PALETTE: i32 = 1;
 const TRY_WINDOW_MS: u64 = 20_000;
 
 /// Tick-count deadline of the running trial, or 0. Read by Settings for its countdown.
@@ -205,6 +207,8 @@ struct App {
     accents: crate::Accents,
     /// Day/Night scene scheduler state (see `crate::schedule`).
     scheduler: crate::Scheduler,
+    /// The optional global hotkey for the command palette is registered.
+    hotkey_on: bool,
     /// Safe mode for this run: experimental features stay off. Never written to config.json.
     safe: crate::StartupMode,
     session: crate::StartupMarker,
@@ -568,6 +572,7 @@ fn run() -> Result<(), String> {
         scene_undo: None,
         accents: cfgio::load_accents(),
         scheduler: crate::Scheduler::default(),
+        hotkey_on: false,
         safe: startup_mode,
         session: startup_marker,
         try_windows: HashMap::new(),
@@ -628,6 +633,7 @@ fn run() -> Result<(), String> {
             app.scan_legacy();
         }
     }
+    app.sync_hotkey();
     let schedule_broadcast = app.schedule_tick();
     let shell_broadcast = app.apply_saved_shell() | schedule_broadcast;
     {
@@ -903,6 +909,13 @@ unsafe extern "system" fn wndproc(hwnd: HWND, msg: u32, wparam: WPARAM, lparam: 
             on_setting_change(lparam);
             return 0;
         }
+        // WM_HOTKEY: the optional Ctrl+Alt+Space for the command palette.
+        0x0312 => {
+            if wparam == HOTKEY_PALETTE as usize {
+                settings::open_palette(hwnd);
+            }
+            return 0;
+        }
         // WM_TIMECHANGE: the clock or the time zone changed (including daylight saving).
         0x001E => {
             if with_app(|app| app.schedule_tick()).unwrap_or(false) {
@@ -1083,6 +1096,13 @@ fn show_menu(hwnd: HWND) {
             ItemKind::Action,
             true,
         ),
+        hinted(
+            CMD_PALETTE,
+            "Command palette…",
+            "Search every action. Also Ctrl+K inside Settings.",
+            ItemKind::Action,
+            true,
+        ),
         submenu("Presets", presets),
         submenu("Scenes", scene_menu_items(contrast, scene_undo)),
         hinted(
@@ -1223,6 +1243,7 @@ fn on_command(hwnd: HWND, command: u32) {
         CMD_RELOAD => {
             with_app(|app| app.reload());
         }
+        CMD_PALETTE => settings::open_palette(hwnd),
         CMD_PAUSE => {
             with_app(|app| {
                 if app.paused {
@@ -1322,6 +1343,7 @@ fn shutdown() {
         return;
     }
     app.shut_down = true;
+    app.sync_hotkey();
     APP_HWND.store(0, Ordering::Relaxed);
     let _ = wide::write_atomic(
         &session_path(),
@@ -1667,6 +1689,7 @@ impl App {
         self.enforce_safe_mode();
         self.refresh_reduce();
         self.config.caption_height = normalize_caption_height(self.config.caption_height);
+        self.sync_hotkey();
         if old.features.day_night != self.config.features.day_night {
             // Settings changed the schedule: act on the current phase straight away.
             self.scheduler.reset();
@@ -2560,6 +2583,29 @@ impl App {
         }
     }
 
+    /// Register or release the optional palette hotkey to match the setting.
+    fn sync_hotkey(&mut self) {
+        use windows_sys::Win32::UI::Input::KeyboardAndMouse::{RegisterHotKey, UnregisterHotKey};
+        let want = self.config.features.palette_hotkey && !self.safe.is_safe() && !self.shut_down;
+        if want && !self.hotkey_on {
+            // MOD_ALT | MOD_CONTROL | MOD_NOREPEAT, Space.
+            if unsafe { RegisterHotKey(self.hwnd, HOTKEY_PALETTE, 0x0001 | 0x0002 | 0x4000, 0x20) }
+                != 0
+            {
+                self.hotkey_on = true;
+            } else {
+                self.balloon(
+                    "AllBlack11",
+                    "Ctrl+Alt+Space is already used by another app, so the palette hotkey is off. The tray item and Ctrl+K in Settings still work.",
+                    true,
+                );
+            }
+        } else if !want && self.hotkey_on {
+            unsafe { UnregisterHotKey(self.hwnd, HOTKEY_PALETTE) };
+            self.hotkey_on = false;
+        }
+    }
+
     /// Day/Night: evaluate the clock, switch scene if the phase changed, and arm one timer for
     /// the next boundary. Returns true when a shell broadcast is needed.
     fn schedule_tick(&mut self) -> bool {
@@ -3006,6 +3052,11 @@ pub fn safe_mode_text() -> Option<String> {
         crate::StartupMode::Normal => None,
     })
     .flatten()
+}
+
+/// There is a scene switch from the tray or palette that can still be undone.
+pub fn can_undo_scene() -> bool {
+    with_app(|app| app.scene_undo.is_some()).unwrap_or(false)
 }
 
 pub fn is_paused() -> bool {

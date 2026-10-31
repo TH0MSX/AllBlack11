@@ -4,6 +4,7 @@
 mod accents;
 mod arch;
 mod caption;
+mod commands;
 mod compat;
 mod config;
 mod effects;
@@ -33,6 +34,10 @@ mod version;
 
 pub use accents::{key_for as accent_key, Accents, PALETTE as ACCENT_PALETTE};
 pub use arch::{classify, machine_name, ArchStatus, BUILD_MACHINE};
+pub use commands::{
+    commands as palette_commands, search as palette_search, Action as PaletteAction,
+    Command as PaletteCommand, Context as PaletteContext,
+};
 pub use compat::{Entry as CompatEntry, Notebook, Status as CompatStatus};
 pub use config::{
     base_style, bundled_default_json, parse_config, set_enabled_flag, Backdrop, Color, Config,
