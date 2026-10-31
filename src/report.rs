@@ -5,7 +5,7 @@
 //! and anything under the user's profile. A caller must opt in to see either.
 
 use crate::compat::Status;
-use crate::explain::{reason_text, Confirm, Explanation, Support};
+use crate::explain::{Confirm, Explanation, Support};
 use crate::rules::Source;
 
 #[derive(Debug, Clone)]
@@ -171,11 +171,6 @@ pub fn render(report: &Report, rule_labels: &[String], private: bool, user: &str
         }
     ));
     lines
-}
-
-/// Reason text for a stable skip code, re-exported so callers need one import.
-pub fn why(reason: &str) -> &'static str {
-    reason_text(reason)
 }
 
 #[cfg(test)]

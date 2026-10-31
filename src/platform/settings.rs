@@ -47,7 +47,11 @@ use super::cfgio;
 use super::registry;
 use super::sysinfo;
 use super::uxtheme;
-use super::wide::{config_dir, log_path, pcw, to_wide};
+use windows_sys::Win32::UI::WindowsAndMessaging::WM_TIMER;
+use super::wide::{config_dir, log_path, pcw, recipes_dir, to_wide, write_atomic};
+
+#[path = "settings_pages.rs"]
+mod pages;
 
 pub const WM_SETTINGS_APPLIED: u32 = windows_sys::Win32::UI::WindowsAndMessaging::WM_APP + 4;
 const WM_REFRESH: u32 = windows_sys::Win32::UI::WindowsAndMessaging::WM_APP + 5;
@@ -84,7 +88,9 @@ const PAD: i32 = 16;
 // Logical layout.
 const PREVIEW_H: i32 = 176;
 const STATUS_H: i32 = 28;
-const TOP: i32 = PREVIEW_H + STATUS_H;
+const NAV_H: i32 = 40;
+const ID_FILTER: u16 = 107;
+const TIMER_UI: usize = 1;
 const MARGIN: i32 = 20;
 const MIN_W: i32 = 480;
 const MIN_H: i32 = 520;
@@ -92,7 +98,18 @@ const LIST_LINE: i32 = 24;
 
 static SETTINGS: AtomicIsize = AtomicIsize::new(0);
 
+#[derive(Clone, Copy, PartialEq, Eq)]
+enum Page {
+    Overview,
+    Effects,
+    Apps,
+    Legacy,
+    Profiles,
+    Diagnostics,
+}
+
 struct Edits {
+    filter: HWND,
     caption: HWND,
     border: HWND,
     text: HWND,
@@ -108,7 +125,10 @@ struct Fonts {
 }
 
 struct Ui {
+    hwnd: HWND,
     owner: HWND,
+    page: Page,
+    ext: pages::Ext,
     config: Config,
     autostart: bool,
     rule: Option<usize>,
@@ -148,6 +168,11 @@ enum Row {
     Action(Button),
     AddField(Button),
     About(Vec<String>),
+    Lines(Vec<String>),
+    Buttons(Vec<Button>),
+    WindowList,
+    RecipeList,
+    Filter,
 }
 
 #[derive(Clone, Copy, PartialEq, Eq)]
@@ -163,12 +188,20 @@ enum Toggle {
     Reapply,
     Logging,
     Experimental,
+    FocusLook,
+    ReduceBattery,
+    ReduceRemote,
+    ReduceTransparency,
+    EmulatedX64,
+    ShowTitles,
 }
 
 #[derive(Clone, Copy, PartialEq, Eq)]
 enum Choice {
     Backdrop,
     Corners,
+    Palette,
+    RuleScope,
 }
 
 #[derive(Clone, Copy, PartialEq, Eq)]
@@ -182,6 +215,28 @@ enum Button {
     OpenFolder,
     OpenLog,
     Diagnostics,
+    PickWindow,
+    RefreshWindows,
+    CreateRule,
+    TryLook,
+    ExcludeApp,
+    RestoreWindow,
+    CopyReport,
+    MarkWorks,
+    MarkPartial,
+    MarkFails,
+    MarkReset,
+    RaisePriority,
+    LowerPriority,
+    PreferAppDefaults,
+    TryRecipe,
+    ImportRecipe,
+    ExportRecipe,
+    RestoreLkg,
+    ClearNotebook,
+    ResetAllWindows,
+    UndoShell,
+    OpenHarness,
 }
 
 struct Laid {
@@ -240,6 +295,30 @@ fn toggle_meta(id: Toggle) -> (&'static str, &'static str) {
             "Dark legacy windows",
             "Recolors classic dialogs such as Run by loading a small DLL into non-elevated apps of the same CPU type. Off by default. Antivirus or anti-cheat software may object.",
         ),
+        Toggle::FocusLook => (
+            "Focus Look",
+            "The window you are in gets an accent border; other windows go quiet. Changes only on focus changes, never animated. A color a rule sets itself always wins.",
+        ),
+        Toggle::ReduceBattery => (
+            "Reduce effects on battery saver",
+            "Drops backdrop materials (Mica, Acrylic) to plain colors while battery saver is on. Colors and corners stay.",
+        ),
+        Toggle::ReduceRemote => (
+            "Reduce effects in a remote session",
+            "Drops backdrop materials in a Remote Desktop session, where they are expensive and often not drawn.",
+        ),
+        Toggle::ReduceTransparency => (
+            "Reduce effects when Windows transparency is off",
+            "Respects your Windows setting: with Transparency effects off, no backdrop material is applied.",
+        ),
+        Toggle::EmulatedX64 => (
+            "Cover emulated x64 apps (experimental)",
+            "ARM64 only. Uses a separate x64 helper to reach x64 programs running under emulation. Off by default; the helper starts only when needed and stops when you turn this off.",
+        ),
+        Toggle::ShowTitles => (
+            "Show window titles in this page",
+            "Titles can contain document names. They are shown here only if you turn this on, and are never saved. Copied reports leave them out unless this is on.",
+        ),
     }
 }
 
@@ -254,6 +333,16 @@ fn choice_desc(ui: &Ui, id: Choice) -> &'static str {
             Backdrop::Acrylic => "Windows' frosted glass. Its tint cannot be changed.",
             Backdrop::TintedAcrylic => "Frosted glass in your own tint and opacity, set below.",
         },
+        Choice::Palette => match ui.config.legacy.palette.as_str() {
+            "black" => "True black dialogs. Best on OLED. Text stays above 7:1 contrast.",
+            _ => "Dark gray dialogs. Easier on the eyes in a bright room. Text stays above 7:1 contrast.",
+        },
+        Choice::RuleScope => match ui.ext.rule_scope {
+            0 => "A new rule matches the executable. The most common choice.",
+            1 => "A new rule matches the executable and this window class.",
+            2 => "A new rule matches the package (Store apps). Falls back to the executable.",
+            _ => "A new rule matches only the window class, across every app that uses it.",
+        },
         Choice::Corners => match style.corners {
             Corners::Default => "Windows decides, which is rounded on Windows 11.",
             Corners::Round => "Standard rounded corners.",
@@ -267,6 +356,8 @@ fn choice_title(id: Choice) -> &'static str {
     match id {
         Choice::Backdrop => "Backdrop",
         Choice::Corners => "Corners",
+        Choice::Palette => "Dialog palette",
+        Choice::RuleScope => "New rule matches",
     }
 }
 
@@ -315,6 +406,44 @@ fn button_meta(id: Button) -> (&'static str, &'static str, &'static str) {
             "Version, CPU type, Windows build and your settings in one text file. Attach it to bug reports.",
             "Write report",
         ),
+        Button::PickWindow => ("", "", "Pick a window"),
+        Button::RefreshWindows => ("", "", "Refresh list"),
+        Button::CreateRule => ("", "", "Create rule"),
+        Button::TryLook => ("", "", "Try the look (20 s)"),
+        Button::ExcludeApp => ("", "", "Exclude app"),
+        Button::RestoreWindow => ("", "", "Restore this window"),
+        Button::CopyReport => ("", "", "Copy report"),
+        Button::MarkWorks => ("", "", "Works"),
+        Button::MarkPartial => ("", "", "Partly"),
+        Button::MarkFails => ("", "", "Doesn't work"),
+        Button::MarkReset => ("", "", "Reset"),
+        Button::RaisePriority => ("", "", "Raise priority"),
+        Button::LowerPriority => ("", "", "Lower priority"),
+        Button::PreferAppDefaults => (
+            "Prefer app defaults",
+            "Leave this target exactly as the apps draw themselves: no colors, no material, no corners. Undo it by turning the look back on above.",
+            "Use app defaults",
+        ),
+        Button::TryRecipe => ("", "", "Try this look"),
+        Button::ImportRecipe => ("", "", "Import…"),
+        Button::ExportRecipe => ("", "", "Export current…"),
+        Button::RestoreLkg => ("", "", "Restore last known good"),
+        Button::ClearNotebook => ("", "", "Clear notebook"),
+        Button::ResetAllWindows => (
+            "Reset all windows",
+            "Puts every themed window back as Windows draws it, until you reload or toggle Theme windows.",
+            "Reset windows",
+        ),
+        Button::UndoShell => (
+            "Undo shell changes",
+            "Turns off the OLED taskbar and black Start, restoring the values saved before AllBlack11 changed them. A value you changed yourself since then is left alone.",
+            "Undo shell changes",
+        ),
+        Button::OpenHarness => (
+            "Control harness",
+            "A small window with every control type and state, for checking the legacy layer without relying on another app. It ships in the portable zip.",
+            "Open harness",
+        ),
     }
 }
 
@@ -346,6 +475,12 @@ fn row_height(row: &Row) -> i32 {
             }
         }
         Row::AddField(_) => 52 + GAP,
+        Row::Lines(items) => {
+            20 + items.iter().map(|line| 16 * lines(line, 64)).sum::<i32>() + GAP
+        }
+        Row::Buttons(_) => 52 + GAP,
+        Row::WindowList | Row::RecipeList => 0, // sized by the caller
+        Row::Filter => 52 + GAP,
         Row::About(lines) => 24 + 20 * lines.len() as i32 + GAP,
     }
 }
@@ -470,6 +605,10 @@ unsafe extern "system" fn wndproc(hwnd: HWND, msg: u32, wparam: WPARAM, lparam: 
         }
         WM_LBUTTONDOWN => {
             if let Some((lx, cy)) = ui.to_content(lparam) {
+                if !ui.trial_active() && ui.pick_hit(ui.lw(hwnd), lx, cy) {
+                    ui.begin_pick(hwnd);
+                    return 0;
+                }
                 if let Some(slider) = ui.hit_slider(cy) {
                     ui.drag = Some(slider);
                     SetCapture(hwnd);
@@ -480,6 +619,12 @@ unsafe extern "system" fn wndproc(hwnd: HWND, msg: u32, wparam: WPARAM, lparam: 
             0
         }
         WM_MOUSEMOVE => {
+            if ui.ext.picking {
+                windows_sys::Win32::UI::WindowsAndMessaging::SetCursor(LoadCursorW(
+                    std::ptr::null_mut(),
+                    windows_sys::Win32::UI::WindowsAndMessaging::IDC_CROSS,
+                ));
+            }
             if let Some(slider) = ui.drag {
                 let lx = (lparam_x(lparam) as f32 / ui.k) as i32;
                 ui.set_slider(hwnd, slider, lx);
@@ -488,6 +633,15 @@ unsafe extern "system" fn wndproc(hwnd: HWND, msg: u32, wparam: WPARAM, lparam: 
             0
         }
         WM_LBUTTONUP => {
+            if ui.ext.picking {
+                ui.end_pick(hwnd);
+                ui.relayout(hwnd);
+                return 0;
+            }
+            if ui.chrome_click(hwnd, lparam) {
+                ui.relayout(hwnd);
+                return 0;
+            }
             if ui.drag.take().is_some() {
                 ReleaseCapture();
                 ui.commit();
@@ -500,7 +654,10 @@ unsafe extern "system" fn wndproc(hwnd: HWND, msg: u32, wparam: WPARAM, lparam: 
         WM_COMMAND => {
             let id = (wparam & 0xFFFF) as u16;
             let code = ((wparam >> 16) & 0xFFFF) as u16;
-            if code == EN_CHANGE {
+            if code == EN_CHANGE && id == ID_FILTER {
+                ui.ext.filter = get_text(ui.edits.filter);
+                ui.relayout(hwnd);
+            } else if code == EN_CHANGE {
                 if ui.edit_live(id) {
                     InvalidateRect(hwnd, std::ptr::null(), 0);
                 }
@@ -517,9 +674,42 @@ unsafe extern "system" fn wndproc(hwnd: HWND, msg: u32, wparam: WPARAM, lparam: 
             ui.edit_brush as LRESULT
         }
         WM_KEYDOWN => {
+            let ctrl = windows_sys::Win32::UI::Input::KeyboardAndMouse::GetKeyState(0x11) < 0;
+            let shift = windows_sys::Win32::UI::Input::KeyboardAndMouse::GetKeyState(0x10) < 0;
             match wparam {
                 0x1B => {
-                    DestroyWindow(hwnd);
+                    if ui.trial_active() {
+                        ui.trial_revert();
+                    } else {
+                        DestroyWindow(hwnd);
+                    }
+                    return 0;
+                }
+                0x09 if ctrl => {
+                    // Ctrl+Tab and Ctrl+Shift+Tab switch pages.
+                    let count = Page::ALL.len();
+                    let current = Page::ALL.iter().position(|p| *p == ui.page).unwrap_or(0);
+                    let next = if shift { (current + count - 1) % count } else { (current + 1) % count };
+                    ui.set_page(hwnd, Page::ALL[next]);
+                    return 0;
+                }
+                0x09 => {
+                    ui.move_focus(hwnd, shift);
+                    ui.relayout(hwnd);
+                    return 0;
+                }
+                0x20 | 0x0D => {
+                    ui.activate_focus(hwnd);
+                    return 0;
+                }
+                0x25 if ui.ext.focus.is_some() => {
+                    ui.move_sub(-1);
+                    InvalidateRect(hwnd, std::ptr::null(), 0);
+                    return 0;
+                }
+                0x27 if ui.ext.focus.is_some() => {
+                    ui.move_sub(1);
+                    InvalidateRect(hwnd, std::ptr::null(), 0);
                     return 0;
                 }
                 0x21 => ui.scroll -= ui.view_height(hwnd) - 40, // Page Up
@@ -531,6 +721,12 @@ unsafe extern "system" fn wndproc(hwnd: HWND, msg: u32, wparam: WPARAM, lparam: 
                 _ => {}
             }
             ui.relayout(hwnd);
+            0
+        }
+        WM_TIMER => {
+            if wparam == TIMER_UI {
+                ui.on_timer(hwnd);
+            }
             0
         }
         WM_REFRESH => {
@@ -629,6 +825,7 @@ impl Ui {
         let dpi = dpi_of(hwnd);
         let fonts = Fonts::make(dpi);
         let edits = Edits {
+            filter: make_edit(hwnd, ID_FILTER, fonts.body),
             caption: make_edit(hwnd, ID_CAPTION, fonts.body),
             border: make_edit(hwnd, ID_BORDER, fonts.body),
             text: make_edit(hwnd, ID_TEXT, fonts.body),
@@ -637,6 +834,9 @@ impl Ui {
             exclude: make_edit(hwnd, ID_EXCLUDE, fonts.body),
         };
         let ui = Self {
+            hwnd,
+            page: Page::Overview,
+            ext: pages::Ext::default(),
             owner,
             autostart: registry::autostart_enabled(),
             rule: None,
@@ -660,6 +860,23 @@ impl Ui {
         ui
     }
 
+    fn preview_h(&self) -> i32 {
+        if matches!(self.page, Page::Overview | Page::Effects) {
+            PREVIEW_H
+        } else {
+            0
+        }
+    }
+
+    fn status_top(&self) -> i32 {
+        self.preview_h() + NAV_H
+    }
+
+    /// Top of the scrolling area: preview (some pages), then tabs, then the status line.
+    fn top(&self) -> i32 {
+        self.status_top() + STATUS_H
+    }
+
     fn px(&self, logical: i32) -> i32 {
         (logical as f32 * self.k).round() as i32
     }
@@ -673,8 +890,9 @@ impl Ui {
         }
     }
 
-    fn all_edits(&self) -> [HWND; 6] {
+    fn all_edits(&self) -> [HWND; 7] {
         [
+            self.edits.filter,
             self.edits.caption,
             self.edits.border,
             self.edits.text,
@@ -691,7 +909,7 @@ impl Ui {
 
     /// Height of the scrolling region, in logical pixels.
     fn view_height(&self, hwnd: HWND) -> i32 {
-        ((client_size(hwnd).1 as f32 / self.k) as i32 - TOP).max(1)
+        ((client_size(hwnd).1 as f32 / self.k) as i32 - self.top()).max(1)
     }
 
     fn relayout(&mut self, hwnd: HWND) {
@@ -706,10 +924,10 @@ impl Ui {
     fn to_content(&self, lparam: LPARAM) -> Option<(i32, i32)> {
         let lx = (lparam_x(lparam) as f32 / self.k) as i32;
         let ly = (lparam_y(lparam) as f32 / self.k) as i32;
-        if ly < TOP {
+        if ly < self.top() {
             return None;
         }
-        Some((lx, ly - TOP + self.scroll))
+        Some((lx, ly - self.top() + self.scroll))
     }
 
     fn reload_from_disk(&mut self) {
@@ -786,111 +1004,7 @@ impl Ui {
     // --- layout -----------------------------------------------------------
 
     fn rows(&self) -> Vec<Laid> {
-        let mut y = 8;
-        let mut out: Vec<Laid> = Vec::new();
-        let mut push = |row: Row, h: Option<i32>| {
-            let h = h.unwrap_or_else(|| row_height(&row));
-            out.push(Laid { y, h, row });
-            y += h;
-        };
-        let list_height = |len: usize| (len.max(1) as i32) * LIST_LINE + 16 + GAP;
-
-        push(Row::Header("Quick looks"), None);
-        push(Row::Presets, None);
-
-        push(
-            Row::Header(if self.rule.is_some() {
-                "Look for one app"
-            } else {
-                "Window look"
-            }),
-            None,
-        );
-        push(Row::Toggle(Toggle::Theme), None);
-        if self.rule.is_some() {
-            push(Row::Toggle(Toggle::RuleOn), None);
-            push(Row::Action(Button::UseDefault), None);
-        } else {
-            push(Row::Toggle(Toggle::DefaultOn), None);
-        }
-        push(Row::Toggle(Toggle::Dark), None);
-        push(Row::Choice(Choice::Backdrop), None);
-        push(Row::Choice(Choice::Corners), None);
-        for id in [ID_CAPTION, ID_BORDER, ID_TEXT, ID_TINT] {
-            push(Row::Color(id), None);
-        }
-        push(
-            Row::Note("Colors take #RRGGBB, accent, none or default. They apply as soon as the value is valid."),
-            None,
-        );
-        push(Row::Slider(Slider::Opacity), None);
-        push(Row::Toggle(Toggle::Blur), None);
-
-        push(Row::Header("Shell"), None);
-        push(Row::Toggle(Toggle::Oled), None);
-        push(Row::Toggle(Toggle::Black), None);
-        push(Row::Action(Button::RestartExplorer), None);
-
-        push(Row::Header("Title bar height"), None);
-        push(Row::Slider(Slider::Caption), None);
-
-        push(Row::Header("Startup and behavior"), None);
-        push(Row::Toggle(Toggle::Autostart), None);
-        push(Row::Toggle(Toggle::Reapply), None);
-        push(Row::Toggle(Toggle::Logging), None);
-
-        push(Row::Header("Per-app rules"), None);
-        push(
-            Row::Note("Pick a rule to edit its look above. A rule only overrides what it sets."),
-            None,
-        );
-        push(Row::RuleList, Some(list_height(self.config.rules.len())));
-        push(Row::AddField(Button::AddRule), None);
-        push(Row::Action(Button::RemoveRule), None);
-
-        push(Row::Header("Never theme these apps"), None);
-        push(
-            Row::Note("Games and launchers belong here. Use the exe name, such as steam.exe."),
-            None,
-        );
-        push(
-            Row::ExcludeList,
-            Some(list_height(self.config.exclude.len())),
-        );
-        push(Row::AddField(Button::AddExclude), None);
-        push(Row::Action(Button::RemoveExclude), None);
-
-        push(Row::Header("Experimental"), None);
-        push(Row::Toggle(Toggle::Experimental), None);
-        if self.arch == ArchStatus::NativeArm64 {
-            push(
-                Row::Note("On ARM64 this covers native ARM64 apps only. Apps running under x64 emulation are skipped."),
-                None,
-            );
-        }
-
-        push(Row::Header("About"), None);
-        let mut about = vec![
-            format!("AllBlack11 {}", env!("CARGO_PKG_VERSION")),
-            self.arch_line.clone(),
-            format!(
-                "Windows build {} · {}",
-                self.build,
-                if self.build >= 22621 {
-                    "Mica and backdrops supported"
-                } else {
-                    "Mica needs build 22621 or newer"
-                }
-            ),
-        ];
-        if let Some(advice) = self.arch.advice() {
-            about.push(advice.to_string());
-        }
-        push(Row::About(about), None);
-        push(Row::Action(Button::OpenFolder), None);
-        push(Row::Action(Button::OpenLog), None);
-        push(Row::Action(Button::Diagnostics), None);
-        out
+        self.rows_for_page()
     }
 
     fn content_height(&self) -> i32 {
@@ -904,6 +1018,10 @@ impl Ui {
 
     fn click(&mut self, hwnd: HWND, lx: i32, cy: i32) {
         let lw = self.lw(hwnd);
+        if self.trial_active() {
+            self.status = "Keep or revert the trial look first (the buttons above).".into();
+            return;
+        }
         for row in self.rows() {
             if cy < row.y || cy >= row.y + row.h {
                 continue;
@@ -929,6 +1047,9 @@ impl Ui {
                         self.button(*id);
                     }
                 }
+                Row::Buttons(list) => self.click_buttons(lw, lx, local, list.clone(), row.h),
+                Row::WindowList => self.click_window_list((local - 8) / LIST_LINE),
+                Row::RecipeList => self.click_recipe_list((local - 8) / LIST_LINE),
                 Row::RuleList => self.pick_rule((local - 8) / LIST_LINE),
                 Row::ExcludeList => self.pick_exclude((local - 8) / LIST_LINE),
                 _ => {}
@@ -938,14 +1059,14 @@ impl Ui {
     }
 
     fn apply_preset(&mut self, index: usize) {
-        if !crate::apply_preset(&mut self.config, index) {
+        let mut next = self.config.clone();
+        if !crate::apply_preset(&mut next, index) {
             return;
         }
         self.rule = None;
         self.preset_sel = Some(index);
         self.push_colors_to_edits();
-        self.status = format!("Applied preset: {}", PRESETS[index].name);
-        self.commit();
+        self.begin_trial(PRESETS[index].name, next);
     }
 
     fn toggle(&mut self, id: Toggle) {
@@ -999,6 +1120,15 @@ impl Ui {
                 self.config.reapply_on_foreground = !self.config.reapply_on_foreground
             }
             Toggle::Logging => self.config.logging = !self.config.logging,
+            Toggle::FocusLook
+            | Toggle::ReduceBattery
+            | Toggle::ReduceRemote
+            | Toggle::ReduceTransparency
+            | Toggle::EmulatedX64
+            | Toggle::ShowTitles => {
+                self.toggle_ext(id);
+                return;
+            }
             Toggle::Experimental => {
                 self.config.experimental_dark_legacy = !self.config.experimental_dark_legacy;
                 self.status = if self.config.experimental_dark_legacy {
@@ -1013,16 +1143,24 @@ impl Ui {
     }
 
     fn cycle(&mut self, id: Choice) {
+        if matches!(id, Choice::Palette | Choice::RuleScope) {
+            self.cycle_ext(id);
+            return;
+        }
         let mut style = self.current_style();
         match id {
             Choice::Backdrop => style.backdrop = next_backdrop(style.backdrop),
             Choice::Corners => style.corners = next_corners(style.corners),
+            _ => {}
         }
         self.write_style(style);
         self.commit();
     }
 
     fn button(&mut self, id: Button) {
+        if self.run_button_ext(id) {
+            return;
+        }
         match id {
             Button::UseDefault => {
                 self.rule = None;
@@ -1118,6 +1256,7 @@ impl Ui {
                 unsafe { PostMessageW(self.owner, WM_RUN_COMMAND, CMD_DIAGNOSTICS as usize, 0) };
                 self.status = "Writing the diagnostics report…".into();
             }
+            _ => {}
         }
     }
 
@@ -1221,16 +1360,20 @@ impl Ui {
         let mut targets: Vec<(HWND, Option<(i32, i32, i32, i32)>)> =
             self.all_edits().iter().map(|edit| (*edit, None)).collect();
         for row in self.rows() {
-            let top = row.y - self.scroll + TOP;
+            let top = row.y - self.scroll + self.top();
             let spot = |l: i32, t: i32, w: i32, h: i32| {
                 let rect = (self.px(l), self.px(top + t), self.px(w), self.px(h));
-                let visible = rect.1 >= self.px(TOP) && rect.1 + rect.3 <= client_h;
+                let visible = rect.1 >= self.px(self.top()) && rect.1 + rect.3 <= client_h;
                 visible.then_some(rect)
             };
             let wanted = match row.row {
                 Row::Color(id) => self
                     .color_edit(id)
                     .map(|edit| (edit, spot(lw - MARGIN - PAD - 120, 14, 120, 24))),
+                Row::Filter => Some((
+                    self.edits.filter,
+                    spot(MARGIN + PAD + 70, 14, lw - 2 * MARGIN - 2 * PAD - 70, 24),
+                )),
                 Row::AddField(Button::AddRule) => Some((
                     self.edits.rule,
                     spot(MARGIN + PAD, 14, lw - 2 * MARGIN - 2 * PAD - 96, 24),
@@ -1429,19 +1572,31 @@ fn paint(hwnd: HWND, ui: &mut Ui) {
         let canvas = Canvas { dc, k: ui.k };
         let lw = ui.lw(hwnd);
 
-        // Scrolling rows, clipped under the pinned preview.
-        IntersectClipRect(dc, 0, canvas.px(TOP), w, h);
-        for row in ui.rows() {
-            let top = row.y - ui.scroll + TOP;
-            if canvas.px(top) > h || canvas.px(top + row.h) < canvas.px(TOP) {
+        // Scrolling rows, clipped under the pinned preview and tabs.
+        let pinned = ui.top();
+        IntersectClipRect(dc, 0, canvas.px(pinned), w, h);
+        let rows = ui.rows();
+        let focus_row = ui
+            .ext
+            .focus
+            .and_then(|ordinal| ui.interactive_rows().get(ordinal).map(|(index, _)| *index));
+        for (index, row) in rows.iter().enumerate() {
+            let top = row.y - ui.scroll + pinned;
+            if canvas.px(top) > h || canvas.px(top + row.h) < canvas.px(pinned) {
                 continue;
             }
-            paint_row(&canvas, ui, &row, top, lw);
+            paint_row(&canvas, ui, row, top, lw);
+            if focus_row == Some(index) {
+                pages::paint_focus_ring(&canvas, ui, row, top, lw);
+            }
         }
         paint_scrollbar(&canvas, ui, hwnd, lw);
         SelectClipRgn(dc, std::ptr::null_mut());
 
-        paint_preview(&canvas, ui, lw);
+        if ui.preview_h() > 0 {
+            paint_preview(&canvas, ui, lw);
+        }
+        pages::paint_nav(&canvas, ui, lw);
         paint_status(&canvas, ui, lw);
 
         BitBlt(screen, 0, 0, w, h, dc, 0, 0, SRCCOPY);
@@ -1462,12 +1617,17 @@ fn paint_scrollbar(c: &Canvas, ui: &Ui, hwnd: HWND, lw: i32) {
     let thumb = (track as f32 * view as f32 / content as f32).max(28.0) as i32;
     let max_scroll = (content - view).max(1);
     let offset = ((track - thumb) as f32 * ui.scroll as f32 / max_scroll as f32) as i32;
-    let top = TOP + 4 + offset;
+    let top = ui.top() + 4 + offset;
     c.round(lw - 7, top, lw - 3, top + thumb, 2, Some(TRACK), None);
 }
 
 fn paint_status(c: &Canvas, ui: &Ui, lw: i32) {
-    c.fill(0, PREVIEW_H, lw, TOP, BG);
+    let top = ui.status_top();
+    c.fill(0, top, lw, top + STATUS_H, BG);
+    if ui.trial_active() {
+        pages::paint_trial_bar(c, ui, lw);
+        return;
+    }
     let (text, color) = if ui.status.is_empty() {
         ("Changes apply as you make them.", MUTED)
     } else {
@@ -1475,9 +1635,9 @@ fn paint_status(c: &Canvas, ui: &Ui, lw: i32) {
     };
     c.text(
         MARGIN,
-        PREVIEW_H,
+        top,
         lw - MARGIN,
-        TOP,
+        top + STATUS_H,
         text,
         color,
         ui.fonts.small,
@@ -1789,6 +1949,9 @@ fn paint_row(c: &Canvas, ui: &Ui, row: &Laid, top: i32, lw: i32) {
                 DT_CENTER | DT_VCENTER | DT_SINGLELINE,
             );
         }
+        Row::Lines(_) | Row::Buttons(_) | Row::WindowList | Row::RecipeList | Row::Filter => {
+            pages::paint_extra(c, ui, row, top, lw);
+        }
         Row::About(lines) => {
             card(c, top, row.h, lw);
             for (index, line) in lines.iter().enumerate() {
@@ -1831,6 +1994,12 @@ fn toggle_on(ui: &Ui, id: Toggle) -> bool {
         Toggle::Reapply => ui.config.reapply_on_foreground,
         Toggle::Logging => ui.config.logging,
         Toggle::Experimental => ui.config.experimental_dark_legacy,
+        Toggle::FocusLook => ui.config.focus.enabled,
+        Toggle::ReduceBattery => ui.config.reduce_effects.on_battery_saver,
+        Toggle::ReduceRemote => ui.config.reduce_effects.on_remote_session,
+        Toggle::ReduceTransparency => ui.config.reduce_effects.on_transparency_off,
+        Toggle::EmulatedX64 => ui.config.legacy.emulated_x64,
+        Toggle::ShowTitles => ui.ext.show_titles,
     }
 }
 
@@ -1839,6 +2008,19 @@ fn choice_text(ui: &Ui, id: Choice) -> &'static str {
     match id {
         Choice::Backdrop => backdrop_label(style.backdrop),
         Choice::Corners => corners_label(style.corners),
+        Choice::Palette => {
+            if ui.config.legacy.palette == "black" {
+                "True black"
+            } else {
+                "Graphite"
+            }
+        }
+        Choice::RuleScope => match ui.ext.rule_scope {
+            0 => "Executable",
+            1 => "Executable + class",
+            2 => "Package",
+            _ => "Window class",
+        },
     }
 }
 

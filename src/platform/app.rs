@@ -2252,19 +2252,9 @@ impl App {
         };
         TRIAL_DEADLINE.store(0, Ordering::Relaxed);
         if keep {
-            match cfgio::store(&self.config) {
-                Ok(()) => {
-                    if let Ok(text) = serde_json::to_string_pretty(&self.config) {
-                        cfgio::save_lkg(&format!("{text}\n"));
-                    }
-                }
-                Err(err) => {
-                    self.balloon("AllBlack11", &format!("Could not save the look: {err}"), true);
-                    self.config = trial.previous;
-                    self.refresh_reduce();
-                    self.restyle_all();
-                }
-            }
+            // Settings writes the file next (it also owns any shell flags a preset carries),
+            // and the normal apply path then records the last known good copy.
+            drop(trial);
         } else {
             self.config = trial.previous;
             self.refresh_reduce();
@@ -2304,7 +2294,7 @@ impl App {
         if unsafe { IsWindow(hwnd) } == 0 {
             return None;
         }
-        let (pid, _create, exe) = self.identity(hwnd)?;
+        let (pid, create, exe) = self.identity(hwnd)?;
         let (path, package) = super::procinfo::path_and_package(pid, true);
         let title = super::procinfo::window_title(hwnd);
         let mut facts = collect_facts(hwnd, &exe, pid);
@@ -2355,7 +2345,9 @@ impl App {
             }
             None => ("unknown", "unknown".to_string(), None),
         };
-        let attempts = match self.last_ops.get(&key).filter(|rec| rec.pid == pid) {
+        let attempts = match self.last_ops
+            .get(&key)
+            .filter(|rec| rec.pid == pid && (rec.create == 0 || rec.create == create)) {
             Some(record) => {
                 let read = dwm::readback(hwnd, &record.style, self.accent_bgr, self.build, record.backdrop);
                 let mut list: Vec<crate::Attempt> = record
@@ -2635,6 +2627,11 @@ fn class_of(hwnd: HWND) -> String {
     } else {
         String::from_utf16_lossy(&buf[..length as usize])
     }
+}
+
+/// (process creation time, exe name) for a process id.
+pub(super) fn process_basic(pid: u32) -> Option<(u64, String)> {
+    query_process(pid)
 }
 
 fn query_process(pid: u32) -> Option<(u64, String)> {

@@ -66,15 +66,10 @@ impl Default for LegacyOptions {
 /// Everything known about one window for the legacy layer, and the reason for the verdict.
 #[derive(Clone, Debug)]
 pub struct Assessment {
-    pub pid: u32,
-    pub exe: String,
-    pub class: String,
     pub arch: TargetArch,
-    pub elevated: bool,
     pub verdict: Verdict,
     /// `Ok(route)`: the window may be treated. `Err(reason)`: stable text for diagnostics.
     pub gate: Result<Route, &'static str>,
-    pub children: Vec<String>,
 }
 
 enum Gate {
@@ -167,14 +162,9 @@ pub fn assess(hwnd: HWND, exclude: &[String], options: &LegacyOptions) -> Option
         gate = Err(reason);
     }
     Some(Assessment {
-        pid,
-        exe,
-        class,
         arch,
-        elevated,
         verdict,
         gate,
-        children,
     })
 }
 
