@@ -102,6 +102,7 @@ const CMD_SETTINGS: u32 = 9;
 const CMD_RESTART_EXPLORER: u32 = 10;
 const CMD_OPEN_FOLDER: u32 = 11;
 const CMD_DIAGNOSTICS: u32 = 12;
+const CMD_PAUSE: u32 = 13;
 const CMD_PRESET_BASE: u32 = 20;
 const WM_EXPLORER_DONE: u32 = WM_APP + 7;
 const TIMER_ACCENT: usize = 3;
@@ -189,6 +190,12 @@ struct App {
     last_ops: HashMap<i64, OpRecord>,
     /// All trial decisions live in `crate::trial`, which has the tests.
     trial: crate::TrialMachine,
+    /// Emergency pause: windows are put back and nothing new is styled until Resume. Held in
+    /// memory only, so a restart always begins from the saved settings.
+    paused: bool,
+    /// Safe mode for this run: experimental features stay off. Never written to config.json.
+    safe: crate::StartupMode,
+    session: crate::StartupMarker,
     /// Windows given a temporary look from the inspector, with their revert time.
     try_windows: HashMap<i64, u64>,
 }
@@ -505,7 +512,12 @@ fn run() -> Result<(), String> {
         return Err("Could not create the message window.".into());
     }
 
-    let (config, config_warning) = load_config();
+    let (mut config, config_warning) = load_config();
+    let (startup_mode, startup_marker) = begin_session();
+    if startup_mode.is_safe() {
+        config.experimental_dark_legacy = false;
+        config.legacy.emulated_x64 = false;
+    }
     let tray_icon = icon::load_tray_icon(instance);
     let reg_event = shellwin::create_notify_event();
     let mut app = App {
@@ -537,6 +549,9 @@ fn run() -> Result<(), String> {
         reduce: None,
         last_ops: HashMap::new(),
         trial: crate::TrialMachine::default(),
+        paused: false,
+        safe: startup_mode,
+        session: startup_marker,
         try_windows: HashMap::new(),
         config_file: config_path(),
         config,
@@ -559,6 +574,16 @@ fn run() -> Result<(), String> {
     app.install_hooks();
     if let Some(warning) = config_warning {
         app.balloon("AllBlack11", &warning, true);
+    }
+    if let crate::StartupMode::Safe(reason) = app.safe {
+        app.balloon(
+            "AllBlack11 safe start",
+            &format!(
+                "{} Experimental features are off for this session. Open Settings > Safety to leave safe mode.",
+                reason.text()
+            ),
+            false,
+        );
     }
     if app.high_contrast {
         app.restore_visuals();
@@ -597,6 +622,36 @@ fn run() -> Result<(), String> {
     unsafe { message_loop(hwnd) };
     shutdown();
     Ok(())
+}
+
+fn session_path() -> std::path::PathBuf {
+    wide::config_dir().join("session.json")
+}
+
+/// Read the last run's marker, decide this run's mode, and write the new (unclean) marker.
+fn begin_session() -> (crate::StartupMode, crate::StartupMarker) {
+    let previous = std::fs::read_to_string(session_path())
+        .ok()
+        .and_then(|text| crate::startup_parse(&text));
+    let shift = unsafe {
+        windows_sys::Win32::UI::Input::KeyboardAndMouse::GetAsyncKeyState(
+            windows_sys::Win32::UI::Input::KeyboardAndMouse::VK_SHIFT as i32,
+        )
+    } < 0;
+    let flag = std::env::args().any(|arg| arg.eq_ignore_ascii_case("--safe"));
+    let now = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map(|d| d.as_secs())
+        .unwrap_or(0);
+    let (mode, marker) = crate::startup_decide(previous.as_ref(), shift || flag, now);
+    let _ = wide::write_atomic(&session_path(), &crate::startup_format(&marker));
+    if mode.is_safe() {
+        log_line(
+            "warn",
+            "started in safe mode: experimental features are off for this run",
+        );
+    }
+    (mode, marker)
 }
 
 fn load_config() -> (crate::Config, Option<String>) {
@@ -891,7 +946,7 @@ fn on_setting_change(lparam: LPARAM) {
 }
 
 fn show_menu(hwnd: HWND) {
-    let Some((enabled, autostart, contrast, oled, black_shell, dark)) = with_app(|app| {
+    let Some((enabled, autostart, contrast, oled, black_shell, dark, paused)) = with_app(|app| {
         (
             app.config.enabled,
             registry::autostart_enabled(),
@@ -899,6 +954,7 @@ fn show_menu(hwnd: HWND) {
             app.config.shell.oled_taskbar,
             app.config.shell.black_shell,
             app.apps_dark.unwrap_or(true),
+            app.paused,
         )
     }) else {
         return;
@@ -950,6 +1006,13 @@ fn show_menu(hwnd: HWND) {
             true,
         ),
         submenu("Presets", presets),
+        hinted(
+            CMD_PAUSE,
+            "Pause all styling",
+            "Emergency stop: puts every window back and stops the legacy layer and helper until you resume.",
+            ItemKind::Checked(paused),
+            true,
+        ),
         item(0, "", ItemKind::Separator, true),
         submenu(
             "Shell",
@@ -1081,6 +1144,15 @@ fn on_command(hwnd: HWND, command: u32) {
         CMD_RELOAD => {
             with_app(|app| app.reload());
         }
+        CMD_PAUSE => {
+            with_app(|app| {
+                if app.paused {
+                    app.resume()
+                } else {
+                    app.pause()
+                }
+            });
+        }
         CMD_OPEN => {
             let path = with_app(|app| {
                 app.ensure_config_file();
@@ -1159,6 +1231,10 @@ fn shutdown() {
     }
     app.shut_down = true;
     APP_HWND.store(0, Ordering::Relaxed);
+    let _ = wide::write_atomic(
+        &session_path(),
+        &crate::startup_format(&crate::startup_clean(&app.session)),
+    );
     legacy::shutdown();
     app.unhook();
     app.restore_and_forget();
@@ -1264,8 +1340,13 @@ impl App {
         unsafe { Shell_NotifyIconW(NIM_DELETE, &nid) };
     }
 
+    /// Styling is running: on, not paused, and not stepping aside for high contrast.
+    fn styling_on(&self) -> bool {
+        self.config.enabled && !self.high_contrast && !self.paused
+    }
+
     fn current_icon(&self) -> windows_sys::Win32::UI::WindowsAndMessaging::HICON {
-        if self.config.enabled && !self.high_contrast {
+        if self.styling_on() {
             self.icon_on
         } else {
             self.icon_off
@@ -1273,7 +1354,9 @@ impl App {
     }
 
     fn tip(&self) -> String {
-        if self.high_contrast {
+        if self.paused {
+            "AllBlack11: paused".into()
+        } else if self.high_contrast {
             "AllBlack11: paused, high contrast".into()
         } else if !self.config.enabled {
             "AllBlack11: off".into()
@@ -1317,6 +1400,7 @@ impl App {
                     Ok(mut config) => {
                         config.enabled = true;
                         self.config = config;
+                        self.enforce_safe_mode();
                         self.accent_bgr = registry::accent_bgr();
                         self.apps_dark = registry::apps_prefer_dark();
                     }
@@ -1367,7 +1451,8 @@ impl App {
                 self.hold.clear();
                 self.last_apply.clear();
                 self.exe_cache.clear();
-                if self.config.enabled && !self.high_contrast {
+                self.enforce_safe_mode();
+                if self.styling_on() {
                     self.apply_startup();
                 } else {
                     self.restore_visuals();
@@ -1420,7 +1505,7 @@ impl App {
     }
 
     fn apply_startup(&mut self) {
-        if self.high_contrast || !self.config.enabled {
+        if !self.styling_on() {
             self.scan_legacy();
             return;
         }
@@ -1444,7 +1529,11 @@ impl App {
     }
 
     fn scan_legacy(&self) {
-        if !self.config.experimental_dark_legacy || self.high_contrast || self.shut_down {
+        if !self.config.experimental_dark_legacy
+            || self.high_contrast
+            || self.paused
+            || self.shut_down
+        {
             return;
         }
         for key in enum_hwnds() {
@@ -1453,7 +1542,11 @@ impl App {
     }
 
     fn note_legacy(&self, key: i64) {
-        if !self.config.experimental_dark_legacy || self.high_contrast || self.shut_down {
+        if !self.config.experimental_dark_legacy
+            || self.high_contrast
+            || self.paused
+            || self.shut_down
+        {
             return;
         }
         legacy::consider(key_to_hwnd(key), &self.config.exclude);
@@ -1479,6 +1572,7 @@ impl App {
         };
         cfgio::save_lkg(&text);
         self.config = new;
+        self.enforce_safe_mode();
         self.refresh_reduce();
         self.config.caption_height = normalize_caption_height(self.config.caption_height);
         let shell_changed = self.reconcile_shell(&old);
@@ -1493,8 +1587,8 @@ impl App {
                 );
             }
         }
-        let want_hook = self.config.experimental_dark_legacy && !self.high_contrast;
-        let had_hook = old.experimental_dark_legacy && !self.high_contrast;
+        let want_hook = self.config.experimental_dark_legacy && !self.high_contrast && !self.paused;
+        let had_hook = old.experimental_dark_legacy && !self.high_contrast && !self.paused;
         if want_hook != had_hook || (want_hook && old.exclude != self.config.exclude) {
             let _ = legacy::set_active(false, &legacy::LegacyOptions::default());
             if want_hook {
@@ -1516,7 +1610,7 @@ impl App {
         self.hold.clear();
         self.last_apply.clear();
         self.exe_cache.clear();
-        if self.config.enabled && !self.high_contrast {
+        if self.styling_on() {
             self.apply_startup();
         } else {
             self.restore_visuals();
@@ -1662,7 +1756,7 @@ impl App {
             }
             self.hold.remove(&key);
         }
-        if self.high_contrast || !self.config.enabled {
+        if !self.styling_on() {
             return None;
         }
         if self.try_windows.contains_key(&key) {
@@ -2168,7 +2262,7 @@ impl App {
         self.last_apply.clear();
         self.exe_cache.clear();
         self.path_cache.clear();
-        if self.config.enabled && !self.high_contrast {
+        if self.styling_on() {
             self.apply_startup();
         } else {
             self.restore_visuals();
@@ -2195,6 +2289,9 @@ impl App {
                 AppCommand::TrialKeep => self.trial_end(true),
                 AppCommand::TrialRevert => self.trial_end(false),
                 AppCommand::RestoreLastKnownGood => broadcast |= self.restore_lkg(),
+                AppCommand::Pause => self.pause(),
+                AppCommand::Resume => self.resume(),
+                AppCommand::LeaveSafeMode => broadcast |= self.leave_safe_mode(),
             }
         }
         broadcast
@@ -2308,6 +2405,71 @@ impl App {
             "a trial look was ended because the configuration changed",
         );
         settings::notify_external_change();
+    }
+
+    /// Safe mode keeps the experimental parts off for this run, whatever the file says. The
+    /// file itself is never changed by it.
+    fn enforce_safe_mode(&mut self) {
+        if self.safe.is_safe() {
+            self.config.experimental_dark_legacy = false;
+            self.config.legacy.emulated_x64 = false;
+        }
+    }
+
+    /// Emergency pause. Windows go back to how they were drawn, the legacy hook and the x64
+    /// helper stop, and nothing is styled until Resume. It is not saved: restarting
+    /// AllBlack11 always begins from the saved settings.
+    fn pause(&mut self) {
+        if self.paused {
+            return;
+        }
+        self.end_trial_for_external_change();
+        self.paused = true;
+        self.try_windows.clear();
+        self.restore_visuals();
+        let _ = legacy::set_active(false, &legacy::LegacyOptions::default());
+        log_line("info", "paused from the Safety page or tray");
+        self.update_tray();
+        settings::notify_external_change();
+    }
+
+    fn resume(&mut self) {
+        if !self.paused {
+            return;
+        }
+        self.paused = false;
+        self.hold.clear();
+        self.last_apply.clear();
+        self.exe_cache.clear();
+        if self.styling_on() {
+            self.apply_startup();
+        }
+        if self.config.experimental_dark_legacy && !self.high_contrast {
+            match legacy::set_active(true, &legacy_options(&self.config)) {
+                Ok(()) => self.scan_legacy(),
+                Err(err) => log_line("error", &err),
+            }
+        }
+        log_line("info", "resumed");
+        self.update_tray();
+        settings::notify_external_change();
+    }
+
+    /// Leave safe mode without restarting: load the saved settings as they are.
+    fn leave_safe_mode(&mut self) -> bool {
+        if !self.safe.is_safe() {
+            return false;
+        }
+        self.safe = crate::StartupMode::Normal;
+        let changed = self.apply_external_config();
+        // `apply_external_config` starts the legacy layer only when the setting changed; it
+        // was forced off in memory, so it did change if the file asks for it.
+        self.balloon(
+            "AllBlack11",
+            "Safe mode ended. Saved settings are in effect.",
+            false,
+        );
+        changed
     }
 
     /// Run a whole config in memory. The shell, startup, legacy switch and logging keep their
@@ -2577,6 +2739,19 @@ fn system_state() -> crate::SystemState {
 /// The inspector's report for one window, or `None` if it has gone.
 pub fn report_for(key: i64) -> Option<crate::Report> {
     with_app(|app| app.build_report(key)).flatten()
+}
+
+/// Safe mode text for Settings, or `None` in a normal run.
+pub fn safe_mode_text() -> Option<String> {
+    with_app(|app| match app.safe {
+        crate::StartupMode::Safe(reason) => Some(reason.text()),
+        crate::StartupMode::Normal => None,
+    })
+    .flatten()
+}
+
+pub fn is_paused() -> bool {
+    with_app(|app| app.paused).unwrap_or(false)
 }
 
 /// AllBlack11 has changed this window and holds its original look (so a restore is meaningful).

@@ -21,6 +21,7 @@ mod report;
 mod rules;
 mod shell;
 mod snapshot;
+mod startup;
 mod target;
 mod timefmt;
 mod trial;
@@ -73,6 +74,10 @@ pub use rules::{
 };
 pub use shell::{blacken_shell_slots, ShellBackup, SHELL_SLOT_BYTES};
 pub use snapshot::{format_snapshots, parse_snapshots, same_process, SnapshotFile, StoredSnapshot};
+pub use startup::{
+    clean as startup_clean, decide as startup_decide, format as startup_format,
+    parse as startup_parse, Marker as StartupMarker, Mode as StartupMode, Reason as StartupReason,
+};
 pub use target::{classify_target, pe_machine, route, Route, TargetArch};
 pub use timefmt::format_unix_utc;
 pub use trial::{constrain as constrain_trial, TrialMachine, TRIAL_MS};

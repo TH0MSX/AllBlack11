@@ -103,9 +103,9 @@ enum Page {
     Overview,
     Effects,
     Apps,
+    Scenes,
     Legacy,
-    Profiles,
-    Diagnostics,
+    Safety,
 }
 
 struct Edits {
@@ -238,6 +238,10 @@ enum Button {
     UndoShell,
     OpenHarness,
     DemoMaterials,
+    PauseAll,
+    ResumeAll,
+    LeaveSafe,
+    StopExperimental,
 }
 
 struct Laid {
@@ -444,6 +448,26 @@ fn button_meta(id: Button) -> (&'static str, &'static str, &'static str) {
             "Materials demonstration",
             "Opens a window that applies this look to itself, with a transparent, an opaque and a half-transparent panel. It shows how Windows materials behave. It does not show how another app will look.",
             "Open demonstration",
+        ),
+        Button::PauseAll => (
+            "Pause all styling",
+            "Emergency stop. Puts every window back as Windows draws it and stops the legacy layer and the x64 helper right now. Not saved: restarting AllBlack11 starts from your saved settings.",
+            "Pause",
+        ),
+        Button::ResumeAll => (
+            "Resume styling",
+            "Applies your saved settings to open windows again.",
+            "Resume",
+        ),
+        Button::LeaveSafe => (
+            "Leave safe mode",
+            "Applies your saved settings now, experimental features included.",
+            "Leave safe mode",
+        ),
+        Button::StopExperimental => (
+            "Turn off experimental features",
+            "Turns off dark legacy windows and emulated x64 coverage, saves that, and stops the helper. Window styling itself keeps working.",
+            "Turn off experimental",
         ),
         Button::OpenHarness => (
             "Control harness",

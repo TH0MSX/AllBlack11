@@ -49,9 +49,9 @@ impl Page {
         Page::Overview,
         Page::Effects,
         Page::Apps,
+        Page::Scenes,
         Page::Legacy,
-        Page::Profiles,
-        Page::Diagnostics,
+        Page::Safety,
     ];
 
     pub fn title(self) -> &'static str {
@@ -59,9 +59,9 @@ impl Page {
             Page::Overview => "Overview",
             Page::Effects => "Effects",
             Page::Apps => "Apps",
+            Page::Scenes => "Scenes",
             Page::Legacy => "Legacy",
-            Page::Profiles => "Profiles",
-            Page::Diagnostics => "Diagnostics",
+            Page::Safety => "Safety",
         }
     }
 }
@@ -104,9 +104,9 @@ impl Ui {
             Page::Overview => self.rows_overview(),
             Page::Effects => self.rows_effects(),
             Page::Apps => self.rows_apps(),
+            Page::Scenes => self.rows_scenes(),
             Page::Legacy => self.rows_legacy(),
-            Page::Profiles => self.rows_profiles(),
-            Page::Diagnostics => self.rows_diagnostics(),
+            Page::Safety => self.rows_safety(),
         }
     }
 
@@ -126,6 +126,12 @@ impl Ui {
         b.push(Row::Action(Button::RestartExplorer));
         b.push(Row::Header("Right now"));
         let mut now = Vec::new();
+        if super::super::app::is_paused() {
+            now.push("Paused: every window is as Windows draws it. Resume on the Safety page or the tray menu.".to_string());
+        }
+        if let Some(text) = super::super::app::safe_mode_text() {
+            now.push(format!("Safe mode. {text}"));
+        }
         now.push(if self.config.enabled {
             "Window theming is on.".to_string()
         } else {
@@ -345,11 +351,17 @@ impl Ui {
         b.push_h(Row::ExcludeList, list_height(self.config.exclude.len()));
         b.push(Row::AddField(Button::AddExclude));
         b.push(Row::Action(Button::RemoveExclude));
+        self.push_notebook(&mut b);
         b.out
     }
 
     fn rows_legacy(&self) -> Vec<Laid> {
         let mut b = Builder::new();
+        if super::super::app::safe_mode_text().is_some() {
+            b.push(Row::About(vec![
+                "Safe mode is on for this run, so the switches below are not in effect. Leave safe mode on the Safety page.".to_string(),
+            ]));
+        }
         b.push(Row::Header("Dark legacy windows (experimental)"));
         b.push(Row::Toggle(Toggle::Experimental));
         b.push(Row::Choice(Choice::Palette));
@@ -382,7 +394,7 @@ impl Ui {
         b.out
     }
 
-    fn rows_profiles(&self) -> Vec<Laid> {
+    fn rows_scenes(&self) -> Vec<Laid> {
         let mut b = Builder::new();
         b.push(Row::Header("Recipes"));
         b.push(Row::Note(
@@ -430,45 +442,10 @@ impl Ui {
             Button::ImportRecipe,
             Button::ExportRecipe,
         ]));
-        b.push(Row::Header("Safety net"));
-        b.push(Row::Lines(vec![
-            "AllBlack11 keeps the last config that loaded and applied without errors (config.lkg.json). If config.json is ever broken, that copy runs instead and your file is left alone.".to_string(),
-            if super::super::cfgio::load_lkg().is_some() {
-                "A last known good config exists.".to_string()
-            } else {
-                "No last known good copy yet. It is saved after the first successful load.".to_string()
-            },
-        ]));
-        b.push(Row::Buttons(vec![Button::RestoreLkg]));
-        b.push(Row::Header("Compatibility notebook"));
-        let book = super::super::cfgio::load_notebook();
-        let mut counts = [0usize; 5];
-        for entry in &book.entries {
-            counts[match entry.status {
-                crate::CompatStatus::Verified => 0,
-                crate::CompatStatus::Partial => 1,
-                crate::CompatStatus::Experimental => 2,
-                crate::CompatStatus::Unsupported => 3,
-                crate::CompatStatus::Untested => 4,
-            }] += 1;
-        }
-        b.push(Row::Lines(vec![
-            format!(
-                "{} notes on this PC: {} work, {} partly, {} experimental, {} do not work.",
-                book.entries.len(),
-                counts[0],
-                counts[1],
-                counts[2],
-                counts[3]
-            ),
-            "Notes stay on this PC (compat.json). Nothing is sent anywhere. Add one from the Apps page.".to_string(),
-        ]));
-        b.push(Row::Buttons(vec![Button::ClearNotebook]));
         b.out
     }
 
-    fn rows_diagnostics(&self) -> Vec<Laid> {
-        let mut b = Builder::new();
+    fn push_diagnostics(&self, b: &mut Builder) {
         b.push(Row::Header("This PC"));
         let mut pc = vec![
             self.arch_line.clone(),
@@ -498,10 +475,102 @@ impl Ui {
         b.push(Row::Action(Button::Diagnostics));
         b.push(Row::Action(Button::OpenFolder));
         b.push(Row::Action(Button::OpenLog));
-        b.push(Row::Header("Recovery"));
+    }
+}
+
+impl Ui {
+    /// Compatibility notebook summary (moved from the old Profiles page to sit next to the
+    /// per-app notes it summarizes).
+    fn push_notebook(&self, b: &mut Builder) {
+        b.push(Row::Header("Compatibility notebook"));
+        let book = super::super::cfgio::load_notebook();
+        let mut counts = [0usize; 5];
+        for entry in &book.entries {
+            counts[match entry.status {
+                crate::CompatStatus::Verified => 0,
+                crate::CompatStatus::Partial => 1,
+                crate::CompatStatus::Experimental => 2,
+                crate::CompatStatus::Unsupported => 3,
+                crate::CompatStatus::Untested => 4,
+            }] += 1;
+        }
+        b.push(Row::Lines(vec![
+            format!(
+                "{} notes on this PC: {} work, {} partly, {} experimental, {} do not work.",
+                book.entries.len(),
+                counts[0],
+                counts[1],
+                counts[2],
+                counts[3]
+            ),
+            "Notes stay on this PC (compat.json). Nothing is sent anywhere. Add one from the Apps page.".to_string(),
+        ]));
+        b.push(Row::Buttons(vec![Button::ClearNotebook]));
+    }
+
+    fn rows_safety(&self) -> Vec<Laid> {
+        let mut b = Builder::new();
+        if let Some(text) = super::super::app::safe_mode_text() {
+            b.push(Row::Header("Safe mode"));
+            b.push(Row::About(vec![
+                text,
+                "Experimental features are off for this run. Your saved settings were not changed."
+                    .to_string(),
+            ]));
+            b.push(Row::Action(Button::LeaveSafe));
+        }
+        b.push(Row::Header("Emergency"));
+        if super::super::app::is_paused() {
+            b.push(Row::About(vec![
+                "AllBlack11 is paused. Every window is back as Windows draws it.".to_string(),
+            ]));
+            b.push(Row::Action(Button::ResumeAll));
+        } else {
+            b.push(Row::Action(Button::PauseAll));
+        }
         b.push(Row::Action(Button::ResetAllWindows));
         b.push(Row::Action(Button::UndoShell));
+        b.push(Row::Action(Button::StopExperimental));
+        b.push(Row::Header("Config recovery"));
+        b.push(Row::Lines(vec![
+            "AllBlack11 keeps the last config that loaded and applied without errors (config.lkg.json). If config.json is ever broken, that copy runs instead and your file is left alone.".to_string(),
+            if super::super::cfgio::load_lkg().is_some() {
+                "A last known good config exists.".to_string()
+            } else {
+                "No last known good copy yet. It is saved after the first successful load.".to_string()
+            },
+        ]));
+        b.push(Row::Buttons(vec![Button::RestoreLkg]));
+        b.push(Row::Header("Experimental features"));
+        b.push(Row::Note(
+            "Each one is a separate switch and is off until you turn it on. Turning one off stops its work straight away.",
+        ));
+        b.push(Row::About(self.experimental_lines()));
+        b.push(Row::Header("x64 helper (ARM64 only)"));
+        b.push(Row::About(vec![super::super::legacy::helper_status()]));
+        b.push(Row::Note(
+            "Turn off emulated x64 coverage on the Legacy page, or press Turn off experimental features above. Either one asks the helper to stop and ends it if it does not.",
+        ));
+        self.push_diagnostics(&mut b);
         b.out
+    }
+
+    fn experimental_lines(&self) -> Vec<String> {
+        let on = |flag: bool| if flag { "on" } else { "off" };
+        vec![
+            format!(
+                "Dark legacy windows: {} (Legacy page)",
+                on(self.config.experimental_dark_legacy)
+            ),
+            format!(
+                "Emulated x64 coverage: {} (Legacy page)",
+                on(self.config.legacy.emulated_x64)
+            ),
+            format!(
+                "Focus Look: {} (Effects page)",
+                on(self.config.focus.enabled)
+            ),
+        ]
     }
 }
 
@@ -676,7 +745,7 @@ impl Ui {
         self.ext.focus = None;
         match page {
             Page::Apps => self.refresh_windows(),
-            Page::Profiles => self.refresh_recipes(),
+            Page::Scenes => self.refresh_recipes(),
             _ => {}
         }
         self.relayout(hwnd);
@@ -1284,6 +1353,29 @@ impl Ui {
                 }
             }
             Button::CopyReport => self.copy_report(),
+            Button::PauseAll => {
+                cmdq::push(AppCommand::Pause);
+                self.post_command();
+                self.status = "Paused. Every window is going back to how Windows draws it.".into();
+            }
+            Button::ResumeAll => {
+                cmdq::push(AppCommand::Resume);
+                self.post_command();
+                self.status = "Resuming.".into();
+            }
+            Button::LeaveSafe => {
+                cmdq::push(AppCommand::LeaveSafeMode);
+                self.post_command();
+                self.status = "Leaving safe mode. Your saved settings are applied.".into();
+            }
+            Button::StopExperimental => {
+                self.config.experimental_dark_legacy = false;
+                self.config.legacy.emulated_x64 = false;
+                self.status =
+                    "Experimental features are off. The legacy layer and helper are stopping."
+                        .into();
+                self.commit();
+            }
             Button::MarkWorks => self.mark_compat(crate::CompatStatus::Verified),
             Button::MarkPartial => self.mark_compat(crate::CompatStatus::Partial),
             Button::MarkFails => self.mark_compat(crate::CompatStatus::Unsupported),

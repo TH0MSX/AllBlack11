@@ -385,6 +385,11 @@ pub fn stop_helper() {
     super::helper::stop_and_quit();
 }
 
+/// One line for the Safety page about the x64 helper.
+pub fn helper_status() -> String {
+    super::helper::status_text()
+}
+
 /// Whether the packaged x64 helper and x64 hook are installed next to the exe.
 pub fn helper_installed() -> bool {
     super::helper::installed()

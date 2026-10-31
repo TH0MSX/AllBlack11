@@ -29,6 +29,11 @@ pub enum AppCommand {
     TrialRevert,
     /// Replace `config.json` with the last known good copy.
     RestoreLastKnownGood,
+    /// Emergency pause: put every window back and style nothing until `Resume`.
+    Pause,
+    Resume,
+    /// End this run's safe mode and apply the saved settings, experimental parts included.
+    LeaveSafeMode,
 }
 
 static QUEUE: Mutex<Vec<AppCommand>> = Mutex::new(Vec::new());
