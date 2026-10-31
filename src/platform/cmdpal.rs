@@ -210,9 +210,9 @@ unsafe extern "system" fn palette_proc(
                 selected: 0,
                 k,
                 fonts,
-                bg_brush: CreateSolidBrush(CARD),
-                edit_brush: CreateSolidBrush(EDIT_BG),
-                accent: visible_accent(registry::accent_bgr()),
+                bg_brush: CreateSolidBrush(th().card),
+                edit_brush: CreateSolidBrush(th().edit_bg),
+                accent: theme_accent().0,
             });
             SetWindowLongPtrW(hwnd, GWLP_USERDATA, Box::into_raw(pal) as isize);
             SetWindowSubclass(edit, Some(edit_proc), 1, hwnd as usize);
@@ -286,8 +286,8 @@ unsafe extern "system" fn palette_proc(
         }
         WM_CTLCOLOREDIT => {
             let dc = wparam as HDC;
-            SetTextColor(dc, TEXT);
-            SetBkColor(dc, EDIT_BG);
+            SetTextColor(dc, th().text);
+            SetBkColor(dc, th().edit_bg);
             state(hwnd).map_or(0, |pal| pal.edit_brush as LRESULT)
         }
         WM_ERASEBKGND => 1,
@@ -331,9 +331,9 @@ unsafe fn paint_palette(hwnd: HWND, pal: &Pal) {
     let c = Canvas { dc, k: pal.k };
     let lw = (w as f32 / pal.k) as i32;
     let lh = (h as f32 / pal.k) as i32;
-    c.round(0, 0, lw, lh, 0, None, Some(CARD_EDGE));
+    c.round(0, 0, lw, lh, 0, None, Some(th().edge));
     // The search box sits on its own darker strip so it reads as the input.
-    c.fill(10, 10, lw - 10, INPUT_H - 10, EDIT_BG);
+    c.fill(10, 10, lw - 10, INPUT_H - 10, th().edit_bg);
     if pal.shown.is_empty() {
         c.text(
             24,
@@ -341,7 +341,7 @@ unsafe fn paint_palette(hwnd: HWND, pal: &Pal) {
             lw - 24,
             INPUT_H + ROW_H,
             "Nothing matches. Try fewer words.",
-            MUTED,
+            th().muted,
             pal.fonts.small,
             DT_LEFT | DT_VCENTER | DT_SINGLELINE,
         );
@@ -358,7 +358,7 @@ unsafe fn paint_palette(hwnd: HWND, pal: &Pal) {
                 lw - 8,
                 top + ROW_H - 2,
                 5,
-                Some(CARD_HI),
+                Some(th().card_hi),
                 Some(pal.accent),
             );
         }
@@ -368,7 +368,7 @@ unsafe fn paint_palette(hwnd: HWND, pal: &Pal) {
             lw / 2 + 40,
             top + ROW_H - 2,
             &command.title,
-            TEXT,
+            th().text,
             pal.fonts.body,
             DT_LEFT | DT_VCENTER | DT_SINGLELINE | DT_END_ELLIPSIS,
         );
@@ -378,7 +378,7 @@ unsafe fn paint_palette(hwnd: HWND, pal: &Pal) {
             lw - 18,
             top + ROW_H - 2,
             &command.hint,
-            MUTED,
+            th().muted,
             pal.fonts.small,
             DT_RIGHT | DT_VCENTER | DT_SINGLELINE | DT_END_ELLIPSIS,
         );

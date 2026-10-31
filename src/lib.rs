@@ -30,6 +30,7 @@ mod startup;
 mod target;
 mod timefmt;
 mod trial;
+mod uitheme;
 mod version;
 
 pub use accents::{key_for as accent_key, Accents, PALETTE as ACCENT_PALETTE};
@@ -42,7 +43,7 @@ pub use compat::{Entry as CompatEntry, Notebook, Status as CompatStatus};
 pub use config::{
     base_style, bundled_default_json, parse_config, set_enabled_flag, Backdrop, Color, Config,
     Corners, DayNight, Features, FocusSettings, LegacySettings, PartialStyle, ReduceEffects, Rule,
-    Style, FALLBACK_ACCENT_BGR,
+    Style, UiSettings, FALLBACK_ACCENT_BGR,
 };
 pub use effects::{focus_style, reduce_reason, reduced, Explicit, SystemState};
 pub use explain::{
@@ -105,6 +106,12 @@ pub use startup::{
 pub use target::{classify_target, pe_machine, route, Route, TargetArch};
 pub use timefmt::format_unix_utc;
 pub use trial::{constrain as constrain_trial, TrialMachine, TRIAL_MS};
+pub use uitheme::{
+    accent_on, blend as blend_colors, face_candidates, high_contrast as high_contrast_palette,
+    layout_scale, on_accent, palette as ui_palette, resolve as resolve_appearance, Appearance,
+    Face, Mode as UiMode, Palette as UiPalette, SysColors, TextStyle, ICON_FONTS,
+};
+pub use uitheme::{metrics as ui_metrics, BODY, BODY_STRONG, CAPTION, SUBTITLE, TITLE};
 pub use version::display_version;
 
 #[cfg(windows)]

@@ -507,6 +507,24 @@ pub struct Config {
     /// 3.5.
     #[serde(default, skip_serializing_if = "Features::is_default")]
     pub features: Features,
+    /// How AllBlack11's own windows look. Separate from the look it applies to other apps.
+    #[serde(default, skip_serializing_if = "UiSettings::is_default")]
+    pub ui: UiSettings,
+}
+
+/// Settings for AllBlack11's own windows (Settings, palette, setup). Never the look applied to
+/// other apps.
+#[derive(Debug, Clone, PartialEq, Eq, Default, Deserialize, Serialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields, default)]
+pub struct UiSettings {
+    /// `system` (follow Windows), `light` or `dark`.
+    pub appearance: crate::uitheme::Appearance,
+}
+
+impl UiSettings {
+    pub fn is_default(&self) -> bool {
+        *self == UiSettings::default()
+    }
 }
 
 /// Optional automation. Everything here is off until the user turns it on, and each switch
@@ -1011,6 +1029,21 @@ mod tests {
         assert!(config.reduce_effects.on_battery_saver);
         assert_eq!(config.legacy.palette, "graphite");
         assert!(!config.legacy.emulated_x64);
+    }
+
+    #[test]
+    fn the_ui_section_is_optional_off_the_file_by_default_and_round_trips() {
+        let config = parse_config("{}").unwrap();
+        assert_eq!(config.ui.appearance, crate::uitheme::Appearance::System);
+        // An untouched config does not grow a `ui` key, so 3.5/3.6 can still read it.
+        let text = serde_json::to_string(&config).unwrap();
+        assert!(!text.contains("\"ui\""), "{text}");
+        let dark = parse_config(r#"{"ui":{"appearance":"dark"}}"#).unwrap();
+        assert_eq!(dark.ui.appearance, crate::uitheme::Appearance::Dark);
+        let back = parse_config(&serde_json::to_string(&dark).unwrap()).unwrap();
+        assert_eq!(back.ui.appearance, crate::uitheme::Appearance::Dark);
+        assert!(parse_config(r#"{"ui":{"appearance":"neon"}}"#).is_err());
+        assert!(parse_config(r#"{"ui":{"tint":"red"}}"#).is_err());
     }
 
     #[test]

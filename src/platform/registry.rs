@@ -66,6 +66,12 @@ pub fn transparency_enabled() -> bool {
     .unwrap_or(true)
 }
 
+/// Windows' "Text size" setting (Settings > Accessibility > Text size) as a percentage, 100 to
+/// 225. `None` when it has never been changed.
+pub fn text_scale_percent() -> Option<u32> {
+    reg_dword("Software\\Microsoft\\Accessibility", "TextScaleFactor")
+}
+
 /// `Some(true)` when apps are in dark mode (`AppsUseLightTheme == 0`).
 pub fn apps_prefer_dark() -> Option<bool> {
     reg_dword(

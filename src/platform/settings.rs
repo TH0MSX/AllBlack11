@@ -16,7 +16,7 @@ use std::sync::atomic::{AtomicIsize, Ordering};
 use windows_sys::Win32::Foundation::{HWND, LPARAM, LRESULT, POINT, RECT, WPARAM};
 use windows_sys::Win32::Graphics::Dwm::DwmSetWindowAttribute;
 use windows_sys::Win32::Graphics::Gdi::{
-    BitBlt, CreateCompatibleBitmap, CreateCompatibleDC, CreateFontW, CreatePen, CreateRectRgn,
+    BitBlt, CreateCompatibleBitmap, CreateCompatibleDC, CreatePen, CreateRectRgn,
     CreateRoundRectRgn, CreateSolidBrush, DeleteDC, DeleteObject, DrawTextW, Ellipse, FillRect,
     GetStockObject, IntersectClipRect, InvalidateRect, LineTo, MonitorFromPoint, MoveToEx,
     RoundRect, SelectClipRgn, SelectObject, SetBkColor, SetBkMode, SetTextColor, SetViewportOrgEx,
@@ -54,6 +54,10 @@ use windows_sys::Win32::UI::WindowsAndMessaging::WM_TIMER;
 mod pages;
 #[path = "cmdpal.rs"]
 mod palette_ui;
+#[path = "uistyle.rs"]
+mod uistyle;
+
+use uistyle::{accent as theme_accent, th};
 
 static PENDING_PAGE: std::sync::atomic::AtomicUsize =
     std::sync::atomic::AtomicUsize::new(usize::MAX);
@@ -94,14 +98,6 @@ const ID_RULE: u16 = 105;
 const ID_EXCLUDE: u16 = 106;
 
 // Colors are COLORREF (0x00BBGGRR).
-const BG: u32 = 0x0000_0000;
-const CARD: u32 = 0x0012_1212;
-const CARD_EDGE: u32 = 0x0028_2828;
-const CARD_HI: u32 = 0x0024_2424;
-const TEXT: u32 = 0x00FF_FFFF;
-const MUTED: u32 = 0x00A0_A0A0;
-const TRACK: u32 = 0x0050_5050;
-const EDIT_BG: u32 = 0x001E_1E1E;
 /// Gap between cards, and card inner padding, in logical pixels.
 const GAP: i32 = 4;
 const PAD: i32 = 16;
@@ -141,10 +137,19 @@ struct Edits {
     look: HWND,
 }
 
+/// One font per style in the type ramp, plus the icon font (null when none is installed).
 struct Fonts {
+    /// Body, 14/20.
     body: HFONT,
+    /// Caption, 12/16.
     small: HFONT,
+    /// Body strong (semibold 14/20): section headings and the selected nav item.
     head: HFONT,
+    /// Subtitle, 20/28 semibold: card and dialog headings.
+    subtitle: HFONT,
+    /// Title, 28/36 semibold: page titles.
+    title: HFONT,
+    icon: HFONT,
 }
 
 struct Ui {
@@ -665,15 +670,14 @@ unsafe extern "system" fn wndproc(hwnd: HWND, msg: u32, wparam: WPARAM, lparam: 
         let ui = Box::new(Ui::new(hwnd, owner));
         set_ui(hwnd, Box::into_raw(ui));
         SETTINGS.store(hwnd as isize, Ordering::Release);
-        style_window(hwnd);
         if let Some(ui) = get_ui(hwnd).as_mut() {
-            ui.relayout(hwnd);
+            ui.refresh_theme(hwnd);
         }
         return 0;
     }
     if msg == WM_GETMINMAXINFO {
         let info = &mut *(lparam as *mut MINMAXINFO);
-        let k = dpi_of(hwnd) as f32 / 96.0;
+        let k = crate::layout_scale(dpi_of(hwnd), uistyle::text_scale_percent());
         info.ptMinTrackSize.x = ((MIN_W + 16) as f32 * k) as i32;
         info.ptMinTrackSize.y = ((MIN_H + 47) as f32 * k) as i32;
         return 0;
@@ -781,8 +785,8 @@ unsafe extern "system" fn wndproc(hwnd: HWND, msg: u32, wparam: WPARAM, lparam: 
         }
         WM_CTLCOLOREDIT => {
             let dc = wparam as HDC;
-            SetTextColor(dc, TEXT);
-            SetBkColor(dc, EDIT_BG);
+            SetTextColor(dc, th().text);
+            SetBkColor(dc, th().edit_bg);
             ui.edit_brush as LRESULT
         }
         WM_KEYDOWN => {
@@ -857,6 +861,11 @@ unsafe extern "system" fn wndproc(hwnd: HWND, msg: u32, wparam: WPARAM, lparam: 
             }
             0
         }
+        // Windows changed light/dark, accent, high contrast or text size: follow it.
+        0x001A | 0x0015 | 0x031A => {
+            ui.refresh_theme(hwnd);
+            DefWindowProcW(hwnd, msg, wparam, lparam)
+        }
         WM_REFRESH => {
             ui.reload_from_disk();
             ui.relayout(hwnd);
@@ -882,9 +891,10 @@ unsafe extern "system" fn wndproc(hwnd: HWND, msg: u32, wparam: WPARAM, lparam: 
     }
 }
 
-fn style_window(hwnd: HWND) {
+fn style_window(hwnd: HWND, mode: crate::UiMode) {
     unsafe {
-        let dark: i32 = 1;
+        // The title bar follows AllBlack11's own theme, not the look it applies to other apps.
+        let dark: i32 = i32::from(mode == crate::UiMode::Dark);
         DwmSetWindowAttribute(hwnd, 20, &dark as *const i32 as *const _, 4);
         let mica: i32 = 2;
         DwmSetWindowAttribute(hwnd, 38, &mica as *const i32 as *const _, 4);
@@ -927,16 +937,27 @@ fn lparam_y(lparam: LPARAM) -> i32 {
 }
 
 impl Fonts {
-    fn make(dpi: u32) -> Self {
+    /// `effective_dpi` is 96 times the layout scale (display scale times text size).
+    fn make(effective_dpi: u32) -> Self {
         Self {
-            body: make_font(dpi, 15, 400),
-            small: make_font(dpi, 13, 400),
-            head: make_font(dpi, 16, 600),
+            body: uistyle::style_font(crate::BODY, effective_dpi),
+            small: uistyle::style_font(crate::CAPTION, effective_dpi),
+            head: uistyle::style_font(crate::BODY_STRONG, effective_dpi),
+            subtitle: uistyle::style_font(crate::SUBTITLE, effective_dpi),
+            title: uistyle::style_font(crate::TITLE, effective_dpi),
+            icon: uistyle::icon_font(effective_dpi, 16),
         }
     }
 
     fn delete(&self) {
-        for font in [self.body, self.small, self.head] {
+        for font in [
+            self.body,
+            self.small,
+            self.head,
+            self.subtitle,
+            self.title,
+            self.icon,
+        ] {
             if !font.is_null() {
                 unsafe { DeleteObject(font) };
             }
@@ -951,7 +972,10 @@ impl Fonts {
 impl Ui {
     fn new(hwnd: HWND, owner: HWND) -> Self {
         let dpi = dpi_of(hwnd);
-        let fonts = Fonts::make(dpi);
+        let config = cfgio::load();
+        uistyle::refresh(config.ui.appearance);
+        let k = crate::layout_scale(dpi, uistyle::text_scale_percent());
+        let fonts = Fonts::make((96.0 * k).round() as u32);
         let edits = Edits {
             filter: make_edit(hwnd, ID_FILTER, fonts.body),
             caption: make_edit(hwnd, ID_CAPTION, fonts.body),
@@ -974,13 +998,13 @@ impl Ui {
             scroll: 0,
             drag: None,
             status: String::new(),
-            config: cfgio::load(),
+            config,
             edits,
             fonts,
-            bg_brush: unsafe { CreateSolidBrush(BG) },
-            edit_brush: unsafe { CreateSolidBrush(EDIT_BG) },
-            k: dpi as f32 / 96.0,
-            accent: visible_accent(registry::accent_bgr()),
+            bg_brush: unsafe { CreateSolidBrush(th().bg) },
+            edit_brush: unsafe { CreateSolidBrush(th().edit_bg) },
+            k,
+            accent: theme_accent().0,
             build: super::dwm::windows_build(),
             arch_line: sysinfo::arch_line(),
             arch: sysinfo::arch_status(),
@@ -1010,13 +1034,38 @@ impl Ui {
         (logical as f32 * self.k).round() as i32
     }
 
+    /// Display scale or text size changed: rebuild the scale and every font.
     fn set_dpi(&mut self, dpi: u32) {
-        self.k = dpi.max(96) as f32 / 96.0;
+        self.k = crate::layout_scale(dpi, uistyle::text_scale_percent());
         self.fonts.delete();
-        self.fonts = Fonts::make(dpi);
+        self.fonts = Fonts::make((96.0 * self.k).round() as u32);
         for edit in self.all_edits() {
             unsafe { SendMessageW(edit, WM_SETFONT, self.fonts.body as WPARAM, 1) };
         }
+    }
+
+    /// Windows changed its light/dark mode, accent color, high contrast or text size, or the
+    /// user chose an appearance: re-read the theme and repaint everything with it.
+    fn refresh_theme(&mut self, hwnd: HWND) {
+        let mode = uistyle::refresh(self.config.ui.appearance);
+        self.accent = theme_accent().0;
+        unsafe {
+            DeleteObject(self.bg_brush);
+            DeleteObject(self.edit_brush);
+            self.bg_brush = CreateSolidBrush(th().bg);
+            self.edit_brush = CreateSolidBrush(th().edit_bg);
+        }
+        self.set_dpi(dpi_of(hwnd));
+        style_window(hwnd, mode);
+        let theme = to_wide(if mode == crate::UiMode::Dark {
+            "DarkMode_CFD"
+        } else {
+            "CFD"
+        });
+        for edit in self.all_edits() {
+            unsafe { SetWindowTheme(edit, pcw(&theme), std::ptr::null()) };
+        }
+        self.relayout(hwnd);
     }
 
     fn all_edits(&self) -> [HWND; 8] {
@@ -1065,7 +1114,7 @@ impl Ui {
         let editing = self.all_edits().contains(&focus);
         self.config = cfgio::load();
         self.autostart = registry::autostart_enabled();
-        self.accent = visible_accent(registry::accent_bgr());
+        self.accent = theme_accent().0;
         if self
             .rule
             .is_some_and(|index| index >= self.config.rules.len())
@@ -1770,18 +1819,18 @@ fn paint_scrollbar(c: &Canvas, ui: &Ui, hwnd: HWND, lw: i32) {
     let max_scroll = (content - view).max(1);
     let offset = ((track - thumb) as f32 * ui.scroll as f32 / max_scroll as f32) as i32;
     let top = ui.top() + 4 + offset;
-    c.round(lw - 7, top, lw - 3, top + thumb, 2, Some(TRACK), None);
+    c.round(lw - 7, top, lw - 3, top + thumb, 2, Some(th().track), None);
 }
 
 fn paint_status(c: &Canvas, ui: &Ui, lw: i32) {
     let top = ui.status_top();
-    c.fill(0, top, lw, top + STATUS_H, BG);
+    c.fill(0, top, lw, top + STATUS_H, th().bg);
     if ui.trial_active() {
         pages::paint_trial_bar(c, ui, lw);
         return;
     }
     let (text, color) = if ui.status.is_empty() {
-        ("Changes apply as you make them.", MUTED)
+        ("Changes apply as you make them.", th().muted)
     } else {
         (ui.status.as_str(), ui.accent)
     };
@@ -1804,8 +1853,8 @@ fn card(c: &Canvas, top: i32, h: i32, lw: i32) {
         lw - MARGIN,
         top + h - GAP,
         5,
-        Some(CARD),
-        Some(CARD_EDGE),
+        Some(th().card),
+        Some(th().edge),
     );
 }
 
@@ -1822,7 +1871,7 @@ fn paint_row(c: &Canvas, ui: &Ui, row: &Laid, top: i32, lw: i32) {
                 lw - MARGIN,
                 top + 40,
                 text,
-                TEXT,
+                th().text,
                 fonts.head,
                 DT_LEFT | DT_VCENTER | DT_SINGLELINE,
             );
@@ -1834,7 +1883,7 @@ fn paint_row(c: &Canvas, ui: &Ui, row: &Laid, top: i32, lw: i32) {
                 lw - MARGIN,
                 top + row.h,
                 text,
-                MUTED,
+                th().muted,
                 fonts.small,
                 DT_LEFT | DT_WORDBREAK,
             );
@@ -1849,7 +1898,7 @@ fn paint_row(c: &Canvas, ui: &Ui, row: &Laid, top: i32, lw: i32) {
                 right - 120,
                 top + 30,
                 label,
-                TEXT,
+                th().text,
                 fonts.body,
                 DT_LEFT | DT_VCENTER | DT_SINGLELINE | DT_END_ELLIPSIS,
             );
@@ -1859,7 +1908,7 @@ fn paint_row(c: &Canvas, ui: &Ui, row: &Laid, top: i32, lw: i32) {
                 right - 120,
                 top + card_h - 4,
                 desc,
-                MUTED,
+                th().muted,
                 fonts.small,
                 DT_LEFT | DT_WORDBREAK,
             );
@@ -1871,7 +1920,7 @@ fn paint_row(c: &Canvas, ui: &Ui, row: &Laid, top: i32, lw: i32) {
                 right - 52,
                 mid + 12,
                 if on { "On" } else { "Off" },
-                TEXT,
+                th().text,
                 fonts.body,
                 DT_RIGHT | DT_VCENTER | DT_SINGLELINE,
             );
@@ -1885,7 +1934,7 @@ fn paint_row(c: &Canvas, ui: &Ui, row: &Laid, top: i32, lw: i32) {
                 right - 190,
                 top + 30,
                 choice_title(*id),
-                TEXT,
+                th().text,
                 fonts.body,
                 DT_LEFT | DT_VCENTER | DT_SINGLELINE,
             );
@@ -1895,7 +1944,7 @@ fn paint_row(c: &Canvas, ui: &Ui, row: &Laid, top: i32, lw: i32) {
                 right - 190,
                 top + card_h - 4,
                 choice_desc(ui, *id),
-                MUTED,
+                th().muted,
                 fonts.small,
                 DT_LEFT | DT_WORDBREAK,
             );
@@ -1906,8 +1955,8 @@ fn paint_row(c: &Canvas, ui: &Ui, row: &Laid, top: i32, lw: i32) {
                 right,
                 mid + 16,
                 5,
-                Some(CARD_HI),
-                Some(CARD_EDGE),
+                Some(th().card_hi),
+                Some(th().edge),
             );
             c.text(
                 right - 164,
@@ -1915,7 +1964,7 @@ fn paint_row(c: &Canvas, ui: &Ui, row: &Laid, top: i32, lw: i32) {
                 right - 30,
                 mid + 16,
                 &choice_text(ui, *id),
-                TEXT,
+                th().text,
                 fonts.body,
                 DT_LEFT | DT_VCENTER | DT_SINGLELINE,
             );
@@ -1925,7 +1974,7 @@ fn paint_row(c: &Canvas, ui: &Ui, row: &Laid, top: i32, lw: i32) {
                 right - 8,
                 mid + 16,
                 "▾",
-                MUTED,
+                th().muted,
                 fonts.body,
                 DT_CENTER | DT_VCENTER | DT_SINGLELINE,
             );
@@ -1940,7 +1989,7 @@ fn paint_row(c: &Canvas, ui: &Ui, row: &Laid, top: i32, lw: i32) {
                 right - 90,
                 top + 30,
                 label,
-                TEXT,
+                th().text,
                 fonts.body,
                 DT_LEFT | DT_VCENTER | DT_SINGLELINE,
             );
@@ -1950,7 +1999,7 @@ fn paint_row(c: &Canvas, ui: &Ui, row: &Laid, top: i32, lw: i32) {
                 right,
                 top + 30,
                 &value,
-                TEXT,
+                th().text,
                 fonts.body,
                 DT_RIGHT | DT_VCENTER | DT_SINGLELINE,
             );
@@ -1960,7 +2009,7 @@ fn paint_row(c: &Canvas, ui: &Ui, row: &Laid, top: i32, lw: i32) {
                 right,
                 top + 54,
                 desc,
-                MUTED,
+                th().muted,
                 fonts.small,
                 DT_LEFT | DT_WORDBREAK,
             );
@@ -1982,7 +2031,7 @@ fn paint_row(c: &Canvas, ui: &Ui, row: &Laid, top: i32, lw: i32) {
                 right - 180,
                 top + card_h,
                 color_label(*id),
-                TEXT,
+                th().text,
                 fonts.body,
                 DT_LEFT | DT_VCENTER | DT_SINGLELINE,
             );
@@ -1999,8 +2048,8 @@ fn paint_row(c: &Canvas, ui: &Ui, row: &Laid, top: i32, lw: i32) {
                     r,
                     top + b,
                     5,
-                    Some(CARD_HI),
-                    Some(if selected { ui.accent } else { CARD_EDGE }),
+                    Some(th().card_hi),
+                    Some(if selected { ui.accent } else { th().edge }),
                 );
                 c.text(
                     l,
@@ -2008,7 +2057,7 @@ fn paint_row(c: &Canvas, ui: &Ui, row: &Laid, top: i32, lw: i32) {
                     r,
                     top + b,
                     preset.name,
-                    TEXT,
+                    th().text,
                     fonts.body,
                     DT_CENTER | DT_VCENTER | DT_SINGLELINE | DT_END_ELLIPSIS,
                 );
@@ -2023,7 +2072,7 @@ fn paint_row(c: &Canvas, ui: &Ui, row: &Laid, top: i32, lw: i32) {
                 right,
                 top + card_h - 6,
                 blurb,
-                MUTED,
+                th().muted,
                 fonts.small,
                 DT_LEFT | DT_WORDBREAK,
             );
@@ -2059,7 +2108,7 @@ fn paint_row(c: &Canvas, ui: &Ui, row: &Laid, top: i32, lw: i32) {
                 text_right,
                 top + 30,
                 title,
-                TEXT,
+                th().text,
                 fonts.body,
                 DT_LEFT | DT_VCENTER | DT_SINGLELINE | DT_END_ELLIPSIS,
             );
@@ -2069,18 +2118,26 @@ fn paint_row(c: &Canvas, ui: &Ui, row: &Laid, top: i32, lw: i32) {
                 text_right,
                 top + card_h - 4,
                 desc,
-                MUTED,
+                th().muted,
                 fonts.small,
                 DT_LEFT | DT_WORDBREAK,
             );
-            c.round(l, top + t, r, top + b, 5, Some(CARD_HI), Some(CARD_EDGE));
+            c.round(
+                l,
+                top + t,
+                r,
+                top + b,
+                5,
+                Some(th().card_hi),
+                Some(th().edge),
+            );
             c.text(
                 l,
                 top + t,
                 r,
                 top + b,
                 button,
-                TEXT,
+                th().text,
                 fonts.body,
                 DT_CENTER | DT_VCENTER | DT_SINGLELINE,
             );
@@ -2089,14 +2146,22 @@ fn paint_row(c: &Canvas, ui: &Ui, row: &Laid, top: i32, lw: i32) {
             card(c, top, row.h, lw);
             let (_, _, label) = button_meta(*id);
             let (l, t, r, b) = add_pill(lw);
-            c.round(l, top + t, r, top + b, 5, Some(CARD_HI), Some(ui.accent));
+            c.round(
+                l,
+                top + t,
+                r,
+                top + b,
+                5,
+                Some(th().card_hi),
+                Some(ui.accent),
+            );
             c.text(
                 l,
                 top + t,
                 r,
                 top + b,
                 label,
-                TEXT,
+                th().text,
                 fonts.body,
                 DT_CENTER | DT_VCENTER | DT_SINGLELINE,
             );
@@ -2114,9 +2179,9 @@ fn paint_row(c: &Canvas, ui: &Ui, row: &Laid, top: i32, lw: i32) {
             for (index, line) in lines.iter().enumerate() {
                 let y = top + 12 + index as i32 * 20;
                 let (font, color) = if index == 0 {
-                    (fonts.body, TEXT)
+                    (fonts.body, th().text)
                 } else {
-                    (fonts.small, MUTED)
+                    (fonts.small, th().muted)
                 };
                 c.text(
                     left,
@@ -2210,7 +2275,7 @@ fn draw_toggle(c: &Canvas, x: i32, y: i32, on: bool, accent: u32) {
         x + 40,
         y + 20,
         10,
-        Some(if on { accent } else { TRACK }),
+        Some(if on { accent } else { th().track }),
         None,
     );
     let cx = if on { x + 22 } else { x + 4 };
@@ -2218,7 +2283,7 @@ fn draw_toggle(c: &Canvas, x: i32, y: i32, on: bool, accent: u32) {
 }
 
 fn draw_slider(c: &Canvas, x0: i32, x1: i32, y: i32, fraction: f32, accent: u32) {
-    c.round(x0, y - 2, x1, y + 2, 2, Some(TRACK), None);
+    c.round(x0, y - 2, x1, y + 2, 2, Some(th().track), None);
     let thumb = x0 + (fraction.clamp(0.0, 1.0) * (x1 - x0) as f32) as i32;
     c.round(x0, y - 2, thumb.max(x0 + 3), y + 2, 2, Some(accent), None);
     draw_knob(c, thumb, y, 8, 0x00FF_FFFF);
@@ -2279,7 +2344,7 @@ fn draw_list(
                 lw - MARGIN - 6,
                 line_top + LIST_LINE,
                 4,
-                Some(CARD_HI),
+                Some(th().card_hi),
                 Some(ui.accent),
             );
         }
@@ -2289,7 +2354,7 @@ fn draw_list(
             lw - MARGIN - PAD,
             line_top + LIST_LINE,
             &item,
-            TEXT,
+            th().text,
             ui.fonts.body,
             DT_LEFT | DT_VCENTER | DT_SINGLELINE | DT_END_ELLIPSIS,
         );
@@ -2301,7 +2366,7 @@ fn draw_list(
             lw - MARGIN - PAD,
             top + 8 + LIST_LINE,
             empty,
-            MUTED,
+            th().muted,
             ui.fonts.small,
             DT_LEFT | DT_VCENTER | DT_SINGLELINE,
         );
@@ -2324,15 +2389,6 @@ fn blend(a: u32, b: u32, t: f32) -> u32 {
 }
 
 /// Keep an accent that is nearly black readable on a black window.
-fn visible_accent(color: u32) -> u32 {
-    let sum = (color & 0xFF) + ((color >> 8) & 0xFF) + ((color >> 16) & 0xFF);
-    if sum < 220 {
-        blend(color, 0x00FF_FFFF, 0.5)
-    } else {
-        color
-    }
-}
-
 fn resolve(color: Color, accent: u32, fallback: u32) -> u32 {
     match color {
         Color::Rgb { r, g, b } => rgb(r, g, b),
@@ -2521,7 +2577,7 @@ fn paint_preview(c: &Canvas, ui: &Ui, lw_full: i32) {
         SetViewportOrgEx(c.dc, 0, 0, std::ptr::null_mut());
     }
     // Hairline border around the card.
-    c.round(MARGIN, 8, MARGIN + lw, 8 + ph, 5, None, Some(CARD_EDGE));
+    c.round(MARGIN, 8, MARGIN + lw, 8 + ph, 5, None, Some(th().edge));
 }
 
 #[allow(clippy::too_many_arguments)]
@@ -2626,14 +2682,6 @@ fn make_edit(parent: HWND, id: u16, font: HFONT) -> HWND {
             SendMessageW(hwnd, WM_SETFONT, font as WPARAM, 1);
         }
         hwnd
-    }
-}
-
-fn make_font(dpi: u32, logical_px: i32, weight: i32) -> HFONT {
-    unsafe {
-        let height = -((logical_px * dpi.max(96) as i32 + 48) / 96);
-        let name = to_wide("Segoe UI");
-        CreateFontW(height, 0, 0, 0, weight, 0, 0, 0, 1, 0, 0, 5, 0, pcw(&name))
     }
 }
 

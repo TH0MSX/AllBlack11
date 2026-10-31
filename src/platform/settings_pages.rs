@@ -704,7 +704,7 @@ pub fn trial_pills(lw: i32, status_top: i32) -> ((i32, i32, i32, i32), (i32, i32
 
 pub fn paint_nav(c: &Canvas, ui: &Ui, lw: i32) {
     let top = ui.preview_h();
-    c.fill(0, top, lw, top + NAV_H, BG);
+    c.fill(0, top, lw, top + NAV_H, th().bg);
     let count = Page::ALL.len() as i32;
     let width = (lw - 2 * MARGIN) / count;
     for (index, page) in Page::ALL.iter().enumerate() {
@@ -716,7 +716,7 @@ pub fn paint_nav(c: &Canvas, ui: &Ui, lw: i32) {
             left + width,
             top + NAV_H - 4,
             page.title(),
-            if selected { TEXT } else { MUTED },
+            if selected { th().text } else { th().muted },
             if selected {
                 ui.fonts.head
             } else {
@@ -750,7 +750,7 @@ pub fn paint_trial_bar(c: &Canvas, ui: &Ui, lw: i32) {
             "Trying “{}”. It reverts in {seconds} s unless you keep it.",
             ui.ext.trial_name
         ),
-        TEXT,
+        th().text,
         ui.fonts.small,
         DT_LEFT | DT_VCENTER | DT_SINGLELINE | DT_END_ELLIPSIS,
     );
@@ -772,8 +772,8 @@ pub fn paint_trial_bar(c: &Canvas, ui: &Ui, lw: i32) {
         revert.2,
         revert.3,
         5,
-        Some(CARD_HI),
-        Some(CARD_EDGE),
+        Some(th().card_hi),
+        Some(th().edge),
     );
     c.text(
         revert.0,
@@ -781,7 +781,7 @@ pub fn paint_trial_bar(c: &Canvas, ui: &Ui, lw: i32) {
         revert.2,
         revert.3,
         "Revert",
-        TEXT,
+        th().text,
         ui.fonts.small,
         DT_CENTER | DT_VCENTER | DT_SINGLELINE,
     );
@@ -1476,9 +1476,9 @@ pub fn paint_extra(c: &Canvas, ui: &Ui, row: &Laid, top: i32, lw: i32) {
             for line in lines {
                 let height = 16 * lines_needed(line, 64);
                 let (font, color) = if line.is_empty() {
-                    (fonts.small, MUTED)
+                    (fonts.small, th().muted)
                 } else {
-                    (fonts.small, TEXT)
+                    (fonts.small, th().text)
                 };
                 c.text(
                     left,
@@ -1505,8 +1505,8 @@ pub fn paint_extra(c: &Canvas, ui: &Ui, row: &Laid, top: i32, lw: i32) {
                     r,
                     top + b,
                     5,
-                    Some(CARD_HI),
-                    Some(if hot { ui.accent } else { CARD_EDGE }),
+                    Some(th().card_hi),
+                    Some(if hot { ui.accent } else { th().edge }),
                 );
                 c.text(
                     l,
@@ -1514,7 +1514,7 @@ pub fn paint_extra(c: &Canvas, ui: &Ui, row: &Laid, top: i32, lw: i32) {
                     r,
                     top + b,
                     label,
-                    TEXT,
+                    th().text,
                     fonts.small,
                     DT_CENTER | DT_VCENTER | DT_SINGLELINE | DT_END_ELLIPSIS,
                 );
@@ -1535,7 +1535,7 @@ pub fn paint_extra(c: &Canvas, ui: &Ui, row: &Laid, top: i32, lw: i32) {
                     right,
                     top + 8 + LIST_LINE,
                     text,
-                    MUTED,
+                    th().muted,
                     fonts.small,
                     DT_LEFT | DT_VCENTER | DT_SINGLELINE,
                 );
@@ -1554,7 +1554,7 @@ pub fn paint_extra(c: &Canvas, ui: &Ui, row: &Laid, top: i32, lw: i32) {
                         lw - MARGIN - 6,
                         line_top + LIST_LINE,
                         4,
-                        Some(CARD_HI),
+                        Some(th().card_hi),
                         Some(ui.accent),
                     );
                 }
@@ -1564,7 +1564,7 @@ pub fn paint_extra(c: &Canvas, ui: &Ui, row: &Laid, top: i32, lw: i32) {
                     right,
                     line_top + LIST_LINE,
                     &ui.window_line(entry),
-                    TEXT,
+                    th().text,
                     fonts.small,
                     DT_LEFT | DT_VCENTER | DT_SINGLELINE | DT_END_ELLIPSIS,
                 );
@@ -1579,7 +1579,7 @@ pub fn paint_extra(c: &Canvas, ui: &Ui, row: &Laid, top: i32, lw: i32) {
                     right,
                     top + 8 + LIST_LINE,
                     "No recipes found.",
-                    MUTED,
+                    th().muted,
                     fonts.small,
                     DT_LEFT | DT_VCENTER | DT_SINGLELINE,
                 );
@@ -1593,7 +1593,7 @@ pub fn paint_extra(c: &Canvas, ui: &Ui, row: &Laid, top: i32, lw: i32) {
                         lw - MARGIN - 6,
                         line_top + LIST_LINE,
                         4,
-                        Some(CARD_HI),
+                        Some(th().card_hi),
                         Some(ui.accent),
                     );
                 }
@@ -1608,7 +1608,7 @@ pub fn paint_extra(c: &Canvas, ui: &Ui, row: &Laid, top: i32, lw: i32) {
                     right,
                     line_top + LIST_LINE,
                     &format!("{}  ·  {tag}", recipe.name),
-                    TEXT,
+                    th().text,
                     fonts.small,
                     DT_LEFT | DT_VCENTER | DT_SINGLELINE | DT_END_ELLIPSIS,
                 );
@@ -1629,7 +1629,7 @@ pub fn paint_extra(c: &Canvas, ui: &Ui, row: &Laid, top: i32, lw: i32) {
                         lw - MARGIN - 6,
                         line_top + LIST_LINE,
                         4,
-                        Some(CARD_HI),
+                        Some(th().card_hi),
                         Some(ui.accent),
                     );
                 }
@@ -1647,7 +1647,7 @@ pub fn paint_extra(c: &Canvas, ui: &Ui, row: &Laid, top: i32, lw: i32) {
                     chips_left - 6,
                     line_top + LIST_LINE,
                     &format!("{}  ·  {tag}{mark}", ui.look_name(index)),
-                    TEXT,
+                    th().text,
                     fonts.small,
                     DT_LEFT | DT_VCENTER | DT_SINGLELINE | DT_END_ELLIPSIS,
                 );
@@ -1655,9 +1655,9 @@ pub fn paint_extra(c: &Canvas, ui: &Ui, row: &Laid, top: i32, lw: i32) {
                     let x = chips_left + slot as i32 * 20;
                     let (l, t, r, b) = (x, line_top + 5, x + 14, line_top + 19);
                     match color {
-                        Some(value) => c.round(l, t, r, b, 3, Some(*value), Some(MUTED)),
+                        Some(value) => c.round(l, t, r, b, 3, Some(*value), Some(th().muted)),
                         // Nothing is drawn there by this look: show an empty outline.
-                        None => c.round(l, t, r, b, 3, None, Some(MUTED)),
+                        None => c.round(l, t, r, b, 3, None, Some(th().muted)),
                     }
                 }
             }
@@ -1670,7 +1670,7 @@ pub fn paint_extra(c: &Canvas, ui: &Ui, row: &Laid, top: i32, lw: i32) {
                 left + 90,
                 top + row.h - GAP,
                 "Filter",
-                TEXT,
+                th().text,
                 fonts.body,
                 DT_LEFT | DT_VCENTER | DT_SINGLELINE,
             );
@@ -1697,7 +1697,15 @@ pub fn paint_focus_ring(c: &Canvas, ui: &Ui, row: &Laid, top: i32, lw: i32) {
     if let Row::Buttons(list) = &row.row {
         let (l, t, r, b) =
             buttons_rect(lw, list.len(), ui.ext.focus_sub.min(list.len() - 1), row.h);
-        c.round(l - 2, top + t - 2, r + 2, top + b + 2, 6, None, Some(TEXT));
+        c.round(
+            l - 2,
+            top + t - 2,
+            r + 2,
+            top + b + 2,
+            6,
+            None,
+            Some(th().text),
+        );
     }
     if matches!(row.row, Row::LookList) {
         let line_top =
@@ -1709,12 +1717,20 @@ pub fn paint_focus_ring(c: &Canvas, ui: &Ui, row: &Laid, top: i32, lw: i32) {
             line_top + LIST_LINE + 1,
             5,
             None,
-            Some(TEXT),
+            Some(th().text),
         );
     }
     if matches!(row.row, Row::Presets) {
         let (l, t, r, b) = preset_rect(lw, ui.ext.focus_sub.min(PRESETS.len() - 1));
-        c.round(l - 2, top + t - 2, r + 2, top + b + 2, 6, None, Some(TEXT));
+        c.round(
+            l - 2,
+            top + t - 2,
+            r + 2,
+            top + b + 2,
+            6,
+            None,
+            Some(th().text),
+        );
     }
 }
 
