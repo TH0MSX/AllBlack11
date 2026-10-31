@@ -113,8 +113,7 @@ Without the hook, AllBlack11 still gives `#32770` dialogs a dark caption (DWM) a
 With the switch on, `AllBlack11Hook.dll` (shipped next to the exe, same architecture) is injected with `SetWindowsHookEx(WH_CALLWNDPROC)` into the UI thread of:
 
 - classic dialogs (`#32770`), including Run and message boxes
-- `mmc.exe`
-- Explorer windows whose title is Control Panel
+- `mmc.exe` consoles such as Device Manager
 
 It does not enter elevated processes, processes that refuse `PROCESS_QUERY_LIMITED_INFORMATION`, a different CPU architecture, or any exe in `exclude` or the built-in skip list. Inside the target it subclasses `#32770` windows and handles `WM_CTLCOLOR*` / `WM_ERASEBKGND`. List views get `LVM_SETBKCOLOR` and `DarkMode_Explorer`. Turning the switch off broadcasts `AllBlack11.HookStop`, restores window procedures and theme names, then unhooks. Exit does the same.
 

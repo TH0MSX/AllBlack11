@@ -1645,7 +1645,9 @@ impl App {
                 }
             }
             self.last_apply.insert(item.hwnd, now);
-            legacy::nudge(hwnd);
+            if self.config.experimental_dark_legacy {
+                legacy::nudge(hwnd);
+            }
         }
         if self.dirty {
             self.write_snapshots();

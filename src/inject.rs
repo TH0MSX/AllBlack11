@@ -47,6 +47,7 @@ pub fn is_mmc(exe: &str) -> bool {
     exe.eq_ignore_ascii_case("mmc.exe")
 }
 
+#[allow(dead_code)]
 pub fn is_control_panel_title(title: &str) -> bool {
     let title = title.trim();
     title.eq_ignore_ascii_case("Control Panel")

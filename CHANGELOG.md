@@ -1,8 +1,8 @@
 # Changelog
 
-## 3.0.0-preview.1
+## 3.0.0-preview.2
 
-A preview. It is built on 1.2.0 and rebuilds the Settings window, the tray menu, and the installer. It is marked "pre-release" on GitHub, so the "latest" release link still points at the stable build.
+The current release. It is built on 1.2.0 and rebuilds the Settings window, the tray menu, and the installer. "Preview" describes the feature set, which is still being refined; it is the version to use today and is published as the latest release.
 
 **New**
 
@@ -16,6 +16,10 @@ A preview. It is built on 1.2.0 and rebuilds the Settings window, the tray menu,
 - **Data folder and diagnostics** buttons in Settings and Maintenance. The diagnostics report is `check.txt`.
 
 **Fixed**
+
+- Control Panel (Explorer) showed black blocks where the address bar and navigation buttons should be, and unreadable toolbar glyphs. AllBlack11 was forcing a dark theme onto every child control of the window from outside the process, even with the experimental switch off. That cross-process theming now runs only when **Dark legacy windows** is on, and only for classic dialogs. Explorer-hosted Control Panel is no longer touched by the experimental feature at all, because its toolbar and address band cannot be darkened without breaking over a light page.
+
+- Tray menu: separators and submenu rows (Presets, Shell, Maintenance) drew the title text instead of their own. The owner-drawn item data was patched in by command id, and the title and every separator share id 0. It is now passed when each item is created.
 
 - Settings mixed scaled and unscaled pixels. On a 150% or 200% display (most ARM laptops) the painted rows, the edit boxes, and the slider hit areas no longer lined up. Every coordinate is now logical and scaled once, and the window handles per-monitor DPI changes.
 - Shell toggles changed in Settings were saved and applied, but Windows was never told (no `ImmersiveColorSet` broadcast), so the taskbar and Start often looked unchanged until Explorer restarted. Settings and presets now broadcast like the tray does.

@@ -1,91 +1,100 @@
-<p align="center"><img src="docs/banner.png" alt="AllBlack11 — true black OLED experience on a Snapdragon laptop" width="100%"></p>
+<p align="center"><img src="docs/banner.png" alt="AllBlack11 3.0 Preview: true black for Windows 11, with Settings and the Start menu" width="100%"></p>
+
+<div align="center">
 
 # AllBlack11
 
-<p align="center">
-  <a href="https://github.com/TH0MSX/AllBlack11/releases/latest"><img src="https://img.shields.io/github/v/release/TH0MSX/AllBlack11?style=flat-square" alt="Latest release"></a>
-  <a href="https://github.com/TH0MSX/AllBlack11/releases/latest"><img src="https://img.shields.io/github/downloads/TH0MSX/AllBlack11/total?style=flat-square" alt="Downloads"></a>
-  <a href="LICENSE"><img src="https://img.shields.io/github/license/TH0MSX/AllBlack11?style=flat-square" alt="MIT license"></a>
-  <img src="https://img.shields.io/badge/Windows-11-0078D4?style=flat-square" alt="Windows 11">
-  <img src="https://img.shields.io/badge/native-ARM64%20%2B%20x64-111111?style=flat-square" alt="ARM64 and x64 native">
-  <img src="https://img.shields.io/badge/admin-not%20required-2ea043?style=flat-square" alt="No admin">
-</p>
+**Make Windows 11 truly black.** OLED-friendly, featherweight, fully reversible.
 
-<p align="center"><strong>Make Windows 11 truly black.</strong> OLED-friendly, featherweight, fully reversible.</p>
+<a href="https://github.com/TH0MSX/AllBlack11/releases/latest"><img src="https://img.shields.io/github/v/release/TH0MSX/AllBlack11?style=for-the-badge&color=018574&labelColor=000000" alt="Latest release"></a>
+<a href="https://github.com/TH0MSX/AllBlack11/releases/latest"><img src="https://img.shields.io/github/downloads/TH0MSX/AllBlack11/total?style=for-the-badge&color=018574&labelColor=000000" alt="Downloads"></a>
+<img src="https://img.shields.io/badge/native-ARM64%20%2B%20x64-018574?style=for-the-badge&labelColor=000000" alt="ARM64 and x64 native">
+<img src="https://img.shields.io/badge/admin-not%20required-018574?style=for-the-badge&labelColor=000000" alt="No admin">
+<a href="LICENSE"><img src="https://img.shields.io/github/license/TH0MSX/AllBlack11?style=for-the-badge&color=018574&labelColor=000000" alt="MIT license"></a>
 
-<p align="center"><b>3.0 Preview</b> adds a real Setup.exe, a rebuilt Settings window with a live preview, presets, and Restart Explorer. <a href="https://github.com/TH0MSX/AllBlack11/releases/tag/v3.0.0-preview.1">Get the preview</a> · <a href="CHANGELOG.md">What changed</a></p>
+[**⬇️ Download**](#-download) · [**🚀 Quick start**](#-quick-start) · [**✨ Features**](#-features) · [**🖱️ Settings**](#️-tray-menu-and-settings) · [**⚙️ Config**](#️-configuration) · [**🛡️ Safety**](#️-safety-and-uninstall) · [**❓ FAQ**](#-faq)
 
-<p align="center">Made by <a href="https://github.com/TH0MSX">@TH0MSX</a> with AI assistance (Cursor), tested daily on real ARM64 hardware.</p>
+</div>
+
+> [!NOTE]
+> **3.0 Preview is the current release.** It adds a real Setup.exe, a rebuilt Settings window with a live preview, presets, and Restart Explorer. See [what changed](CHANGELOG.md). Made by [@TH0MSX](https://github.com/TH0MSX) with AI assistance (Cursor, and Claude for 3.0), tested daily on real ARM64 hardware.
 
 ## 🌙 Why
 
-Windows 11 dark mode still paints gray title bars, a gray taskbar, and a tinted Start menu. AllBlack11 is a small tray program that makes Windows 11 OLED-friendly: an all-black taskbar, a dark Start menu and notification center, and darker window frames. It stays under 50 MB of RAM, stays out of other processes, and ships native ARM64 and x64 builds. On a Snapdragon ZenBook it sat at about 12 MB, with near-idle CPU while it waits on window events.
+Windows 11 dark mode still paints gray title bars, a gray taskbar, and a tinted Start menu. AllBlack11 is a small tray program that fixes that.
+
+| 🖤 True black | 🪶 Featherweight | ↩️ Reversible |
+| --- | --- | --- |
+| Black taskbar, Start menu, notification center, and darker window frames. | Native ARM64 and x64. About 12 MB of RAM on a Snapdragon ZenBook, near-idle CPU. | Every change is snapshotted and undone from the same menu, or by uninstalling. |
+
+## 🚀 Quick start
+
+1. **Download** the Setup for your PC from the [latest release](https://github.com/TH0MSX/AllBlack11/releases/latest).
+2. **Run it.** No administrator prompt. If SmartScreen objects, choose **More info**, then **Run anyway**.
+3. **Open Settings** from the tray icon, pick a **Quick look**, and watch the preview.
 
 ## ✨ Features
 
 <table>
   <tr>
     <td width="50%" align="center">
-      <img src="docs/screenshots/start-menu.png" alt="Black Start menu, Phone Link, and OLED taskbar" width="100%">
-      <br><strong>Black Start and an OLED taskbar</strong>
-      <br>Start, the taskbar, and Phone Link share one black surface.
-    </td>
-    <td width="50%" align="center">
-      <img src="docs/screenshots/notification-center.png" alt="Black notification center and calendar" width="100%">
-      <br><strong>Notification center</strong>
-      <br>The notification shade and calendar follow the same black palette.
-    </td>
-  </tr>
-  <tr>
-    <td width="50%" align="center">
-      <img src="docs/screenshots/windows.png" alt="Explorer and Control Panel with black frames and teal borders" width="100%">
-      <br><strong>Frames and tinted acrylic</strong>
-      <br>File Explorer and Control Panel: black captions, teal borders, darker acrylic.
-    </td>
-    <td width="50%" align="center">
-      <img src="docs/screenshots/tray-menu.png" alt="AllBlack11 tray menu with the Shell submenu open" width="100%">
-      <br><strong>One tray menu</strong>
-      <br>Frames, shell colors, autostart, and a full undo.
-    </td>
-  </tr>
-  <tr>
-    <td width="50%" align="center">
-      <img src="docs/screenshots/settings.png" alt="AllBlack11 Settings: live preview, quick looks, and one card per option" width="100%">
+      <img src="docs/screenshots/settings.png" alt="AllBlack11 Settings with the live preview and quick looks" width="100%">
       <br><strong>Settings with a live preview</strong>
-      <br>One card per option, an explanation under each, and a preview that redraws as you change things.
+      <br>One card per option, a plain explanation under each, and a preview that redraws as you change things.
     </td>
     <td width="50%" align="center">
       <img src="docs/screenshots/setup.png" alt="AllBlack11 Setup on Windows 11 ARM64" width="100%">
       <br><strong>A regular Setup</strong>
-      <br>Native ARM64 installer. Per user, no administrator rights, with an Apps entry and a clean uninstall.
+      <br>Native ARM64 installer. Per user, with an Apps entry and a clean uninstall.
+    </td>
+  </tr>
+  <tr>
+    <td colspan="2" align="center">
+      <img src="docs/screenshots/start-menu.png" alt="Black Start menu with Phone Link and an OLED taskbar" width="100%">
+      <br><strong>Black Start and an OLED taskbar</strong>
+      <br>Start, the taskbar, and Phone Link share one black surface.
+    </td>
+  </tr>
+  <tr>
+    <td width="50%" align="center">
+      <img src="docs/screenshots/notification-center.png" alt="Black notification center and calendar" width="62%">
+      <br><strong>Notification center</strong>
+      <br>The shade and the calendar follow the same palette.
+    </td>
+    <td width="50%" align="center">
+      <img src="docs/screenshots/windows.png" alt="Explorer and Control Panel with black frames and teal borders" width="100%">
+      <br><strong>Frames and tinted acrylic</strong>
+      <br>Black captions, accent borders, darker acrylic.
     </td>
   </tr>
 </table>
 
-- Per-window dark captions, border, text color, corners, and backdrop (Mica, Mica Alt, Acrylic, or tinted acrylic).
-- A dark or light tray menu with Windows 11 spacing and rounded corners. It follows the system app theme.
-- A native Settings window (no WebView) with a live preview, one card per option, presets, per-app rules and exclusions. Double-click the tray icon or choose **Settings…**.
-- Rules by exe name, plus a built-in skip list for the shell, games, and launchers.
-- Out-of-context window events. No polling loop while the PC is idle.
-- Original frame attributes go back on Exit, Disable, or Reset.
-- Shell tweaks are HKCU only, snapshotted, and undone from the same menu or the uninstaller.
-- Optional, off by default: **Experimental: dark legacy windows**. A same-architecture hook DLL recolors classic dialogs and some Control Panel views. See [Safety](#-safety-and-uninstall).
+- 🎨 **Per-window look:** dark captions, border, text color, corners, and backdrop (Mica, Mica Alt, Acrylic, or tinted acrylic).
+- 🪄 **Presets:** Pure OLED, Accent glass, Classic Mica, Factory defaults.
+- 🖥️ **Shell:** OLED taskbar, black Start and notification center, and a **Restart Explorer** button for when Windows needs a nudge.
+- 🧩 **Per-app rules and exclusions:** by exe name, with a built-in skip list for the shell, games, and launchers.
+- 🪶 **Quiet:** event-driven, no polling loop while the PC is idle.
+- 🔁 **Undo everywhere:** original frame attributes go back on Exit, Disable, or Reset. Shell tweaks are HKCU only, snapshotted, and undone from the same menu or the uninstaller.
+- 🧪 **Optional and off by default:** **Dark legacy windows**. A same-architecture hook DLL recolors classic dialogs such as Run. See [Safety](#️-safety-and-uninstall).
 
-## 📦 Download
+## ⬇️ Download
 
-| PC | Installer (recommended) | Portable zip |
+Grab the files from **[github.com/TH0MSX/AllBlack11/releases/latest](https://github.com/TH0MSX/AllBlack11/releases/latest)**.
+
+| Your PC | Installer (recommended) | Portable zip |
 | --- | --- | --- |
-| Snapdragon and other ARM64 | `AllBlack11-Setup-arm64.exe` | `AllBlack11-arm64.zip` |
-| Intel and AMD | `AllBlack11-Setup-x64.exe` | `AllBlack11-x64.zip` |
+| **Snapdragon** and other ARM64 | `AllBlack11-Setup-arm64.exe` | `AllBlack11-arm64.zip` |
+| **Intel and AMD** | `AllBlack11-Setup-x64.exe` | `AllBlack11-x64.zip` |
 
-- **Preview (3.0):** [github.com/TH0MSX/AllBlack11/releases/tag/v3.0.0-preview.1](https://github.com/TH0MSX/AllBlack11/releases/tag/v3.0.0-preview.1). It is a pre-release, so GitHub's "latest" link does not point at it.
-- **Stable:** [github.com/TH0MSX/AllBlack11/releases/latest](https://github.com/TH0MSX/AllBlack11/releases/latest). Zip only.
-
-The ARM64 build is native. The x64 build runs on ARM64 only under emulation, and Settings > About tells you when that is happening.
+> [!TIP]
+> On an ARM64 PC, pick the ARM64 files. The x64 build works through emulation and Settings > About will tell you when that is happening.
 
 ## 🛠️ Install
 
-**Setup.exe (3.0 and newer).** Run the installer for your CPU. It installs for your account only, so there is no administrator prompt. It adds a Start menu shortcut and an entry in Settings > Apps, and it can start AllBlack11 at sign-in. Running a newer Setup updates in place and keeps your config. To uninstall, use Settings > Apps, or run Setup again and choose **Uninstall**. Uninstall puts the Windows settings AllBlack11 changed back first, then asks whether to keep your config.
+**Setup.exe.** Run the installer for your CPU. It installs for your account only, so there is no administrator prompt. It adds a Start menu shortcut and an entry in Settings > Apps, and it can start AllBlack11 at sign-in. Running a newer Setup updates in place and keeps your config. To uninstall, use Settings > Apps, or run Setup again and choose **Uninstall**. Uninstall puts the Windows settings AllBlack11 changed back first, then asks whether to keep your config.
+
+<details>
+<summary>Silent install, and the zip with <code>install.ps1</code></summary>
 
 Silent install for scripts: `AllBlack11-Setup-arm64.exe /S` (add `/NOAUTOSTART`, `/NOSHORTCUT`, `/NOLAUNCH` as needed). Silent uninstall: `AllBlack11-Setup-arm64.exe --uninstall /S` (add `/PURGE` to delete the config too).
 
@@ -97,9 +106,11 @@ powershell -ExecutionPolicy Bypass -File .\install.ps1
 
 Both paths copy `AllBlack11.exe` and `AllBlack11Hook.dll` to `%LOCALAPPDATA%\Programs\AllBlack11`, create `%APPDATA%\AllBlack11\config.json` when you do not have one, and add `AllBlack11` under `HKCU\Software\Microsoft\Windows\CurrentVersion\Run`. The hook DLL stays on disk until you opt in.
 
-The binaries are unsigned. SmartScreen may say it protected your PC. Choose **More info**, then **Run anyway**.
-
 If `%APPDATA%\PepaTheme\config.json` is still there and the new config is not, the first launch (or Setup) copies that config and `snapshots.json`, stops the old PepaTheme, removes its Run value, and deletes `%LOCALAPPDATA%\Programs\PepaTheme`.
+
+</details>
+
+The binaries are unsigned. SmartScreen may say it protected your PC. Choose **More info**, then **Run anyway**.
 
 ## 🖱️ Tray menu and Settings
 
@@ -215,7 +226,7 @@ By hand: Exit from the tray, uncheck the Shell items, delete the exe, delete `%A
 
 DWM and the accent policy paint the frame. The app still paints its own client area. Store app pages, and most classic Win32 content, keep the app's own background unless **Experimental: dark legacy windows** is on.
 
-With that switch on, standard dialog controls (`#32770`, static text, buttons, edits, list boxes) are recolored in-process, and list views are asked to use `DarkMode_Explorer`. The Run dialog and classic dialog pages are the ones this covers. Control Panel's category home is included when the window title is "Control Panel" or the process is `mmc.exe`, but DirectUI, XAML, and HTML regions can stay light. `SetWindowTheme` from AllBlack11's own process is also tried first; many programs ignore that. Nothing here changes system-wide colors with `SetSysColors`.
+With that switch on, standard dialog controls (`#32770`, static text, buttons, edits, list boxes) are recolored in-process, and list views are asked to use `DarkMode_Explorer`. The Run dialog and classic dialog pages are the ones this covers. Explorer-hosted Control Panel is deliberately left alone: its address bar and toolbar break when themed dark over a light page. MMC consoles such as Device Manager are covered, but DirectUI, XAML, and HTML regions can stay light. `SetWindowTheme` from AllBlack11's own process is also tried first; many programs ignore that. Nothing here changes system-wide colors with `SetSysColors`.
 
 Custom title bars ignore caption and border colors. That includes Chrome and a lot of Electron apps. Borderless DirectComposition windows and full-screen games are skipped. A windowed game with a normal caption can still be themed; add its exe under `exclude`. GeForce NOW and the usual launchers are excluded in the default config.
 

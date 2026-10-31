@@ -1,6 +1,6 @@
 [package]
 name = "allblack11-hook"
-version = "3.0.0-preview.1"
+version = "3.0.0-preview.2"
 edition = "2021"
 description = "Opt-in, same-architecture hook that recolors classic Windows dialogs."
 license = "MIT"
