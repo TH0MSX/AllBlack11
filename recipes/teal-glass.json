@@ -1,0 +1,23 @@
+{
+  "schema": 1,
+  "id": "teal-glass",
+  "name": "Teal glass",
+  "description": "Dark frosted glass with a teal tint and an accent border.",
+  "author": "AllBlack11",
+  "minBuild": 22621,
+  "look": {
+    "darkMode": true,
+    "backdrop": "tintedAcrylic",
+    "captionColor": "#000000",
+    "borderColor": "accent",
+    "textColor": "#FFFFFF",
+    "corners": "default",
+    "acrylicTint": "#00221F",
+    "acrylicOpacity": 0.72,
+    "tintedAcrylicOnMoveFallback": true
+  },
+  "notes": [
+    "Tinted acrylic is experimental: it uses an undocumented call and falls back to plain Acrylic if Windows refuses it.",
+    "Glass is translucent, so it is not true black. Tint opacity is how strongly the tint covers the blur, not how see-through the whole window is."
+  ]
+}

@@ -3,11 +3,14 @@
 
 mod arch;
 mod caption;
+mod compat;
 mod config;
+mod explain;
 mod inject;
 mod legacy_policy;
 mod policy;
 mod presets;
+mod recipes;
 mod rules;
 mod shell;
 mod snapshot;
@@ -30,6 +33,15 @@ pub use policy::{
     decide, is_borderless_fullscreen, rect_covers_monitor, Decision, WindowFacts, WS_CHILD,
     WS_DLGFRAME, WS_EX_LAYERED, WS_EX_NOREDIRECTIONBITMAP, WS_EX_TOOLWINDOW, WS_EX_TRANSPARENT,
     WS_POPUP,
+};
+pub use compat::{Entry as CompatEntry, Notebook, Status as CompatStatus};
+pub use explain::{
+    attribute_support, explain, framework_hint, reason_text, AttributeSupport, Confirm, Explanation,
+    Framework, FrameworkHint, Support, TitleBar,
+};
+pub use recipes::{
+    apply as apply_recipe, bundled as bundled_recipes, export_current as export_recipe, parse_recipe,
+    preview as preview_recipe, Change, Recipe, Trust,
 };
 pub use rules::{
     describe_conflict, find_conflicts, glob_match, rank, resolve, why_it_won, Conflict, ConflictKind,

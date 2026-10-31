@@ -1,0 +1,19 @@
+{
+  "schema": 1,
+  "id": "low-distraction",
+  "name": "Low distraction",
+  "description": "Quiet frames: black title bar, dimmer title text, square corners, no accent and no translucency.",
+  "author": "AllBlack11",
+  "minBuild": 22000,
+  "look": {
+    "darkMode": true,
+    "backdrop": "none",
+    "captionColor": "#000000",
+    "borderColor": "none",
+    "textColor": "#BDBDBD",
+    "corners": "square"
+  },
+  "notes": [
+    "Title text is dimmed on purpose but stays above 7:1 contrast on black."
+  ]
+}

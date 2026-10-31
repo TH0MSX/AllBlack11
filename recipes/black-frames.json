@@ -1,0 +1,20 @@
+{
+  "schema": 1,
+  "id": "black-frames",
+  "name": "Black frames",
+  "description": "Opaque true-black title bars with no border and no material. The most OLED-friendly window look.",
+  "author": "AllBlack11",
+  "minBuild": 22000,
+  "look": {
+    "darkMode": true,
+    "backdrop": "none",
+    "captionColor": "#000000",
+    "borderColor": "none",
+    "textColor": "#FFFFFF",
+    "corners": "default"
+  },
+  "notes": [
+    "Only the frame is black. The inside of each window is drawn by the app.",
+    "No material means no translucency: what you see is what the app draws."
+  ]
+}
