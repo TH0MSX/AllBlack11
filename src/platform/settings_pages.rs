@@ -36,6 +36,10 @@ pub struct Ext {
     pub focus_sub: usize,
     pub trial_name: String,
     pub loaded: bool,
+    /// The navigation pane holds keyboard focus (arrow keys move between destinations).
+    pub nav_focus: bool,
+    /// The destination under the pointer, for the hover state.
+    pub nav_hover: Option<usize>,
     /// The guided "Fix this app" plan for the selected window, and its style receipt.
     pub fix: Option<crate::FixPlan>,
     pub receipt: Vec<String>,
@@ -56,26 +60,98 @@ pub struct Ext {
     pub accent_line: String,
 }
 
+impl Ext {
+    /// The first-run setup flow is showing instead of a page. (Filled in with the setup flow.)
+    pub fn setup_active(&self) -> bool {
+        false
+    }
+}
+
 impl Page {
-    pub const ALL: [Page; 6] = [
-        Page::Overview,
-        Page::Effects,
-        Page::Apps,
+    /// Navigation order. Settings and help sits last, apart from the others, as the footer
+    /// item (Microsoft: the settings destination goes at the bottom of a navigation pane).
+    pub const ALL: [Page; 8] = [
+        Page::Home,
+        Page::Fix,
+        Page::Appearance,
         Page::Scenes,
-        Page::Legacy,
+        Page::Rules,
         Page::Safety,
+        Page::Diagnostics,
+        Page::Help,
     ];
 
-    pub fn title(self) -> &'static str {
+    /// Short label for the navigation pane.
+    pub fn nav_label(self) -> &'static str {
         match self {
-            Page::Overview => "Overview",
-            Page::Effects => "Effects",
-            Page::Apps => "Apps",
+            Page::Home => "Home",
+            Page::Fix => "Fix this app",
+            Page::Appearance => "Appearance",
             Page::Scenes => "Scenes",
-            Page::Legacy => "Legacy",
+            Page::Rules => "Rules",
             Page::Safety => "Safety",
+            Page::Diagnostics => "Diagnostics",
+            Page::Help => "Settings & help",
         }
     }
+
+    /// Segoe Fluent Icons glyph for the navigation pane.
+    pub fn glyph(self) -> char {
+        match self {
+            Page::Home => uistyle::glyph::HOME,
+            Page::Fix => uistyle::glyph::SEARCH,
+            Page::Appearance => uistyle::glyph::COLOR,
+            Page::Scenes => uistyle::glyph::PHOTO,
+            Page::Rules => uistyle::glyph::TAG,
+            Page::Safety => uistyle::glyph::SHIELD,
+            Page::Diagnostics => uistyle::glyph::INFO,
+            Page::Help => uistyle::glyph::SETTINGS,
+        }
+    }
+
+    /// Page title and one-line description, shown at the top of every page.
+    pub fn heading(self) -> (&'static str, &'static str) {
+        match self {
+            Page::Home => (
+                "Home",
+                "See what AllBlack11 is doing right now, and what to do next.",
+            ),
+            Page::Fix => (
+                "Fix this app",
+                "Pick any window to see what can change, preview a look, then keep it or undo it.",
+            ),
+            Page::Appearance => (
+                "Appearance",
+                "Colors, materials and corners for window frames. Changes apply as you make them.",
+            ),
+            Page::Scenes => (
+                "Scenes",
+                "Switch the whole default look in one step, or save your own.",
+            ),
+            Page::Rules => (
+                "Rules and compatibility",
+                "Per-app exceptions, apps to leave alone, and optional compatibility features.",
+            ),
+            Page::Safety => (
+                "Safety and recovery",
+                "Pause, undo and restore. Everything here is reversible.",
+            ),
+            Page::Diagnostics => (
+                "Diagnostics",
+                "Details for troubleshooting. Nothing is sent anywhere.",
+            ),
+            Page::Help => (
+                "Settings and help",
+                "How AllBlack11 looks and starts, plus guides and answers.",
+            ),
+        }
+    }
+}
+
+/// The title block every page starts with.
+fn page_title(page: Page) -> Row {
+    let (title, description) = page.heading();
+    Row::PageTitle(title, description)
 }
 
 struct Builder {
@@ -113,65 +189,111 @@ fn list_height(len: usize) -> i32 {
 impl Ui {
     pub fn rows_for_page(&self) -> Vec<Laid> {
         match self.page {
-            Page::Overview => self.rows_overview(),
-            Page::Effects => self.rows_effects(),
-            Page::Apps => self.rows_apps(),
+            Page::Home => self.rows_home(),
+            Page::Fix => self.rows_fix(),
+            Page::Appearance => self.rows_appearance(),
             Page::Scenes => self.rows_scenes(),
-            Page::Legacy => self.rows_legacy(),
+            Page::Rules => self.rows_rules(),
             Page::Safety => self.rows_safety(),
+            Page::Diagnostics => self.rows_diagnostics(),
+            Page::Help => self.rows_help(),
         }
     }
 
-    fn rows_overview(&self) -> Vec<Laid> {
+    fn rows_home(&self) -> Vec<Laid> {
         let mut b = Builder::new();
-        b.push(Row::Header("Quick looks"));
-        b.push(Row::Presets);
+        b.push(page_title(Page::Home));
+        let paused = super::super::app::is_paused();
+        let safe = super::super::app::safe_mode_text();
+        let headline = if paused {
+            "Customization is paused. Every window is as Windows draws it."
+        } else if !self.config.enabled {
+            "Customization is off."
+        } else if safe.is_some() {
+            "Customization is on, in safe mode."
+        } else {
+            "Customization is on."
+        };
+        let mut status = vec![headline.to_string()];
+        if let Some(text) = &safe {
+            status.push(text.clone());
+        }
+        status.push(self.current_look_line());
+        status.push(self.experimental_summary());
+        if let Some(reason) = super::super::app::reduce_reason_now() {
+            status.push(format!(
+                "Effects are reduced because of {reason}. Colors still apply; backdrop materials do not."
+            ));
+        }
+        b.push(Row::About(status));
+        b.push(Row::Header("What next"));
+        b.push(Row::Buttons(vec![
+            Button::GoFix,
+            if paused {
+                Button::ResumeAll
+            } else {
+                Button::PauseAll
+            },
+            Button::GoPalette,
+        ]));
         b.push(Row::Note(
-            "A quick look runs for 15 seconds first. Keep it, or it goes back by itself.",
+            "Fix an app: pick a window, preview a look, keep it or undo it. Pause puts every window back at once; nothing is lost.",
         ));
+        b.push(Row::Header("Customization"));
+        b.push(Row::Toggle(Toggle::Theme));
+        b.push(Row::Header("Explore"));
+        b.push(Row::Buttons(vec![Button::GoScenes, Button::GoHelp]));
+        b.out
+    }
+
+    /// One line for Home: which scene or look is active.
+    fn current_look_line(&self) -> String {
+        if let Some(id) = crate::active_scene(&self.config) {
+            if let Some(scene) = crate::scene_catalog().iter().find(|s| s.id == id) {
+                return format!("Scene: {}.", scene.name);
+            }
+        }
+        if self.config.focus.enabled {
+            "Look: custom, with Focus Look on.".to_string()
+        } else {
+            "Look: custom (not one of the scenes).".to_string()
+        }
+    }
+
+    /// One line for Home: every experimental or optional feature that is on, by name.
+    fn experimental_summary(&self) -> String {
+        let mut on: Vec<&str> = Vec::new();
+        if self.config.experimental_dark_legacy {
+            on.push("dark classic dialogs (experimental)");
+        }
+        if self.config.legacy.emulated_x64 {
+            on.push("emulated x64 coverage (experimental)");
+        }
+        if self.config.features.identity_accents {
+            on.push("identity accents");
+        }
+        if self.config.features.day_night.enabled {
+            on.push("Day / Night scenes");
+        }
+        if self.config.features.palette_hotkey {
+            on.push("palette hotkey");
+        }
+        if on.is_empty() {
+            "Experimental and optional features: none are on.".to_string()
+        } else {
+            format!("Experimental and optional features on: {}.", on.join(", "))
+        }
+    }
+
+    fn rows_help(&self) -> Vec<Laid> {
+        let mut b = Builder::new();
+        b.push(page_title(Page::Help));
+        b.push(Row::Header("AllBlack11 itself"));
+        b.push(Row::Choice(Choice::AppAppearance));
+        b.push(Row::Toggle(Toggle::Autostart));
         b.push(Row::Header("Command palette"));
         b.push(Row::Action(Button::OpenPalette));
         b.push(Row::Toggle(Toggle::PaletteHotkey));
-        b.push(Row::Header("Windows"));
-        b.push(Row::Toggle(Toggle::Theme));
-        b.push(Row::Toggle(Toggle::Autostart));
-        b.push(Row::Header("Shell"));
-        b.push(Row::Toggle(Toggle::Oled));
-        b.push(Row::Toggle(Toggle::Black));
-        b.push(Row::Action(Button::RestartExplorer));
-        b.push(Row::Header("Right now"));
-        let mut now = Vec::new();
-        if super::super::app::is_paused() {
-            now.push("Paused: every window is as Windows draws it. Resume on the Safety page or the tray menu.".to_string());
-        }
-        if let Some(text) = super::super::app::safe_mode_text() {
-            now.push(format!("Safe mode. {text}"));
-        }
-        now.push(if self.config.enabled {
-            "Window theming is on.".to_string()
-        } else {
-            "Window theming is off.".to_string()
-        });
-        match super::super::app::reduce_reason_now() {
-            Some(reason) => now.push(format!(
-                "Effects are reduced because of {reason}. Colors still apply; backdrop materials do not."
-            )),
-            None => now.push("Effects are at full strength.".to_string()),
-        }
-        now.push(if self.config.experimental_dark_legacy {
-            "Dark legacy windows (experimental) are on.".to_string()
-        } else {
-            "Dark legacy windows (experimental) are off.".to_string()
-        });
-        if self.config.focus.enabled {
-            now.push("Focus Look is on.".to_string());
-        }
-        if let Some(id) = crate::active_scene(&self.config) {
-            if let Some(scene) = crate::scene_catalog().iter().find(|s| s.id == id) {
-                now.push(format!("Scene: {}.", scene.name));
-            }
-        }
-        b.push(Row::About(now));
         b.push(Row::Header("About"));
         let mut about = vec![
             format!("AllBlack11 {}", env!("CARGO_PKG_VERSION")),
@@ -192,16 +314,21 @@ impl Ui {
         b.push(Row::About(about));
         b.out
     }
-
-    fn rows_effects(&self) -> Vec<Laid> {
+    fn rows_appearance(&self) -> Vec<Laid> {
         let mut b = Builder::new();
+        b.push(page_title(Page::Appearance));
+        b.push(Row::Header("Quick looks"));
+        b.push(Row::Presets);
+        b.push(Row::Note(
+            "A quick look runs for 15 seconds first. Keep it, or it goes back by itself.",
+        ));
         let target = match self.rule.and_then(|index| self.config.rules.get(index)) {
             Some(rule) => format!("Editing the look for: {}", rule.label()),
             None => "Editing the default look for all apps without a rule.".to_string(),
         };
         b.push(Row::About(vec![
             target,
-            "Pick a different target on the Apps page.".to_string(),
+            "Pick a different target on the Fix this app or Rules page.".to_string(),
         ]));
         b.push(Row::Header(if self.rule.is_some() {
             "Look for one app"
@@ -240,11 +367,16 @@ impl Ui {
         b.push(Row::Toggle(Toggle::ReduceTransparency));
         b.push(Row::Header("Title bar height"));
         b.push(Row::Slider(Slider::Caption));
+        b.push(Row::Header("Taskbar and Start (shell)"));
+        b.push(Row::Toggle(Toggle::Oled));
+        b.push(Row::Toggle(Toggle::Black));
+        b.push(Row::Action(Button::RestartExplorer));
         b.out
     }
 
-    fn rows_apps(&self) -> Vec<Laid> {
+    fn rows_fix(&self) -> Vec<Laid> {
         let mut b = Builder::new();
+        b.push(page_title(Page::Fix));
         b.push(Row::Header("Pick a window"));
         b.push(Row::Buttons(vec![
             Button::PickWindow,
@@ -325,6 +457,12 @@ impl Ui {
                 Button::MarkReset,
             ]));
         }
+        b.out
+    }
+
+    fn rows_rules(&self) -> Vec<Laid> {
+        let mut b = Builder::new();
+        b.push(page_title(Page::Rules));
         b.push(Row::Header("Per-app rules"));
         b.push(Row::Note(
             "Most specific match wins, then the higher priority, then the earlier rule. Pick a rule to edit its look on the Effects page.",
@@ -378,51 +516,13 @@ impl Ui {
         b.push(Row::AddField(Button::AddExclude));
         b.push(Row::Action(Button::RemoveExclude));
         self.push_notebook(&mut b);
-        b.out
-    }
-
-    fn rows_legacy(&self) -> Vec<Laid> {
-        let mut b = Builder::new();
-        if super::super::app::safe_mode_text().is_some() {
-            b.push(Row::About(vec![
-                "Safe mode is on for this run, so the switches below are not in effect. Leave safe mode on the Safety page.".to_string(),
-            ]));
-        }
-        b.push(Row::Header("Dark legacy windows (experimental)"));
-        b.push(Row::Toggle(Toggle::Experimental));
-        b.push(Row::Choice(Choice::Palette));
-        b.push(Row::Toggle(Toggle::EmulatedX64));
-        let mut state = vec![if self.config.experimental_dark_legacy {
-            "On. Classic dialogs in eligible, non-elevated apps are recolored from inside the app."
-                .to_string()
-        } else {
-            "Off. Nothing is loaded into any other process.".to_string()
-        }];
-        if self.arch == ArchStatus::NativeArm64 {
-            state.push(if self.config.legacy.emulated_x64 {
-                if super::super::legacy::helper_installed() {
-                    "Emulated x64 apps: on (experimental). The x64 helper is installed.".to_string()
-                } else {
-                    "Emulated x64 apps: on, but the x64 helper is not installed in this build, so they are skipped.".to_string()
-                }
-            } else {
-                "Emulated x64 apps are skipped. Native ARM64 apps are covered.".to_string()
-            });
-        }
-        b.push(Row::About(state));
-        b.push(Row::Header("What each control gets"));
-        b.push(Row::Note(
-            "Only classic dialogs are ever touched, never Explorer, Control Panel, or windows that embed a web or Explorer view. Where a control cannot be darkened safely it keeps its normal look.",
-        ));
-        b.push(Row::Lines(capability_lines()));
-        b.push(Row::Header("Test it without a real app"));
-        b.push(Row::Action(Button::OpenHarness));
+        self.push_legacy(&mut b);
         b.out
     }
 
     fn rows_scenes(&self) -> Vec<Laid> {
         let mut b = Builder::new();
-        b.push(Row::Header("Scenes and your Look Book"));
+        b.push(page_title(Page::Scenes));
         b.push(Row::Note(
             "A scene sets the default look and Focus Look. It never changes your per-app rules, exclusions, the shell or the legacy layer, so an app with its own rule keeps its own colors. Scenes change window frames only.",
         ));
@@ -529,7 +629,9 @@ impl Ui {
         b.out
     }
 
-    fn push_diagnostics(&self, b: &mut Builder) {
+    fn rows_diagnostics(&self) -> Vec<Laid> {
+        let mut b = Builder::new();
+        b.push(page_title(Page::Diagnostics));
         b.push(Row::Header("This PC"));
         let mut pc = vec![
             self.arch_line.clone(),
@@ -559,6 +661,7 @@ impl Ui {
         b.push(Row::Action(Button::Diagnostics));
         b.push(Row::Action(Button::OpenFolder));
         b.push(Row::Action(Button::OpenLog));
+        b.out
     }
 }
 
@@ -592,8 +695,46 @@ impl Ui {
         b.push(Row::Buttons(vec![Button::ClearNotebook]));
     }
 
+    fn push_legacy(&self, b: &mut Builder) {
+        if super::super::app::safe_mode_text().is_some() {
+            b.push(Row::About(vec![
+                "Safe mode is on for this run, so the switches below are not in effect. Leave safe mode on the Safety page.".to_string(),
+            ]));
+        }
+        b.push(Row::Header("Classic dialogs (experimental)"));
+        b.push(Row::Toggle(Toggle::Experimental));
+        b.push(Row::Choice(Choice::Palette));
+        b.push(Row::Toggle(Toggle::EmulatedX64));
+        let mut state = vec![if self.config.experimental_dark_legacy {
+            "On. Classic dialogs in eligible, non-elevated apps are recolored from inside the app."
+                .to_string()
+        } else {
+            "Off. Nothing is loaded into any other process.".to_string()
+        }];
+        if self.arch == ArchStatus::NativeArm64 {
+            state.push(if self.config.legacy.emulated_x64 {
+                if super::super::legacy::helper_installed() {
+                    "Emulated x64 apps: on (experimental). The x64 helper is installed.".to_string()
+                } else {
+                    "Emulated x64 apps: on, but the x64 helper is not installed in this build, so they are skipped.".to_string()
+                }
+            } else {
+                "Emulated x64 apps are skipped. Native ARM64 apps are covered.".to_string()
+            });
+        }
+        b.push(Row::About(state));
+        b.push(Row::Header("What each control gets"));
+        b.push(Row::Note(
+            "Only classic dialogs are ever touched, never Explorer, Control Panel, or windows that embed a web or Explorer view. Where a control cannot be darkened safely it keeps its normal look.",
+        ));
+        b.push(Row::Lines(capability_lines()));
+        b.push(Row::Header("Test it without a real app"));
+        b.push(Row::Action(Button::OpenHarness));
+    }
+
     fn rows_safety(&self) -> Vec<Laid> {
         let mut b = Builder::new();
+        b.push(page_title(Page::Safety));
         if let Some(text) = super::super::app::safe_mode_text() {
             b.push(Row::Header("Safe mode"));
             b.push(Row::About(vec![
@@ -635,7 +776,6 @@ impl Ui {
         b.push(Row::Note(
             "Turn off emulated x64 coverage on the Legacy page, or press Turn off experimental features above. Either one asks the helper to stop and ends it if it does not.",
         ));
-        self.push_diagnostics(&mut b);
         b.out
     }
 
@@ -702,35 +842,161 @@ pub fn trial_pills(lw: i32, status_top: i32) -> ((i32, i32, i32, i32), (i32, i32
     )
 }
 
-pub fn paint_nav(c: &Canvas, ui: &Ui, lw: i32) {
-    let top = ui.preview_h();
-    c.fill(0, top, lw, top + NAV_H, th().bg);
-    let count = Page::ALL.len() as i32;
-    let width = (lw - 2 * MARGIN) / count;
-    for (index, page) in Page::ALL.iter().enumerate() {
-        let left = MARGIN + index as i32 * width;
-        let selected = *page == ui.page;
+pub const NAV_ITEM_H: i32 = 40;
+const NAV_TOP: i32 = 60;
+
+/// Rectangle (l, t, r, b) of navigation item `index`, in client logical px. The last item
+/// (Settings and help) is anchored to the bottom, apart from the rest.
+pub fn nav_item_rect(ui: &Ui, index: usize) -> (i32, i32, i32, i32) {
+    let last = Page::ALL.len() - 1;
+    let top = if index == last {
+        ui.client_lh - 8 - NAV_ITEM_H
+    } else {
+        NAV_TOP + index as i32 * NAV_ITEM_H
+    };
+    (4, top, ui.nav_w - 4, top + NAV_ITEM_H - 4)
+}
+
+/// Which destination is under a point (client logical px), if any.
+pub fn nav_hit(ui: &Ui, lx: i32, ly: i32) -> Option<Page> {
+    if ui.nav_w == 0 || lx < 0 || lx >= ui.nav_w {
+        return None;
+    }
+    Page::ALL.iter().enumerate().find_map(|(index, page)| {
+        let (l, t, r, b) = nav_item_rect(ui, index);
+        (lx >= l && lx < r && ly >= t && ly < b).then_some(*page)
+    })
+}
+
+/// The navigation pane: a flat list of destinations, the selected one marked by a filled row
+/// *and* an accent bar *and* a bold label (never color alone), a divider before the footer
+/// item, and a visible focus ring when it holds keyboard focus.
+pub fn paint_nav(c: &Canvas, ui: &Ui) {
+    let fonts = &ui.fonts;
+    let theme = th();
+    let height = ui.client_lh;
+    c.fill(0, 0, ui.nav_w, height, theme.nav);
+    c.fill(ui.nav_w - 1, 0, ui.nav_w, height, theme.edge);
+    let expanded = ui.nav_w >= crate::ui_metrics::NAV_EXPANDED;
+    if expanded {
         c.text(
-            left,
-            top,
-            left + width,
-            top + NAV_H - 4,
-            page.title(),
-            if selected { th().text } else { th().muted },
-            if selected {
-                ui.fonts.head
-            } else {
-                ui.fonts.body
-            },
-            DT_CENTER | DT_VCENTER | DT_SINGLELINE,
+            16,
+            16,
+            ui.nav_w - 8,
+            44,
+            "AllBlack11",
+            theme.text,
+            fonts.head,
+            DT_LEFT | DT_VCENTER | DT_SINGLELINE,
         );
+    }
+    let last = Page::ALL.len() - 1;
+    let (_, footer_top, _, _) = nav_item_rect(ui, last);
+    c.fill(
+        12,
+        footer_top - 8,
+        ui.nav_w - 12,
+        footer_top - 7,
+        theme.edge,
+    );
+    for (index, page) in Page::ALL.iter().enumerate() {
+        let (l, t, r, b) = nav_item_rect(ui, index);
+        let selected = *page == ui.page;
         if selected {
-            c.fill(
-                left + 10,
-                top + NAV_H - 5,
-                left + width - 10,
-                top + NAV_H - 2,
-                ui.accent,
+            c.round(
+                l,
+                t,
+                r,
+                b,
+                crate::ui_metrics::CONTROL_RADIUS,
+                Some(theme.card_hi),
+                None,
+            );
+            c.round(
+                l,
+                (t + b) / 2 - 8,
+                l + 3,
+                (t + b) / 2 + 8,
+                2,
+                Some(ui.accent),
+                None,
+            );
+        } else if ui.ext.nav_hover == Some(index) {
+            c.round(
+                l,
+                t,
+                r,
+                b,
+                crate::ui_metrics::CONTROL_RADIUS,
+                Some(crate::blend_colors(theme.nav, theme.card_hi, 0.6)),
+                None,
+            );
+        }
+        let icon_box = (l + 8, t, l + 40, b);
+        if fonts.icon.is_null() {
+            // No icon font installed: text only, never a box of missing-glyph squares. The
+            // compact rail then shows an initial so each item stays distinguishable.
+            if !expanded {
+                let initial: String = page.nav_label().chars().take(1).collect();
+                c.text(
+                    l,
+                    t,
+                    r,
+                    b,
+                    &initial,
+                    theme.text,
+                    fonts.head,
+                    DT_CENTER | DT_VCENTER | DT_SINGLELINE,
+                );
+            }
+        } else {
+            let glyph = page.glyph().to_string();
+            let (gl, gr) = if expanded {
+                (icon_box.0, icon_box.2)
+            } else {
+                (l, r)
+            };
+            c.text(
+                gl,
+                t,
+                gr,
+                b,
+                &glyph,
+                theme.text,
+                fonts.icon,
+                DT_CENTER | DT_VCENTER | DT_SINGLELINE,
+            );
+        }
+        if expanded {
+            c.text(
+                l + 44,
+                t,
+                r - 4,
+                b,
+                page.nav_label(),
+                theme.text,
+                if selected { fonts.head } else { fonts.body },
+                DT_LEFT | DT_VCENTER | DT_SINGLELINE | DT_END_ELLIPSIS,
+            );
+        }
+        if ui.ext.nav_focus && selected {
+            c.round(
+                l - 1,
+                t - 1,
+                r + 1,
+                b + 1,
+                crate::ui_metrics::CONTROL_RADIUS,
+                None,
+                Some(theme.focus),
+            );
+            c.round(
+                l,
+                t,
+                r,
+                b,
+                crate::ui_metrics::CONTROL_RADIUS,
+                None,
+                Some(theme.focus),
             );
         }
     }
@@ -794,18 +1060,19 @@ impl Ui {
 
     /// Clicks on the page tabs and the Keep/Revert buttons. True when the click was ours.
     pub fn chrome_click(&mut self, hwnd: HWND, lparam: LPARAM) -> bool {
-        let lx = (lparam_x(lparam) as f32 / self.k) as i32;
+        let client_x = (lparam_x(lparam) as f32 / self.k) as i32;
         let ly = (lparam_y(lparam) as f32 / self.k) as i32;
-        let lw = self.lw(hwnd);
-        let nav_top = self.preview_h();
-        if ly >= nav_top && ly < nav_top + NAV_H {
-            let width = ((lw - 2 * MARGIN) / Page::ALL.len() as i32).max(1);
-            let index = ((lx - MARGIN) / width).clamp(0, Page::ALL.len() as i32 - 1) as usize;
-            if lx >= MARGIN && lx < lw - MARGIN {
-                self.set_page(hwnd, Page::ALL[index]);
-            }
+        // Navigation pane.
+        if let Some(page) = nav_hit(self, client_x, ly) {
+            self.ext.nav_focus = true;
+            self.set_page(hwnd, page);
             return true;
         }
+        if client_x < self.nav_w {
+            return true; // empty pane area: swallow the click
+        }
+        let lx = client_x - self.nav_w;
+        let lw = self.lw(hwnd);
         let status_top = self.status_top();
         if self.trial_active() && ly >= status_top && ly < status_top + STATUS_H {
             let (keep, revert) = trial_pills(lw, status_top);
@@ -828,7 +1095,7 @@ impl Ui {
         self.scroll = 0;
         self.ext.focus = None;
         match page {
-            Page::Apps => self.refresh_windows(),
+            Page::Fix => self.refresh_windows(),
             Page::Scenes => {
                 self.refresh_recipes();
                 self.refresh_looks();
@@ -1018,7 +1285,7 @@ impl Ui {
     }
 
     pub fn pick_hit(&self, lw: i32, lx: i32, cy: i32) -> bool {
-        if self.page != Page::Apps {
+        if self.page != Page::Fix {
             return false;
         }
         for row in self.rows() {
@@ -1498,25 +1765,16 @@ pub fn paint_extra(c: &Canvas, ui: &Ui, row: &Laid, top: i32, lw: i32) {
             for (index, id) in list.iter().enumerate() {
                 let (l, t, r, b) = buttons_rect(lw, list.len(), index, row.h);
                 let (_, _, label) = button_meta(*id);
-                let hot = *id == Button::PickWindow && ui.ext.picking;
-                c.round(
-                    l,
-                    top + t,
-                    r,
-                    top + b,
-                    5,
-                    Some(th().card_hi),
-                    Some(if hot { ui.accent } else { th().edge }),
-                );
-                c.text(
-                    l,
-                    top + t,
-                    r,
-                    top + b,
+                controls::draw_button(
+                    c,
+                    ui,
+                    (l, top + t, r, top + b),
                     label,
-                    th().text,
-                    fonts.small,
-                    DT_CENTER | DT_VCENTER | DT_SINGLELINE | DT_END_ELLIPSIS,
+                    controls::emphasis_of(*id),
+                    controls::State {
+                        active: *id == Button::PickWindow && ui.ext.picking,
+                        ..controls::State::default()
+                    },
                 );
             }
         }
@@ -1685,52 +1943,28 @@ pub fn lines_needed(text: &str, per_line: usize) -> i32 {
 
 /// Focus ring around the keyboard-focused row.
 pub fn paint_focus_ring(c: &Canvas, ui: &Ui, row: &Laid, top: i32, lw: i32) {
-    c.round(
-        MARGIN - 2,
-        top - 2,
-        lw - MARGIN + 2,
-        top + row.h - GAP + 2,
-        6,
-        None,
-        Some(ui.accent),
-    );
-    if let Row::Buttons(list) = &row.row {
-        let (l, t, r, b) =
-            buttons_rect(lw, list.len(), ui.ext.focus_sub.min(list.len() - 1), row.h);
-        c.round(
-            l - 2,
-            top + t - 2,
-            r + 2,
-            top + b + 2,
-            6,
-            None,
-            Some(th().text),
-        );
-    }
-    if matches!(row.row, Row::LookList) {
-        let line_top =
-            top + 8 + ui.ext.focus_sub.min(ui.look_count().saturating_sub(1)) as i32 * LIST_LINE;
-        c.round(
-            MARGIN + 4,
-            line_top - 1,
-            lw - MARGIN - 4,
-            line_top + LIST_LINE + 1,
-            5,
-            None,
-            Some(th().text),
-        );
-    }
-    if matches!(row.row, Row::Presets) {
-        let (l, t, r, b) = preset_rect(lw, ui.ext.focus_sub.min(PRESETS.len() - 1));
-        c.round(
-            l - 2,
-            top + t - 2,
-            r + 2,
-            top + b + 2,
-            6,
-            None,
-            Some(th().text),
-        );
+    // Composite rows (a row of buttons, the preset list, the scene list) ring the one item that
+    // has focus; every other row rings its card. Same two-pixel ring everywhere.
+    match &row.row {
+        Row::Buttons(list) => {
+            let (l, t, r, b) =
+                buttons_rect(lw, list.len(), ui.ext.focus_sub.min(list.len() - 1), row.h);
+            controls::focus_ring(c, (l, top + t, r, top + b));
+        }
+        Row::LookList => {
+            let line_top = top
+                + 8
+                + ui.ext.focus_sub.min(ui.look_count().saturating_sub(1)) as i32 * LIST_LINE;
+            controls::focus_ring(
+                c,
+                (MARGIN + 4, line_top, lw - MARGIN - 4, line_top + LIST_LINE),
+            );
+        }
+        Row::Presets => {
+            let (l, t, r, b) = preset_rect(lw, ui.ext.focus_sub.min(PRESETS.len() - 1));
+            controls::focus_ring(c, (l, top + t, r, top + b));
+        }
+        _ => controls::focus_ring(c, (MARGIN, top, lw - MARGIN, top + row.h - GAP)),
     }
 }
 
@@ -1811,6 +2045,16 @@ impl Ui {
             }
             Choice::RuleScope => {
                 self.ext.rule_scope = (self.ext.rule_scope + 1) % 4;
+            }
+            Choice::AppAppearance => {
+                self.config.ui.appearance = self.config.ui.appearance.next();
+                self.status = format!(
+                    "AllBlack11 now uses: {}. This changes only its own windows.",
+                    self.config.ui.appearance.label()
+                );
+                self.commit();
+                let hwnd = self.hwnd;
+                self.refresh_theme(hwnd);
             }
             Choice::DayScene | Choice::NightScene => {
                 let ids = self.scene_ids();
@@ -1909,7 +2153,10 @@ impl Ui {
                 }
             }
             Button::CopyReport => self.copy_report(),
-            Button::OpenPalette => palette_ui::open(self.owner),
+            Button::OpenPalette | Button::GoPalette => palette_ui::open(self.owner),
+            Button::GoFix => self.set_page(self.hwnd, Page::Fix),
+            Button::GoScenes => self.set_page(self.hwnd, Page::Scenes),
+            Button::GoHelp => self.set_page(self.hwnd, Page::Help),
             Button::NextAccent | Button::ClearAccent => self.change_accent(id),
             Button::PaletteFromImage => self.palette_from_image(),
             Button::TryScene => self.try_scene(),

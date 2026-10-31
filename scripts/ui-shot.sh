@@ -14,7 +14,7 @@ set -euo pipefail
 page="${1:-0}"; out="${2:-/tmp/ui-shot.png}"; size="${3:-1000x760}"
 exe="$(dirname "$0")/../target/x86_64-pc-windows-msvc/release/AllBlack11.exe"
 export WINEPREFIX="${WINEPREFIX:-/tmp/wineprefix}" WINEDEBUG=-all DISPLAY="${DISPLAY:-:99}"
-pgrep -x Xvfb >/dev/null || { Xvfb "$DISPLAY" -screen 0 1600x1000x24 >/dev/null 2>&1 & sleep 2; }
+pgrep -x Xvfb >/dev/null || { Xvfb "$DISPLAY" -screen 0 2000x1400x24 >/dev/null 2>&1 & sleep 2; }
 /usr/lib/wine/wineserver -k 2>/dev/null || true
 sleep 1
 rm -rf "$WINEPREFIX/drive_c/users/root/AppData/Roaming/AllBlack11/session.json"
@@ -24,6 +24,7 @@ for _ in $(seq 1 40); do
   [ -n "$id" ] && break; sleep 0.5
 done
 [ -n "${id:-}" ] || { echo "Settings window did not appear" >&2; exit 1; }
+xdotool windowmove "$id" 0 0 2>/dev/null || true
 xdotool windowsize "$id" "${size%x*}" "${size#*x}" 2>/dev/null || true
 sleep 2
 import -window "$id" "$out"

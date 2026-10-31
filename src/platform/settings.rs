@@ -26,7 +26,9 @@ use windows_sys::Win32::Graphics::Gdi::{
 use windows_sys::Win32::System::LibraryLoader::GetModuleHandleW;
 use windows_sys::Win32::UI::Controls::SetWindowTheme;
 use windows_sys::Win32::UI::HiDpi::{GetDpiForMonitor, GetDpiForWindow, MDT_EFFECTIVE_DPI};
-use windows_sys::Win32::UI::Input::KeyboardAndMouse::{GetFocus, ReleaseCapture, SetCapture};
+use windows_sys::Win32::UI::Input::KeyboardAndMouse::{
+    GetFocus, ReleaseCapture, SetCapture, TrackMouseEvent, TME_LEAVE, TRACKMOUSEEVENT,
+};
 use windows_sys::Win32::UI::WindowsAndMessaging::{
     CreateWindowExW, DefWindowProcW, DestroyWindow, GetClientRect, GetCursorPos, GetWindowTextW,
     LoadCursorW, PostMessageW, RegisterClassExW, SendMessageW, SetForegroundWindow, SetWindowPos,
@@ -50,6 +52,8 @@ use super::uxtheme;
 use super::wide::{config_dir, log_path, pcw, recipes_dir, to_wide, write_atomic};
 use windows_sys::Win32::UI::WindowsAndMessaging::WM_TIMER;
 
+#[path = "controls.rs"]
+mod controls;
 #[path = "settings_pages.rs"]
 mod pages;
 #[path = "cmdpal.rs"]
@@ -87,6 +91,7 @@ pub const CMD_DIAGNOSTICS: u32 = 12;
 
 const WM_DPICHANGED: u32 = 0x02E0;
 const WM_GETMINMAXINFO: u32 = 0x0024;
+const WM_MOUSELEAVE: u32 = 0x02A3;
 const EN_CHANGE: u16 = 0x0300;
 const EN_KILLFOCUS: u16 = 0x0200;
 
@@ -104,8 +109,7 @@ const PAD: i32 = 16;
 
 // Logical layout.
 const PREVIEW_H: i32 = 176;
-const STATUS_H: i32 = 28;
-const NAV_H: i32 = 40;
+const STATUS_H: i32 = 40;
 const ID_FILTER: u16 = 107;
 const ID_LOOK: u16 = 108;
 const TIMER_UI: usize = 1;
@@ -118,12 +122,14 @@ static SETTINGS: AtomicIsize = AtomicIsize::new(0);
 
 #[derive(Clone, Copy, PartialEq, Eq)]
 enum Page {
-    Overview,
-    Effects,
-    Apps,
+    Home,
+    Fix,
+    Appearance,
     Scenes,
-    Legacy,
+    Rules,
     Safety,
+    Diagnostics,
+    Help,
 }
 
 struct Edits {
@@ -164,6 +170,12 @@ struct Ui {
     preset_sel: Option<usize>,
     scroll: i32,
     drag: Option<Slider>,
+    /// Pointer position and the control under it, for hover and pressed states.
+    pointer: controls::Pointer,
+    /// Width of the navigation pane in logical px (0 while the setup flow is showing).
+    nav_w: i32,
+    /// Client height in logical px, for anchoring the footer navigation item.
+    client_lh: i32,
     status: String,
     edits: Edits,
     fonts: Fonts,
@@ -186,6 +198,8 @@ enum Slider {
 enum Row {
     Header(&'static str),
     Note(&'static str),
+    /// Page title (28/36 semibold) and a one-line description under it.
+    PageTitle(&'static str, &'static str),
     Toggle(Toggle),
     Choice(Choice),
     Slider(Slider),
@@ -239,6 +253,7 @@ enum Choice {
     NightScene,
     DayStarts,
     NightStarts,
+    AppAppearance,
 }
 
 #[derive(Clone, Copy, PartialEq, Eq)]
@@ -276,6 +291,10 @@ enum Button {
     OpenHarness,
     DemoMaterials,
     OpenPalette,
+    GoPalette,
+    GoFix,
+    GoScenes,
+    GoHelp,
     DemoCompare,
     NextAccent,
     ClearAccent,
@@ -407,6 +426,7 @@ fn choice_desc(ui: &Ui, id: Choice) -> &'static str {
             2 => "A new rule matches the package (Store apps). Falls back to the executable.",
             _ => "A new rule matches only the window class, across every app that uses it.",
         },
+        Choice::AppAppearance => "Changes only AllBlack11's own windows, never the apps it styles. Click to switch between Windows setting, Light and Dark.",
         Choice::DayScene => "Used during the day. Click to step through the scenes and your saved looks.",
         Choice::NightScene => "Used at night. Click to step through the scenes and your saved looks.",
         Choice::DayStarts => "Local time the day scene begins. Click to move it by 30 minutes.",
@@ -426,6 +446,7 @@ fn choice_title(id: Choice) -> &'static str {
         Choice::Corners => "Corners",
         Choice::Palette => "Dialog palette",
         Choice::RuleScope => "New rule matches",
+        Choice::AppAppearance => "AllBlack11 theme",
         Choice::DayScene => "Day scene",
         Choice::NightScene => "Night scene",
         Choice::DayStarts => "Day starts",
@@ -521,6 +542,10 @@ fn button_meta(id: Button) -> (&'static str, &'static str, &'static str) {
             "Opens two windows AllBlack11 owns with the same sample content: one left as Windows draws it, one with the look selected above (or your current look). It compares frame styling on windows we control. It does not capture or predict any other app.",
             "Compare",
         ),
+        Button::GoPalette => ("", "", "Command palette"),
+        Button::GoFix => ("", "", "Fix an app"),
+        Button::GoScenes => ("", "", "Browse scenes"),
+        Button::GoHelp => ("", "", "Help and tutorials"),
         Button::OpenPalette => (
             "Command palette",
             "Search every action: pick a window, switch scenes, pause, restore, open a page. Also Ctrl+K in Settings and the tray menu.",
@@ -541,12 +566,12 @@ fn button_meta(id: Button) -> (&'static str, &'static str, &'static str) {
         Button::PauseAll => (
             "Pause all styling",
             "Emergency stop. Puts every window back as Windows draws it and stops the legacy layer and the x64 helper right now. Not saved: restarting AllBlack11 starts from your saved settings.",
-            "Pause",
+            "Pause all styling",
         ),
         Button::ResumeAll => (
             "Resume styling",
             "Applies your saved settings to open windows again.",
-            "Resume",
+            "Resume styling",
         ),
         Button::LeaveSafe => (
             "Leave safe mode",
@@ -575,6 +600,7 @@ fn lines(text: &str, per_line: usize) -> i32 {
 fn row_height(row: &Row) -> i32 {
     match row {
         Row::Header(_) => 44,
+        Row::PageTitle(_, description) => 8 + 36 + 4 + 20 * lines(description, 78) + 12,
         Row::Note(text) => 10 + 16 * lines(text, 58),
         Row::Toggle(id) => {
             let (_, desc) = toggle_meta(*id);
@@ -678,7 +704,7 @@ unsafe extern "system" fn wndproc(hwnd: HWND, msg: u32, wparam: WPARAM, lparam: 
     if msg == WM_GETMINMAXINFO {
         let info = &mut *(lparam as *mut MINMAXINFO);
         let k = crate::layout_scale(dpi_of(hwnd), uistyle::text_scale_percent());
-        info.ptMinTrackSize.x = ((MIN_W + 16) as f32 * k) as i32;
+        info.ptMinTrackSize.x = ((MIN_W + crate::ui_metrics::NAV_COMPACT + 16) as f32 * k) as i32;
         info.ptMinTrackSize.y = ((MIN_H + 47) as f32 * k) as i32;
         return 0;
     }
@@ -720,6 +746,8 @@ unsafe extern "system" fn wndproc(hwnd: HWND, msg: u32, wparam: WPARAM, lparam: 
             0
         }
         WM_LBUTTONDOWN => {
+            ui.pointer.press(true);
+            InvalidateRect(hwnd, std::ptr::null(), 0);
             if let Some((lx, cy)) = ui.to_content(lparam) {
                 if !ui.trial_active() && ui.pick_hit(ui.lw(hwnd), lx, cy) {
                     ui.begin_pick(hwnd);
@@ -734,7 +762,39 @@ unsafe extern "system" fn wndproc(hwnd: HWND, msg: u32, wparam: WPARAM, lparam: 
             }
             0
         }
+        WM_MOUSELEAVE => {
+            ui.pointer.set(None);
+            let hover_changed = ui.pointer.update_hover();
+            if ui.ext.nav_hover.take().is_some() || hover_changed {
+                InvalidateRect(hwnd, std::ptr::null(), 0);
+            }
+            0
+        }
         WM_MOUSEMOVE => {
+            // Hover state for the navigation pane.
+            let client_x = (lparam_x(lparam) as f32 / ui.k) as i32;
+            let client_y = (lparam_y(lparam) as f32 / ui.k) as i32;
+            let hover = pages::nav_hit(ui, client_x, client_y)
+                .and_then(|page| Page::ALL.iter().position(|p| *p == page));
+            if hover != ui.ext.nav_hover {
+                ui.ext.nav_hover = hover;
+                InvalidateRect(hwnd, std::ptr::null(), 0);
+            }
+            // Hover for content controls: pointer in content coordinates (the same ones the
+            // rows are painted in), repainting only when the control under it changes.
+            ui.pointer.set(Some((client_x - ui.nav_w, client_y)));
+            if ui.pointer.update_hover() {
+                InvalidateRect(hwnd, std::ptr::null(), 0);
+            }
+            {
+                let mut track = TRACKMOUSEEVENT {
+                    cbSize: std::mem::size_of::<TRACKMOUSEEVENT>() as u32,
+                    dwFlags: TME_LEAVE,
+                    hwndTrack: hwnd,
+                    dwHoverTime: 0,
+                };
+                TrackMouseEvent(&mut track);
+            }
             if ui.ext.picking {
                 windows_sys::Win32::UI::WindowsAndMessaging::SetCursor(LoadCursorW(
                     std::ptr::null_mut(),
@@ -742,13 +802,14 @@ unsafe extern "system" fn wndproc(hwnd: HWND, msg: u32, wparam: WPARAM, lparam: 
                 ));
             }
             if let Some(slider) = ui.drag {
-                let lx = (lparam_x(lparam) as f32 / ui.k) as i32;
+                let lx = (lparam_x(lparam) as f32 / ui.k) as i32 - ui.nav_w;
                 ui.set_slider(hwnd, slider, lx);
                 InvalidateRect(hwnd, std::ptr::null(), 0);
             }
             0
         }
         WM_LBUTTONUP => {
+            ui.pointer.press(false);
             if ui.ext.picking {
                 ui.end_pick(hwnd);
                 ui.relayout(hwnd);
@@ -988,7 +1049,7 @@ impl Ui {
         };
         let ui = Self {
             hwnd,
-            page: Page::Overview,
+            page: Page::Home,
             ext: pages::Ext::default(),
             owner,
             autostart: registry::autostart_enabled(),
@@ -997,6 +1058,9 @@ impl Ui {
             preset_sel: None,
             scroll: 0,
             drag: None,
+            pointer: controls::Pointer::default(),
+            nav_w: crate::ui_metrics::NAV_EXPANDED,
+            client_lh: 0,
             status: String::new(),
             config,
             edits,
@@ -1014,20 +1078,31 @@ impl Ui {
     }
 
     fn preview_h(&self) -> i32 {
-        if matches!(self.page, Page::Overview | Page::Effects) {
+        if matches!(self.page, Page::Appearance) {
             PREVIEW_H
         } else {
             0
         }
     }
 
+    /// Where the trial bar sits while a trial runs: the top of the content, above the rows.
     fn status_top(&self) -> i32 {
-        self.preview_h() + NAV_H
+        self.preview_h()
     }
 
-    /// Top of the scrolling area: preview (some pages), then tabs, then the status line.
+    /// Top of the scrolling rows: the preview (Appearance only), then the Keep/Revert bar
+    /// while a trial runs.
     fn top(&self) -> i32 {
-        self.status_top() + STATUS_H
+        self.status_top() + if self.trial_active() { STATUS_H } else { 0 }
+    }
+
+    /// Height reserved at the bottom for the status message when no trial is running.
+    fn bottom_h(&self) -> i32 {
+        if self.trial_active() {
+            0
+        } else {
+            STATUS_H
+        }
     }
 
     fn px(&self, logical: i32) -> i32 {
@@ -1082,16 +1157,37 @@ impl Ui {
     }
 
     /// Client-area logical width.
+    /// Client width in logical px, navigation pane included.
+    fn client_lw(&self, hwnd: HWND) -> i32 {
+        (client_size(hwnd).0 as f32 / self.k) as i32
+    }
+
+    /// Width of the content area: everything right of the navigation pane.
     fn lw(&self, hwnd: HWND) -> i32 {
-        ((client_size(hwnd).0 as f32 / self.k) as i32).max(MIN_W)
+        (self.client_lw(hwnd) - self.nav_w).max(MIN_W)
+    }
+
+    /// Navigation pane width for the current window width: icons and labels when there is
+    /// room, an icon rail when there is not (Microsoft: a navigation pane collapses to its
+    /// compact form as the window narrows).
+    fn pick_nav_w(&self, hwnd: HWND) -> i32 {
+        if self.ext.setup_active() {
+            0
+        } else if self.client_lw(hwnd) >= crate::ui_metrics::NAV_BREAKPOINT {
+            crate::ui_metrics::NAV_EXPANDED
+        } else {
+            crate::ui_metrics::NAV_COMPACT
+        }
     }
 
     /// Height of the scrolling region, in logical pixels.
     fn view_height(&self, hwnd: HWND) -> i32 {
-        ((client_size(hwnd).1 as f32 / self.k) as i32 - self.top()).max(1)
+        ((client_size(hwnd).1 as f32 / self.k) as i32 - self.top() - self.bottom_h()).max(1)
     }
 
     fn relayout(&mut self, hwnd: HWND) {
+        self.nav_w = self.pick_nav_w(hwnd);
+        self.client_lh = (client_size(hwnd).1 as f32 / self.k) as i32;
         let view = self.view_height(hwnd);
         let max_scroll = (self.content_height() - view).max(0);
         self.scroll = self.scroll.clamp(0, max_scroll);
@@ -1101,9 +1197,9 @@ impl Ui {
 
     /// Mouse position to (logical x, content y). None above the scrolling region.
     fn to_content(&self, lparam: LPARAM) -> Option<(i32, i32)> {
-        let lx = (lparam_x(lparam) as f32 / self.k) as i32;
+        let lx = (lparam_x(lparam) as f32 / self.k) as i32 - self.nav_w;
         let ly = (lparam_y(lparam) as f32 / self.k) as i32;
-        if ly < self.top() {
+        if ly < self.top() || lx < 0 {
             return None;
         }
         Some((lx, ly - self.top() + self.scroll))
@@ -1339,6 +1435,7 @@ impl Ui {
                 | Choice::NightScene
                 | Choice::DayStarts
                 | Choice::NightStarts
+                | Choice::AppAppearance
         ) {
             self.cycle_ext(id);
             return;
@@ -1559,7 +1656,12 @@ impl Ui {
         for row in self.rows() {
             let top = row.y - self.scroll + self.top();
             let spot = |l: i32, t: i32, w: i32, h: i32| {
-                let rect = (self.px(l), self.px(top + t), self.px(w), self.px(h));
+                let rect = (
+                    self.px(l + self.nav_w),
+                    self.px(top + t),
+                    self.px(w),
+                    self.px(h),
+                );
                 let visible = rect.1 >= self.px(self.top()) && rect.1 + rect.3 <= client_h;
                 visible.then_some(rect)
             };
@@ -1772,10 +1874,23 @@ fn paint(hwnd: HWND, ui: &mut Ui) {
 
         let canvas = Canvas { dc, k: ui.k };
         let lw = ui.lw(hwnd);
+        ui.pointer.begin_frame();
 
-        // Scrolling rows, clipped under the pinned preview and tabs.
+        // Everything right of the navigation pane is drawn in content coordinates: the
+        // origin moves, and a clip keeps it out of the pane.
+        let nav_px = canvas.px(ui.nav_w);
+        SetViewportOrgEx(dc, nav_px, 0, std::ptr::null_mut());
+        IntersectClipRect(dc, 0, 0, w - nav_px, h);
+
+        // Scrolling rows, clipped under the pinned preview and status strip.
         let pinned = ui.top();
-        IntersectClipRect(dc, 0, canvas.px(pinned), w, h);
+        IntersectClipRect(
+            dc,
+            0,
+            canvas.px(pinned),
+            w,
+            canvas.px(ui.client_lh - ui.bottom_h()),
+        );
         let rows = ui.rows();
         let focus_row = ui
             .ext
@@ -1796,9 +1911,17 @@ fn paint(hwnd: HWND, ui: &mut Ui) {
 
         if ui.preview_h() > 0 {
             paint_preview(&canvas, ui, lw);
+            // The preview sets its own origin; put the content origin back.
+            SetViewportOrgEx(dc, nav_px, 0, std::ptr::null_mut());
+            SelectClipRgn(dc, std::ptr::null_mut());
+            IntersectClipRect(dc, 0, 0, w - nav_px, h);
         }
-        pages::paint_nav(&canvas, ui, lw);
-        paint_status(&canvas, ui, lw);
+        paint_status(&canvas, ui, lw, ui.client_lh);
+        SelectClipRgn(dc, std::ptr::null_mut());
+        SetViewportOrgEx(dc, 0, 0, std::ptr::null_mut());
+        if ui.nav_w > 0 {
+            pages::paint_nav(&canvas, ui);
+        }
 
         BitBlt(screen, 0, 0, w, h, dc, 0, 0, SRCCOPY);
         SelectObject(dc, old_bitmap);
@@ -1822,23 +1945,28 @@ fn paint_scrollbar(c: &Canvas, ui: &Ui, hwnd: HWND, lw: i32) {
     c.round(lw - 7, top, lw - 3, top + thumb, 2, Some(th().track), None);
 }
 
-fn paint_status(c: &Canvas, ui: &Ui, lw: i32) {
-    let top = ui.status_top();
-    c.fill(0, top, lw, top + STATUS_H, th().bg);
+/// The Keep/Revert bar while a trial runs (top), otherwise the status message (bottom). A
+/// message always carries words; it is never just a color.
+fn paint_status(c: &Canvas, ui: &Ui, lw: i32, lh: i32) {
     if ui.trial_active() {
+        let top = ui.status_top();
+        c.fill(0, top, lw, top + STATUS_H, th().bg);
         pages::paint_trial_bar(c, ui, lw);
         return;
     }
+    let top = lh - STATUS_H;
+    c.fill(0, top, lw, lh, th().bg);
+    c.fill(MARGIN, top, lw - MARGIN, top + 1, th().edge);
     let (text, color) = if ui.status.is_empty() {
         ("Changes apply as you make them.", th().muted)
     } else {
-        (ui.status.as_str(), ui.accent)
+        (ui.status.as_str(), th().text)
     };
     c.text(
         MARGIN,
-        top,
+        top + 1,
         lw - MARGIN,
-        top + STATUS_H,
+        lh,
         text,
         color,
         ui.fonts.small,
@@ -1852,7 +1980,7 @@ fn card(c: &Canvas, top: i32, h: i32, lw: i32) {
         top,
         lw - MARGIN,
         top + h - GAP,
-        5,
+        crate::ui_metrics::CONTROL_RADIUS,
         Some(th().card),
         Some(th().edge),
     );
@@ -1874,6 +2002,28 @@ fn paint_row(c: &Canvas, ui: &Ui, row: &Laid, top: i32, lw: i32) {
                 th().text,
                 fonts.head,
                 DT_LEFT | DT_VCENTER | DT_SINGLELINE,
+            );
+        }
+        Row::PageTitle(title, description) => {
+            c.text(
+                MARGIN,
+                top + 8,
+                lw - MARGIN,
+                top + 44,
+                title,
+                th().text,
+                fonts.title,
+                DT_LEFT | DT_VCENTER | DT_SINGLELINE | DT_END_ELLIPSIS,
+            );
+            c.text(
+                MARGIN,
+                top + 48,
+                lw - MARGIN,
+                top + row.h,
+                description,
+                th().muted,
+                fonts.body,
+                DT_LEFT | DT_WORDBREAK,
             );
         }
         Row::Note(text) => {
@@ -2122,48 +2272,26 @@ fn paint_row(c: &Canvas, ui: &Ui, row: &Laid, top: i32, lw: i32) {
                 fonts.small,
                 DT_LEFT | DT_WORDBREAK,
             );
-            c.round(
-                l,
-                top + t,
-                r,
-                top + b,
-                5,
-                Some(th().card_hi),
-                Some(th().edge),
-            );
-            c.text(
-                l,
-                top + t,
-                r,
-                top + b,
+            controls::draw_button(
+                c,
+                ui,
+                (l, top + t, r, top + b),
                 button,
-                th().text,
-                fonts.body,
-                DT_CENTER | DT_VCENTER | DT_SINGLELINE,
+                controls::emphasis_of(*id),
+                controls::State::default(),
             );
         }
         Row::AddField(id) => {
             card(c, top, row.h, lw);
             let (_, _, label) = button_meta(*id);
             let (l, t, r, b) = add_pill(lw);
-            c.round(
-                l,
-                top + t,
-                r,
-                top + b,
-                5,
-                Some(th().card_hi),
-                Some(ui.accent),
-            );
-            c.text(
-                l,
-                top + t,
-                r,
-                top + b,
+            controls::draw_button(
+                c,
+                ui,
+                (l, top + t, r, top + b),
                 label,
-                th().text,
-                fonts.body,
-                DT_CENTER | DT_VCENTER | DT_SINGLELINE,
+                controls::Emphasis::Standard,
+                controls::State::default(),
             );
         }
         Row::Lines(_)
@@ -2247,6 +2375,7 @@ fn choice_text(ui: &Ui, id: Choice) -> String {
             _ => "Window class",
         }
         .to_string(),
+        Choice::AppAppearance => ui.config.ui.appearance.label().to_string(),
         Choice::DayScene => ui.scene_name_for(&day_night.day_scene),
         Choice::NightScene => ui.scene_name_for(&day_night.night_scene),
         Choice::DayStarts => day_night.day_starts.clone(),
@@ -2409,7 +2538,7 @@ fn paint_preview(c: &Canvas, ui: &Ui, lw_full: i32) {
     // its top-left corner, so `lw` below is the card's width.
     let lw = lw_full - 2 * MARGIN;
     let ph = PREVIEW_H - 16;
-    let (ox, oy) = (c.px(MARGIN), c.px(8));
+    let (ox, oy) = (c.px(MARGIN + ui.nav_w), c.px(8));
     unsafe {
         SetViewportOrgEx(c.dc, ox, oy, std::ptr::null_mut());
         let outer = CreateRoundRectRgn(
@@ -2417,8 +2546,8 @@ fn paint_preview(c: &Canvas, ui: &Ui, lw_full: i32) {
             oy,
             ox + c.px(lw) + 1,
             oy + c.px(ph) + 1,
-            c.px(10),
-            c.px(10),
+            c.px(16),
+            c.px(16),
         );
         SelectClipRgn(c.dc, outer);
 
@@ -2577,7 +2706,15 @@ fn paint_preview(c: &Canvas, ui: &Ui, lw_full: i32) {
         SetViewportOrgEx(c.dc, 0, 0, std::ptr::null_mut());
     }
     // Hairline border around the card.
-    c.round(MARGIN, 8, MARGIN + lw, 8 + ph, 5, None, Some(th().edge));
+    c.round(
+        MARGIN + ui.nav_w,
+        8,
+        MARGIN + ui.nav_w + lw,
+        8 + ph,
+        crate::ui_metrics::OVERLAY_RADIUS,
+        None,
+        Some(th().edge),
+    );
 }
 
 #[allow(clippy::too_many_arguments)]
