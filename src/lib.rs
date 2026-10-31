@@ -19,6 +19,7 @@ mod presets;
 mod recipes;
 mod report;
 mod rules;
+mod scenes;
 mod shell;
 mod snapshot;
 mod startup;
@@ -71,6 +72,12 @@ pub use report::{redact, render as render_report, source_text, Attempt, LegacyVi
 pub use rules::{
     describe_conflict, find_conflicts, glob_match, rank, resolve, why_it_won, Conflict,
     ConflictKind, Criterion, Resolved, RuleMatch, Source, WindowIdentity,
+};
+pub use scenes::{
+    active as active_scene, apply as apply_scene, catalog as scene_catalog,
+    compare as compare_looks, preview as preview_scene, swatch as scene_swatch,
+    Applicable as SceneLike, Look, LookBook, Scene, Swatch, MAX_LOOKS, MAX_NAME as MAX_LOOK_NAME,
+    SCENE_COUNT,
 };
 pub use shell::{blacken_shell_slots, ShellBackup, SHELL_SLOT_BYTES};
 pub use snapshot::{format_snapshots, parse_snapshots, same_process, SnapshotFile, StoredSnapshot};

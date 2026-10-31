@@ -103,6 +103,10 @@ const CMD_RESTART_EXPLORER: u32 = 10;
 const CMD_OPEN_FOLDER: u32 = 11;
 const CMD_DIAGNOSTICS: u32 = 12;
 const CMD_PAUSE: u32 = 13;
+const CMD_SCENE_UNDO: u32 = 14;
+/// Tray scene items: scenes first, then up to `TRAY_LOOKS` saved looks.
+const CMD_SCENE_BASE: u32 = 200;
+const TRAY_LOOKS: usize = 8;
 const CMD_PRESET_BASE: u32 = 20;
 const WM_EXPLORER_DONE: u32 = WM_APP + 7;
 const TIMER_ACCENT: usize = 3;
@@ -193,6 +197,8 @@ struct App {
     /// Emergency pause: windows are put back and nothing new is styled until Resume. Held in
     /// memory only, so a restart always begins from the saved settings.
     paused: bool,
+    /// `config.json` as it was before the last tray scene switch, for one-step undo.
+    scene_undo: Option<String>,
     /// Safe mode for this run: experimental features stay off. Never written to config.json.
     safe: crate::StartupMode,
     session: crate::StartupMarker,
@@ -550,6 +556,7 @@ fn run() -> Result<(), String> {
         last_ops: HashMap::new(),
         trial: crate::TrialMachine::default(),
         paused: false,
+        scene_undo: None,
         safe: startup_mode,
         session: startup_marker,
         try_windows: HashMap::new(),
@@ -945,18 +952,59 @@ fn on_setting_change(lparam: LPARAM) {
     });
 }
 
+/// The tray's Scenes submenu: five scenes, then up to eight saved looks, with the matching
+/// one checked, and a one-step undo.
+fn scene_menu_items(contrast: bool, can_undo: bool) -> Vec<Item> {
+    let current = cfgio::load();
+    let mut items = Vec::new();
+    for (index, scene) in crate::scene_catalog().iter().enumerate() {
+        items.push(hinted(
+            CMD_SCENE_BASE + index as u32,
+            &scene.name,
+            &scene.blurb,
+            ItemKind::Checked(crate::preview_scene(&current, scene).is_empty()),
+            !contrast,
+        ));
+    }
+    let book = cfgio::load_lookbook();
+    if !book.looks.is_empty() {
+        items.push(item(0, "", ItemKind::Separator, true));
+        let offset = crate::SCENE_COUNT;
+        for (index, look) in book.looks.iter().take(TRAY_LOOKS).enumerate() {
+            items.push(hinted(
+                CMD_SCENE_BASE + (offset + index) as u32,
+                &look.name,
+                "Your saved look",
+                ItemKind::Checked(crate::preview_scene(&current, look).is_empty()),
+                !contrast,
+            ));
+        }
+    }
+    items.push(item(0, "", ItemKind::Separator, true));
+    items.push(item(
+        CMD_SCENE_UNDO,
+        "Undo last scene change",
+        ItemKind::Action,
+        can_undo,
+    ));
+    items
+}
+
 fn show_menu(hwnd: HWND) {
-    let Some((enabled, autostart, contrast, oled, black_shell, dark, paused)) = with_app(|app| {
-        (
-            app.config.enabled,
-            registry::autostart_enabled(),
-            app.high_contrast,
-            app.config.shell.oled_taskbar,
-            app.config.shell.black_shell,
-            app.apps_dark.unwrap_or(true),
-            app.paused,
-        )
-    }) else {
+    let Some((enabled, autostart, contrast, oled, black_shell, dark, paused, scene_undo)) =
+        with_app(|app| {
+            (
+                app.config.enabled,
+                registry::autostart_enabled(),
+                app.high_contrast,
+                app.config.shell.oled_taskbar,
+                app.config.shell.black_shell,
+                app.apps_dark.unwrap_or(true),
+                app.paused,
+                app.scene_undo.is_some(),
+            )
+        })
+    else {
         return;
     };
     uxtheme::allow_dark_menus(!contrast);
@@ -1006,6 +1054,7 @@ fn show_menu(hwnd: HWND) {
             true,
         ),
         submenu("Presets", presets),
+        submenu("Scenes", scene_menu_items(contrast, scene_undo)),
         hinted(
             CMD_PAUSE,
             "Pause all styling",
@@ -1182,6 +1231,19 @@ fn on_command(hwnd: HWND, command: u32) {
         id if (CMD_PRESET_BASE..CMD_PRESET_BASE + crate::PRESETS.len() as u32).contains(&id) => {
             let broadcast =
                 with_app(|app| app.apply_preset((id - CMD_PRESET_BASE) as usize)).unwrap_or(false);
+            if broadcast {
+                shellwin::broadcast_immersive_color();
+            }
+        }
+        CMD_SCENE_UNDO => {
+            let broadcast = with_app(|app| app.undo_scene()).unwrap_or(false);
+            if broadcast {
+                shellwin::broadcast_immersive_color();
+            }
+        }
+        id if (CMD_SCENE_BASE..CMD_SCENE_BASE + 64).contains(&id) => {
+            let broadcast = with_app(|app| app.apply_scene_choice((id - CMD_SCENE_BASE) as usize))
+                .unwrap_or(false);
             if broadcast {
                 shellwin::broadcast_immersive_color();
             }
@@ -2384,6 +2446,60 @@ impl App {
             unsafe { KillTimer(self.hwnd, TIMER_TRIAL) };
         }
         self.update_tray();
+    }
+
+    /// Switch to the n-th tray scene (scenes first, then saved looks). Like a tray preset this
+    /// is an explicit choice, so it applies at once; the previous file is kept for one undo.
+    fn apply_scene_choice(&mut self, index: usize) -> bool {
+        self.end_trial_for_external_change();
+        let scenes = crate::scene_catalog();
+        let book = cfgio::load_lookbook();
+        let item: &dyn crate::SceneLike = if index < scenes.len() {
+            &scenes[index]
+        } else {
+            match book.looks.get(index - scenes.len()) {
+                Some(look) => look,
+                None => return false,
+            }
+        };
+        let name = if index < scenes.len() {
+            scenes[index].name.clone()
+        } else {
+            book.looks[index - scenes.len()].name.clone()
+        };
+        let before = std::fs::read_to_string(&self.config_file).ok();
+        let mut config = cfgio::load();
+        crate::apply_scene(&mut config, item);
+        if let Err(err) = cfgio::store(&config) {
+            self.balloon("AllBlack11", &err, true);
+            return false;
+        }
+        self.scene_undo = before;
+        let changed = self.apply_external_config();
+        self.balloon("AllBlack11", &format!("Scene: {name}."), false);
+        changed
+    }
+
+    fn undo_scene(&mut self) -> bool {
+        let Some(previous) = self.scene_undo.take() else {
+            return false;
+        };
+        self.end_trial_for_external_change();
+        if parse_config(&previous).is_err() {
+            self.balloon(
+                "AllBlack11",
+                "The earlier config is no longer readable; nothing was changed.",
+                true,
+            );
+            return false;
+        }
+        if wide::write_atomic(&self.config_file, &previous).is_err() {
+            self.balloon("AllBlack11", "Could not write config.json.", true);
+            return false;
+        }
+        let changed = self.apply_external_config();
+        self.balloon("AllBlack11", "Scene change undone.", false);
+        changed
     }
 
     /// Anything that is about to change the permanent config (tray preset, reload, enable

@@ -32,6 +32,20 @@ pub fn save_notebook(book: &crate::Notebook) -> Result<(), String> {
     )
 }
 
+pub fn load_lookbook() -> crate::LookBook {
+    std::fs::read_to_string(super::wide::lookbook_path())
+        .ok()
+        .and_then(|text| crate::LookBook::parse(&text).ok())
+        .unwrap_or_default()
+}
+
+pub fn save_lookbook(book: &crate::LookBook) -> Result<(), String> {
+    write_atomic(
+        &super::wide::lookbook_path(),
+        &format!("{}\n", book.to_json()),
+    )
+}
+
 /// Keep a copy of the config that last parsed and applied. Never overwrites a good copy with
 /// identical text, so the file's age stays meaningful.
 pub fn save_lkg(text: &str) {

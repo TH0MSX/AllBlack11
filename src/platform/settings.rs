@@ -90,6 +90,7 @@ const PREVIEW_H: i32 = 176;
 const STATUS_H: i32 = 28;
 const NAV_H: i32 = 40;
 const ID_FILTER: u16 = 107;
+const ID_LOOK: u16 = 108;
 const TIMER_UI: usize = 1;
 const MARGIN: i32 = 20;
 const MIN_W: i32 = 480;
@@ -116,6 +117,7 @@ struct Edits {
     tint: HWND,
     rule: HWND,
     exclude: HWND,
+    look: HWND,
 }
 
 struct Fonts {
@@ -172,6 +174,8 @@ enum Row {
     Buttons(Vec<Button>),
     WindowList,
     RecipeList,
+    /// Scenes first, then the user's Look Book, with a color chip for each.
+    LookList,
     Filter,
 }
 
@@ -238,6 +242,11 @@ enum Button {
     UndoShell,
     OpenHarness,
     DemoMaterials,
+    TryScene,
+    SaveLook,
+    RenameLook,
+    DeleteLook,
+    MarkCompare,
     PauseAll,
     ResumeAll,
     LeaveSafe,
@@ -449,6 +458,11 @@ fn button_meta(id: Button) -> (&'static str, &'static str, &'static str) {
             "Opens a window that applies this look to itself, with a transparent, an opaque and a half-transparent panel. It shows how Windows materials behave. It does not show how another app will look.",
             "Open demonstration",
         ),
+        Button::TryScene => ("", "", "Try (15 s)"),
+        Button::SaveLook => ("", "", "Save look"),
+        Button::RenameLook => ("", "", "Rename"),
+        Button::DeleteLook => ("", "", "Delete"),
+        Button::MarkCompare => ("", "", "Compare…"),
         Button::PauseAll => (
             "Pause all styling",
             "Emergency stop. Puts every window back as Windows draws it and stops the legacy layer and the x64 helper right now. Not saved: restarting AllBlack11 starts from your saved settings.",
@@ -507,7 +521,7 @@ fn row_height(row: &Row) -> i32 {
         Row::AddField(_) => 52 + GAP,
         Row::Lines(items) => 20 + items.iter().map(|line| 16 * lines(line, 64)).sum::<i32>() + GAP,
         Row::Buttons(_) => 52 + GAP,
-        Row::WindowList | Row::RecipeList => 0, // sized by the caller
+        Row::WindowList | Row::RecipeList | Row::LookList => 0, // sized by the caller
         Row::Filter => 52 + GAP,
         Row::About(lines) => 24 + 20 * lines.len() as i32 + GAP,
     }
@@ -864,6 +878,7 @@ impl Ui {
             tint: make_edit(hwnd, ID_TINT, fonts.body),
             rule: make_edit(hwnd, ID_RULE, fonts.body),
             exclude: make_edit(hwnd, ID_EXCLUDE, fonts.body),
+            look: make_edit(hwnd, ID_LOOK, fonts.body),
         };
         let ui = Self {
             hwnd,
@@ -922,7 +937,7 @@ impl Ui {
         }
     }
 
-    fn all_edits(&self) -> [HWND; 7] {
+    fn all_edits(&self) -> [HWND; 8] {
         [
             self.edits.filter,
             self.edits.caption,
@@ -931,6 +946,7 @@ impl Ui {
             self.edits.tint,
             self.edits.rule,
             self.edits.exclude,
+            self.edits.look,
         ]
     }
 
@@ -1087,6 +1103,7 @@ impl Ui {
                 Row::Buttons(list) => self.click_buttons(lw, lx, local, list.clone(), row.h),
                 Row::WindowList => self.click_window_list((local - 8) / LIST_LINE),
                 Row::RecipeList => self.click_recipe_list((local - 8) / LIST_LINE),
+                Row::LookList => self.click_look_list((local - 8) / LIST_LINE),
                 Row::RuleList => self.pick_rule((local - 8) / LIST_LINE),
                 Row::ExcludeList => self.pick_exclude((local - 8) / LIST_LINE),
                 _ => {}
@@ -1418,6 +1435,10 @@ impl Ui {
                 )),
                 Row::AddField(Button::AddExclude) => Some((
                     self.edits.exclude,
+                    spot(MARGIN + PAD, 14, lw - 2 * MARGIN - 2 * PAD - 96, 24),
+                )),
+                Row::AddField(Button::SaveLook) => Some((
+                    self.edits.look,
                     spot(MARGIN + PAD, 14, lw - 2 * MARGIN - 2 * PAD - 96, 24),
                 )),
                 _ => None,
@@ -1987,7 +2008,12 @@ fn paint_row(c: &Canvas, ui: &Ui, row: &Laid, top: i32, lw: i32) {
                 DT_CENTER | DT_VCENTER | DT_SINGLELINE,
             );
         }
-        Row::Lines(_) | Row::Buttons(_) | Row::WindowList | Row::RecipeList | Row::Filter => {
+        Row::Lines(_)
+        | Row::Buttons(_)
+        | Row::WindowList
+        | Row::RecipeList
+        | Row::LookList
+        | Row::Filter => {
             pages::paint_extra(c, ui, row, top, lw);
         }
         Row::About(lines) => {

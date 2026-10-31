@@ -181,9 +181,12 @@ impl Recipe {
     }
 }
 
-const BUNDLED_JSON: [&str; 4] = [
+const BUNDLED_JSON: [&str; 7] = [
     include_str!("../recipes/black-frames.json"),
     include_str!("../recipes/graphite.json"),
+    include_str!("../recipes/midnight-accent.json"),
+    include_str!("../recipes/focus.json"),
+    include_str!("../recipes/living-room.json"),
     include_str!("../recipes/teal-glass.json"),
     include_str!("../recipes/low-distraction.json"),
 ];

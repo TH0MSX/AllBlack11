@@ -127,6 +127,10 @@ pub fn notebook_path() -> PathBuf {
     config_dir().join("compat.json")
 }
 
+pub fn lookbook_path() -> PathBuf {
+    config_dir().join("lookbook.json")
+}
+
 pub fn recipes_dir() -> PathBuf {
     config_dir().join("recipes")
 }

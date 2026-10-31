@@ -1,0 +1,20 @@
+{
+  "schema": 1,
+  "id": "focus",
+  "name": "Focus",
+  "description": "Quiet black frames. The window you are working in gets an accent border; the others go calm.",
+  "author": "AllBlack11",
+  "minBuild": 22000,
+  "look": {
+    "darkMode": true,
+    "backdrop": "none",
+    "captionColor": "#000000",
+    "borderColor": "none",
+    "textColor": "#D0D0D0",
+    "corners": "default"
+  },
+  "notes": [
+    "Focus Look changes frames only when focus moves. It never dims windows or draws over them.",
+    "A per-app rule that sets its own colors keeps them."
+  ]
+}

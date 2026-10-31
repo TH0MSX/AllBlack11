@@ -42,6 +42,13 @@ pub struct Ext {
     /// The host handles window commands a moment after Settings queues them; re-read the
     /// report once it has had time to.
     pub refresh_pending: bool,
+    pub scenes: Vec<crate::Scene>,
+    pub book: crate::LookBook,
+    /// Selected item in the combined list (scenes first, then saved looks).
+    pub look_sel: Option<usize>,
+    /// Item marked with "Compare…" to diff the next selection against.
+    pub look_mark: Option<usize>,
+    pub look_diff: Vec<String>,
 }
 
 impl Page {
@@ -150,6 +157,11 @@ impl Ui {
         });
         if self.config.focus.enabled {
             now.push("Focus Look is on.".to_string());
+        }
+        if let Some(id) = crate::active_scene(&self.config) {
+            if let Some(scene) = crate::scene_catalog().iter().find(|s| s.id == id) {
+                now.push(format!("Scene: {}.", scene.name));
+            }
         }
         b.push(Row::About(now));
         b.push(Row::Header("About"));
@@ -396,6 +408,42 @@ impl Ui {
 
     fn rows_scenes(&self) -> Vec<Laid> {
         let mut b = Builder::new();
+        b.push(Row::Header("Scenes and your Look Book"));
+        b.push(Row::Note(
+            "A scene sets the default look and Focus Look. It never changes your per-app rules, exclusions, the shell or the legacy layer, so an app with its own rule keeps its own colors. Scenes change window frames only.",
+        ));
+        let current = match crate::active_scene(&self.config) {
+            Some(id) => self
+                .ext
+                .scenes
+                .iter()
+                .find(|scene| scene.id == id)
+                .map(|scene| format!("Right now: the {} scene.", scene.name))
+                .unwrap_or_else(|| "Right now: a built-in scene.".to_string()),
+            None => match self
+                .ext
+                .book
+                .looks
+                .iter()
+                .find(|look| crate::preview_scene(&self.config, *look).is_empty())
+            {
+                Some(look) => format!("Right now: your look “{}”.", look.name),
+                None => "Right now: a custom look (not one of the scenes below).".to_string(),
+            },
+        };
+        b.push(Row::About(vec![current]));
+        b.push_h(Row::LookList, list_height(self.look_count().min(40)));
+        b.push(Row::Lines(self.look_details()));
+        b.push(Row::Buttons(vec![
+            Button::TryScene,
+            Button::MarkCompare,
+            Button::RenameLook,
+            Button::DeleteLook,
+        ]));
+        b.push(Row::Note(
+            "Try runs the look for 15 seconds. Nothing is saved until you press Keep. Type a name to save, rename or label a look.",
+        ));
+        b.push(Row::AddField(Button::SaveLook));
         b.push(Row::Header("Recipes"));
         b.push(Row::Note(
             "A recipe is a small data file describing a look. It cannot run anything or change the shell. Built-in recipes are trusted; imported ones are checked and shown to you before they are tried.",
@@ -745,7 +793,10 @@ impl Ui {
         self.ext.focus = None;
         match page {
             Page::Apps => self.refresh_windows(),
-            Page::Scenes => self.refresh_recipes(),
+            Page::Scenes => {
+                self.refresh_recipes();
+                self.refresh_looks();
+            }
             _ => {}
         }
         self.relayout(hwnd);
@@ -981,6 +1032,7 @@ impl Ui {
                 }
                 Row::Buttons(list) => Some((index, list.len())),
                 Row::Presets => Some((index, PRESETS.len())),
+                Row::LookList if self.look_count() > 0 => Some((index, self.look_count())),
                 _ => None,
             })
             .collect()
@@ -1066,9 +1118,229 @@ impl Ui {
                 }
             }
             Row::Presets => self.apply_preset(sub.min(PRESETS.len() - 1)),
+            Row::LookList => self.click_look_list(sub as i32),
             _ => {}
         }
         self.relayout(hwnd);
+    }
+}
+
+// ---------------------------------------------------------------------------
+// Scenes and the Look Book
+// ---------------------------------------------------------------------------
+
+impl Ui {
+    pub fn refresh_looks(&mut self) {
+        self.ext.scenes = crate::scene_catalog();
+        self.ext.book = super::super::cfgio::load_lookbook();
+        if self.ext.look_sel.is_some_and(|i| i >= self.look_count()) {
+            self.ext.look_sel = None;
+        }
+        if self.ext.look_mark.is_some_and(|i| i >= self.look_count()) {
+            self.ext.look_mark = None;
+        }
+        self.update_look_diff();
+    }
+
+    pub fn look_count(&self) -> usize {
+        self.ext.scenes.len() + self.ext.book.looks.len()
+    }
+
+    pub fn look_at(&self, index: usize) -> Option<&dyn crate::SceneLike> {
+        let scenes = self.ext.scenes.len();
+        if index < scenes {
+            self.ext
+                .scenes
+                .get(index)
+                .map(|s| s as &dyn crate::SceneLike)
+        } else {
+            self.ext
+                .book
+                .looks
+                .get(index - scenes)
+                .map(|l| l as &dyn crate::SceneLike)
+        }
+    }
+
+    fn look_name(&self, index: usize) -> String {
+        let scenes = self.ext.scenes.len();
+        if index < scenes {
+            self.ext.scenes[index].name.clone()
+        } else {
+            self.ext
+                .book
+                .looks
+                .get(index - scenes)
+                .map(|l| l.name.clone())
+                .unwrap_or_default()
+        }
+    }
+
+    fn look_is_mine(&self, index: usize) -> bool {
+        index >= self.ext.scenes.len()
+    }
+
+    pub fn click_look_list(&mut self, index: i32) {
+        if index >= 0 && (index as usize) < self.look_count() {
+            self.ext.look_sel = Some(index as usize);
+            self.update_look_diff();
+        }
+    }
+
+    fn update_look_diff(&mut self) {
+        let Some(selected) = self.ext.look_sel else {
+            self.ext.look_diff.clear();
+            return;
+        };
+        let Some(item) = self.look_at(selected) else {
+            self.ext.look_diff.clear();
+            return;
+        };
+        let changes = match self.ext.look_mark.filter(|mark| *mark != selected) {
+            Some(mark) => match self.look_at(mark) {
+                Some(base) => crate::compare_looks(base, item),
+                None => crate::preview_scene(&self.config, item),
+            },
+            None => crate::preview_scene(&self.config, item),
+        };
+        self.ext.look_diff = changes
+            .iter()
+            .map(|c| format!("{}: {} → {}", c.field, c.from, c.to))
+            .collect();
+    }
+
+    pub fn look_details(&self) -> Vec<String> {
+        let Some(selected) = self.ext.look_sel else {
+            return vec![
+                "Pick a scene or one of your looks to see what it would change.".to_string(),
+            ];
+        };
+        let scenes = self.ext.scenes.len();
+        let mut lines = Vec::new();
+        if selected < scenes {
+            let scene = &self.ext.scenes[selected];
+            lines.push(format!("{}: {}", scene.name, scene.blurb));
+            lines.push(format!("Not included: {}", scene.limit));
+        } else if let Some(look) = self.ext.book.looks.get(selected - scenes) {
+            lines.push(format!("{} (your look)", look.name));
+            lines.push(format!("Saved {}", crate::format_unix_utc(look.created)));
+        }
+        let base = self
+            .ext
+            .look_mark
+            .filter(|mark| *mark != selected)
+            .map(|mark| self.look_name(mark));
+        match (&base, self.ext.look_diff.is_empty()) {
+            (Some(base), true) => lines.push(format!("Same as {base}.")),
+            (Some(base), false) => lines.push(format!("Compared with {base}:")),
+            (None, true) => {
+                lines.push("It would change nothing: your look already matches.".to_string())
+            }
+            (None, false) => lines.push("Applying it would change:".to_string()),
+        }
+        lines.extend(self.ext.look_diff.iter().map(|line| format!("  {line}")));
+        lines
+    }
+
+    fn look_arg_name(&self) -> String {
+        get_text(self.edits.look).trim().to_string()
+    }
+
+    fn try_scene(&mut self) {
+        let Some(index) = self.ext.look_sel else {
+            self.status = "Pick a scene or a look first.".into();
+            return;
+        };
+        let name = self.look_name(index);
+        let mut next = self.config.clone();
+        match self.look_at(index) {
+            Some(item) => {
+                crate::apply_scene(&mut next, item);
+            }
+            None => return,
+        }
+        self.begin_trial(&name, next);
+    }
+
+    fn save_look(&mut self) {
+        let name = self.look_arg_name();
+        let now = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .map(|d| d.as_secs())
+            .unwrap_or(0);
+        let mut book = super::super::cfgio::load_lookbook();
+        match book.add(&name, &self.config, now) {
+            Ok(_) => match super::super::cfgio::save_lookbook(&book) {
+                Ok(()) => {
+                    set_text(self.edits.look, "");
+                    self.status = format!("Saved “{name}” to your Look Book.");
+                    self.refresh_looks();
+                    self.ext.look_sel = Some(self.look_count() - 1);
+                    self.update_look_diff();
+                }
+                Err(err) => self.status = format!("Could not save the Look Book: {err}"),
+            },
+            Err(err) => self.status = err,
+        }
+    }
+
+    fn rename_look(&mut self) {
+        let Some(index) = self.ext.look_sel.filter(|i| self.look_is_mine(*i)) else {
+            self.status =
+                "Pick one of your own looks to rename. Built-in scenes keep their names.".into();
+            return;
+        };
+        let id = self.ext.book.looks[index - self.ext.scenes.len()]
+            .id
+            .clone();
+        let name = self.look_arg_name();
+        let mut book = super::super::cfgio::load_lookbook();
+        match book.rename(&id, &name) {
+            Ok(()) => match super::super::cfgio::save_lookbook(&book) {
+                Ok(()) => {
+                    set_text(self.edits.look, "");
+                    self.status = format!("Renamed to “{name}”.");
+                    self.refresh_looks();
+                }
+                Err(err) => self.status = format!("Could not save the Look Book: {err}"),
+            },
+            Err(err) => self.status = err,
+        }
+    }
+
+    fn delete_look(&mut self) {
+        let Some(index) = self.ext.look_sel.filter(|i| self.look_is_mine(*i)) else {
+            self.status =
+                "Pick one of your own looks to delete. Built-in scenes cannot be deleted.".into();
+            return;
+        };
+        let look = &self.ext.book.looks[index - self.ext.scenes.len()];
+        let (id, name) = (look.id.clone(), look.name.clone());
+        let mut book = super::super::cfgio::load_lookbook();
+        book.remove(&id);
+        match super::super::cfgio::save_lookbook(&book) {
+            Ok(()) => {
+                self.status = format!("Deleted “{name}”.");
+                self.ext.look_sel = None;
+                self.ext.look_mark = None;
+                self.refresh_looks();
+            }
+            Err(err) => self.status = format!("Could not save the Look Book: {err}"),
+        }
+    }
+
+    fn mark_compare(&mut self) {
+        match self.ext.look_sel {
+            Some(index) => {
+                self.ext.look_mark = Some(index);
+                self.status = format!(
+                    "Now pick another look to compare it with {}.",
+                    self.look_name(index)
+                );
+                self.update_look_diff();
+            }
+            None => self.status = "Pick a scene or a look first.".into(),
+        }
     }
 }
 
@@ -1225,6 +1497,54 @@ pub fn paint_extra(c: &Canvas, ui: &Ui, row: &Laid, top: i32, lw: i32) {
                 );
             }
         }
+        Row::LookList => {
+            card(c, top, row.h, lw);
+            let scenes = ui.ext.scenes.len();
+            for index in 0..ui.look_count().min(40) {
+                let Some(item) = ui.look_at(index) else {
+                    continue;
+                };
+                let line_top = top + 8 + index as i32 * LIST_LINE;
+                if ui.ext.look_sel == Some(index) {
+                    c.round(
+                        MARGIN + 6,
+                        line_top,
+                        lw - MARGIN - 6,
+                        line_top + LIST_LINE,
+                        4,
+                        Some(CARD_HI),
+                        Some(ui.accent),
+                    );
+                }
+                let tag = if index < scenes { "scene" } else { "yours" };
+                let mark = if ui.ext.look_mark == Some(index) {
+                    "  ·  compare base"
+                } else {
+                    ""
+                };
+                let chips = crate::scene_swatch(item, ui.accent_bgr_for_demo());
+                let chips_left = right - 3 * 20;
+                c.text(
+                    left,
+                    line_top,
+                    chips_left - 6,
+                    line_top + LIST_LINE,
+                    &format!("{}  ·  {tag}{mark}", ui.look_name(index)),
+                    TEXT,
+                    fonts.small,
+                    DT_LEFT | DT_VCENTER | DT_SINGLELINE | DT_END_ELLIPSIS,
+                );
+                for (slot, color) in [chips.caption, chips.border, chips.text].iter().enumerate() {
+                    let x = chips_left + slot as i32 * 20;
+                    let (l, t, r, b) = (x, line_top + 5, x + 14, line_top + 19);
+                    match color {
+                        Some(value) => c.round(l, t, r, b, 3, Some(*value), Some(MUTED)),
+                        // Nothing is drawn there by this look: show an empty outline.
+                        None => c.round(l, t, r, b, 3, None, Some(MUTED)),
+                    }
+                }
+            }
+        }
         Row::Filter => {
             card(c, top, row.h, lw);
             c.text(
@@ -1261,6 +1581,19 @@ pub fn paint_focus_ring(c: &Canvas, ui: &Ui, row: &Laid, top: i32, lw: i32) {
         let (l, t, r, b) =
             buttons_rect(lw, list.len(), ui.ext.focus_sub.min(list.len() - 1), row.h);
         c.round(l - 2, top + t - 2, r + 2, top + b + 2, 6, None, Some(TEXT));
+    }
+    if matches!(row.row, Row::LookList) {
+        let line_top =
+            top + 8 + ui.ext.focus_sub.min(ui.look_count().saturating_sub(1)) as i32 * LIST_LINE;
+        c.round(
+            MARGIN + 4,
+            line_top - 1,
+            lw - MARGIN - 4,
+            line_top + LIST_LINE + 1,
+            5,
+            None,
+            Some(TEXT),
+        );
     }
     if matches!(row.row, Row::Presets) {
         let (l, t, r, b) = preset_rect(lw, ui.ext.focus_sub.min(PRESETS.len() - 1));
@@ -1353,6 +1686,11 @@ impl Ui {
                 }
             }
             Button::CopyReport => self.copy_report(),
+            Button::TryScene => self.try_scene(),
+            Button::SaveLook => self.save_look(),
+            Button::RenameLook => self.rename_look(),
+            Button::DeleteLook => self.delete_look(),
+            Button::MarkCompare => self.mark_compare(),
             Button::PauseAll => {
                 cmdq::push(AppCommand::Pause);
                 self.post_command();
