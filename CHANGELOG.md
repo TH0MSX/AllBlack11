@@ -27,12 +27,13 @@ A preview. It is built on 1.2.0 and rebuilds the Settings window, the tray menu,
 - `build.sh` did not build the hook DLL, so zips from it had no hook. It now builds the app, hook, and Setup for each CPU type and checks that every binary's PE machine type matches.
 - `install.ps1` refuses a zip whose hook DLL and exe are for different CPUs.
 - The embedded manifest still said 1.1.1.
+- Found on real hardware before release: descriptions in Settings were cut off, Setup's status line overlapped its explanation text, color fields drew their text at the top of the box, and the version showed as "3 Preview". All fixed.
 
 **Unchanged and worth knowing on ARM64**
 
 - The experimental dark legacy hook only enters processes of its own CPU type. On ARM64 it covers native ARM64 apps; apps running under x64 emulation are skipped. Settings now says so next to the switch.
 - The binaries are unsigned. SmartScreen asks for More info, then Run anyway.
-- This preview was built and type-checked for both targets and unit-tested for its logic, but the GUI was not run on real Windows hardware before tagging. Please report anything that looks off.
+- The GUI has been run on a Snapdragon ZenBook (Setup and Settings), but not every path: Restart Explorer, uninstall, and the x64 builds have not been exercised on hardware. Please report anything that looks off.
 
 ## 1.2.0
 

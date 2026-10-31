@@ -77,7 +77,7 @@ mod win {
 
     fn display_version() -> String {
         match VERSION.split_once("-preview") {
-            Some((base, _)) => format!("{} Preview", base.trim_end_matches(".0")),
+            Some((base, _)) => format!("{} Preview", base.strip_suffix(".0").unwrap_or(base)),
             None => VERSION.to_string(),
         }
     }
@@ -430,7 +430,7 @@ mod win {
     const SS_LEFT: u32 = 0x0000;
     const HEADER_H: i32 = 104;
     const W: i32 = 520;
-    const H: i32 = 430;
+    const H: i32 = 462;
 
     struct Wizard {
         font: HFONT,
@@ -524,7 +524,7 @@ mod win {
             } else {
                 format!("Native {} build for this {} PC.", machine_name(BUILD_MACHINE), machine_name(machine))
             };
-            child(hwnd, "STATIC", &format!("Installs for your account only, in {}. No administrator rights.", dest_dir().display()), SS_LEFT, 28, HEADER_H + 16, W - 56, 36, 0, small, k);
+            child(hwnd, "STATIC", &format!("Installs for your account only, in {}. No administrator rights.", dest_dir().display()), SS_LEFT, 28, HEADER_H + 14, W - 56, 40, 0, small, k);
             child(hwnd, "STATIC", &cpu, SS_LEFT, 28, HEADER_H + 56, W - 56, 34, 0, small, k);
             let boxes = [
                 child(hwnd, "BUTTON", "Start AllBlack11 when I sign in", WS_TABSTOP | BS_AUTOCHECKBOX, 28, HEADER_H + 106, W - 56, 24, ID_AUTOSTART, body, k),
@@ -534,8 +534,8 @@ mod win {
             for check in boxes {
                 SendMessageW(check, BM_SETCHECK, 1, 0);
             }
-            child(hwnd, "STATIC", "Nothing is changed in Windows until you turn a feature on in Settings. Everything it changes can be undone from the same place, or by uninstalling.", SS_LEFT, 28, HEADER_H + 210, W - 56, 50, 0, small, k);
-            let status = child(hwnd, "STATIC", "", SS_LEFT, 28, H - 94, W - 56, 22, 0, small, k);
+            child(hwnd, "STATIC", "Nothing is changed in Windows until you turn a feature on in Settings. Everything it changes can be undone from the same place, or by uninstalling.", SS_LEFT, 28, HEADER_H + 206, W - 56, 60, 0, small, k);
+            let status = child(hwnd, "STATIC", "", SS_LEFT, 28, H - 90, W - 56, 22, 0, small, k);
             let install_button = child(hwnd, "BUTTON", if updating { "Update" } else { "Install" }, WS_TABSTOP | BS_DEFPUSHBUTTON, W - 28 - 110 - 96 - 12 - 110, H - 56, 110, 32, ID_INSTALL, body, k);
             let uninstall_button = child(hwnd, "BUTTON", "Uninstall", WS_TABSTOP, W - 28 - 96 - 12 - 110, H - 56, 110, 32, ID_UNINSTALL, body, k);
             let close_button = child(hwnd, "BUTTON", "Close", WS_TABSTOP, W - 28 - 96, H - 56, 96, 32, ID_CLOSE, body, k);

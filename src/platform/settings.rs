@@ -246,18 +246,18 @@ fn choice_desc(ui: &Ui, id: Choice) -> &'static str {
     let style = ui.current_style();
     match id {
         Choice::Backdrop => match style.backdrop {
-            Backdrop::Auto => "Let Windows pick the material. Click to cycle.",
-            Backdrop::None => "No material. The app's own background shows. Click to cycle.",
-            Backdrop::Mica => "Soft, wallpaper-tinted surface. Needs Windows 11 22621 or newer. Click to cycle.",
-            Backdrop::MicaAlt => "Mica with a stronger, darker tint. Click to cycle.",
-            Backdrop::Acrylic => "Windows' frosted glass. Its tint cannot be changed. Click to cycle.",
-            Backdrop::TintedAcrylic => "Frosted glass in your own tint and opacity, set below. Click to cycle.",
+            Backdrop::Auto => "Let Windows pick the material.",
+            Backdrop::None => "No material. The app's own background shows.",
+            Backdrop::Mica => "Soft, wallpaper-tinted surface. Needs Windows 11 22621 or newer.",
+            Backdrop::MicaAlt => "Mica with a stronger, darker tint.",
+            Backdrop::Acrylic => "Windows' frosted glass. Its tint cannot be changed.",
+            Backdrop::TintedAcrylic => "Frosted glass in your own tint and opacity, set below.",
         },
         Choice::Corners => match style.corners {
-            Corners::Default => "Windows decides, which is rounded on Windows 11. Click to cycle.",
-            Corners::Round => "Standard rounded corners. Click to cycle.",
-            Corners::Small => "A smaller corner radius. Click to cycle.",
-            Corners::Square => "Sharp corners, like Windows 10. Click to cycle.",
+            Corners::Default => "Windows decides, which is rounded on Windows 11.",
+            Corners::Round => "Standard rounded corners.",
+            Corners::Small => "A smaller corner radius.",
+            Corners::Square => "Sharp corners, like Windows 10.",
         },
     }
 }
@@ -317,25 +317,32 @@ fn button_meta(id: Button) -> (&'static str, &'static str, &'static str) {
     }
 }
 
-/// Rows include the gap under their card.
+/// Rows include the gap under their card. Wrap estimates assume the narrowest window
+/// (about 6.5 logical px per character at 13 px), so text is never clipped.
+fn lines(text: &str, per_line: usize) -> i32 {
+    ((text.chars().count() + per_line - 1) / per_line).max(1) as i32
+}
+
 fn row_height(row: &Row) -> i32 {
     match row {
         Row::Header(_) => 44,
-        Row::Note(text) => 10 + 16 * (text.len() as i32 / 70 + 1),
+        Row::Note(text) => 10 + 16 * lines(text, 58),
         Row::Toggle(id) => {
             let (_, desc) = toggle_meta(*id);
-            let lines = desc.len() as i32 / 68 + 1;
-            (44 + 15 * (lines - 1).max(0) + if lines > 1 { 4 } else { 0 }).max(56) + GAP
+            (40 + 16 * lines(desc, 40)).max(56) + GAP
         }
-        Row::Choice(_) => 60 + GAP,
+        Row::Choice(_) => (40 + 16 * 2).max(56) + GAP,
         Row::Slider(_) => 92 + GAP,
         Row::Color(_) => 52 + GAP,
         Row::Presets => 112 + GAP,
         Row::RuleList | Row::ExcludeList => 0, // sized by the caller from the list length
         Row::Action(id) => {
             let (_, desc, _) = button_meta(*id);
-            let lines = desc.len() as i32 / 48 + 1;
-            (44 + 15 * lines).max(60) + GAP
+            if desc.is_empty() {
+                60 + GAP
+            } else {
+                (40 + 16 * lines(desc, 30)).max(60) + GAP
+            }
         }
         Row::AddField(_) => 52 + GAP,
         Row::About(lines) => 24 + 20 * lines.len() as i32 + GAP,
@@ -1207,14 +1214,14 @@ impl Ui {
             let wanted = match row.row {
                 Row::Color(id) => self
                     .color_edit(id)
-                    .map(|edit| (edit, spot(lw - MARGIN - PAD - 120, 12, 120, 28))),
+                    .map(|edit| (edit, spot(lw - MARGIN - PAD - 120, 14, 120, 24))),
                 Row::AddField(Button::AddRule) => Some((
                     self.edits.rule,
-                    spot(MARGIN + PAD, 12, lw - 2 * MARGIN - 2 * PAD - 96, 28),
+                    spot(MARGIN + PAD, 14, lw - 2 * MARGIN - 2 * PAD - 96, 24),
                 )),
                 Row::AddField(Button::AddExclude) => Some((
                     self.edits.exclude,
-                    spot(MARGIN + PAD, 12, lw - 2 * MARGIN - 2 * PAD - 96, 28),
+                    spot(MARGIN + PAD, 14, lw - 2 * MARGIN - 2 * PAD - 96, 24),
                 )),
                 _ => None,
             };

@@ -48,6 +48,18 @@ Windows 11 dark mode still paints gray title bars, a gray taskbar, and a tinted 
       <br>Frames, shell colors, autostart, and a full undo.
     </td>
   </tr>
+  <tr>
+    <td width="50%" align="center">
+      <img src="docs/screenshots/settings.png" alt="AllBlack11 Settings: live preview, quick looks, and one card per option" width="100%">
+      <br><strong>Settings with a live preview</strong>
+      <br>One card per option, an explanation under each, and a preview that redraws as you change things.
+    </td>
+    <td width="50%" align="center">
+      <img src="docs/screenshots/setup.png" alt="AllBlack11 Setup on Windows 11 ARM64" width="100%">
+      <br><strong>A regular Setup</strong>
+      <br>Native ARM64 installer. Per user, no administrator rights, with an Apps entry and a clean uninstall.
+    </td>
+  </tr>
 </table>
 
 - Per-window dark captions, border, text color, corners, and backdrop (Mica, Mica Alt, Acrylic, or tinted acrylic).
@@ -239,7 +251,7 @@ Same program, new name. The first launch copies the old config and snapshots whe
 ## 🗺️ Roadmap
 
 - A signed build, if a certificate is available.
-- Real screenshots of the 3.0 Settings window (the ones above are from 1.x).
+- A screenshot of the Restart Explorer confirmation and the Presets in use.
 - Covering x64-emulated apps with the experimental dark-dialog hook on ARM64 (needs a helper process).
 - More per-app recipes in the default config, still opt-in.
 

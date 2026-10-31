@@ -915,13 +915,8 @@ fn show_menu(hwnd: HWND) {
     settings::notify_external_change();
 }
 
-/// Version for display: the Cargo version without the `.0` patch of a preview.
 pub fn display_version() -> String {
-    let version = env!("CARGO_PKG_VERSION");
-    match version.split_once("-preview") {
-        Some((base, _)) => format!("{} Preview", base.trim_end_matches(".0")),
-        None => version.to_string(),
-    }
+    crate::display_version(env!("CARGO_PKG_VERSION"))
 }
 
 fn item(id: u32, label: &str, kind: ItemKind, enabled: bool) -> Item {
