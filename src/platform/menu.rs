@@ -19,10 +19,10 @@ use windows_sys::Win32::UI::Controls::{
 };
 use windows_sys::Win32::UI::WindowsAndMessaging::{
     AppendMenuW, CallNextHookEx, CreatePopupMenu, DestroyMenu, DrawMenuBar, GetClassNameW,
-    GetCursorPos, GetMenuItemCount, PostMessageW, SetForegroundWindow, SetMenuInfo, SetMenuItemInfoW,
-    SetWindowsHookExW, TrackPopupMenuEx, UnhookWindowsHookEx, HMENU, MENUINFO, MENUITEMINFOW,
+    GetCursorPos, PostMessageW, SetForegroundWindow, SetMenuInfo,
+    SetWindowsHookExW, TrackPopupMenuEx, UnhookWindowsHookEx, HMENU, MENUINFO,
     MF_CHECKED, MF_DISABLED, MF_GRAYED, MF_OWNERDRAW, MF_POPUP, MF_SEPARATOR, MF_STRING,
-    MIM_APPLYTOSUBMENUS, MIM_BACKGROUND, MIIM_DATA, MSG, TPM_BOTTOMALIGN, TPM_NONOTIFY, TPM_RETURNCMD,
+    MIM_APPLYTOSUBMENUS, MIM_BACKGROUND, MSG, TPM_BOTTOMALIGN, TPM_NONOTIFY, TPM_RETURNCMD,
     TPM_RIGHTBUTTON, WH_CBT, WM_NULL, WM_UNINITMENUPOPUP,
 };
 
@@ -234,28 +234,18 @@ fn fill_themed(menu: HMENU, items: &[Item]) {
         if item.kind == ItemKind::Separator {
             flags = MF_OWNERDRAW | MF_SEPARATOR;
         }
+        // For MF_OWNERDRAW the last argument of AppendMenuW is the item data, so the index
+        // goes in here. Patching it afterwards by command id breaks for the title and the
+        // separators, which all share id 0 and would all resolve to the first of them.
+        let data = index as *const u16;
         unsafe {
             if item.kind == ItemKind::Submenu {
                 let child = CreatePopupMenu();
                 fill_themed(child, &item.children);
-                AppendMenuW(menu, flags | MF_POPUP, child as usize, std::ptr::null());
+                AppendMenuW(menu, flags | MF_POPUP, child as usize, data);
             } else {
-                AppendMenuW(menu, flags, item.id as usize, std::ptr::null());
+                AppendMenuW(menu, flags, item.id as usize, data);
             }
-            let mut info: MENUITEMINFOW = std::mem::zeroed();
-            info.cbSize = std::mem::size_of::<MENUITEMINFOW>() as u32;
-            info.fMask = MIIM_DATA;
-            info.dwItemData = index;
-            SetMenuItemInfoW(
-                menu,
-                if item.kind == ItemKind::Submenu {
-                    GetMenuItemCount(menu) as u32 - 1
-                } else {
-                    item.id
-                },
-                i32::from(item.kind == ItemKind::Submenu),
-                &info,
-            );
         }
     }
 }

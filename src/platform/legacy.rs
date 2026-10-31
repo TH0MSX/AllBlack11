@@ -28,7 +28,7 @@ use windows_sys::Win32::UI::WindowsAndMessaging::{
 };
 
 use crate::config::{exe_matches, file_name};
-use crate::inject::{inject_allowed, is_control_panel_title, InjectTarget};
+use crate::inject::{inject_allowed, InjectTarget};
 
 use super::wide::{exe_path, pcw, to_wide};
 
@@ -107,8 +107,12 @@ pub fn consider(hwnd: HWND, exclude: &[String]) {
     }
     let class = class_name(hwnd);
     let title = window_title(hwnd);
-    let control_panel = is_control_panel_title(&title);
-    let candidate = class == "#32770" || control_panel || class.eq_ignore_ascii_case("MMCMainFrame");
+    // Explorer-hosted Control Panel is deliberately not a candidate. Its address band and
+    // toolbar are common controls that turn into black blocks when themed dark over a light
+    // DirectUI page, and the page itself cannot be recolored from here.
+    let control_panel = false;
+    let _ = &title;
+    let candidate = class == "#32770" || class.eq_ignore_ascii_case("MMCMainFrame");
     if !candidate {
         return;
     }
@@ -140,10 +144,10 @@ pub fn nudge(hwnd: HWND) {
     if hwnd.is_null() {
         return;
     }
+    // Classic dialogs only. Never Explorer windows, and never MMC frames: their toolbars and
+    // address bands break when themed from outside the process.
     let class = class_name(hwnd);
-    let title = window_title(hwnd);
-    if class != "#32770" && !is_control_panel_title(&title) && !class.eq_ignore_ascii_case("MMCMainFrame")
-    {
+    if class != "#32770" {
         return;
     }
     unsafe {
