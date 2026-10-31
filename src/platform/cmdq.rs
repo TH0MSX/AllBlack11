@@ -20,7 +20,11 @@ pub enum AppCommand {
         style: Style,
     },
     /// Put one window back as it was.
-    RestoreWindow { key: i64, pid: u32, create: u64 },
+    RestoreWindow {
+        key: i64,
+        pid: u32,
+        create: u64,
+    },
     /// Run this whole config in memory for a few seconds. Nothing is saved until `TrialKeep`.
     TrialStart(Box<Config>),
     TrialKeep,
@@ -32,7 +36,10 @@ pub enum AppCommand {
 static QUEUE: Mutex<Vec<AppCommand>> = Mutex::new(Vec::new());
 
 pub fn push(command: AppCommand) {
-    QUEUE.lock().unwrap_or_else(|err| err.into_inner()).push(command);
+    QUEUE
+        .lock()
+        .unwrap_or_else(|err| err.into_inner())
+        .push(command);
 }
 
 pub fn drain() -> Vec<AppCommand> {

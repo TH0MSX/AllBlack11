@@ -47,8 +47,8 @@ use super::cfgio;
 use super::registry;
 use super::sysinfo;
 use super::uxtheme;
-use windows_sys::Win32::UI::WindowsAndMessaging::WM_TIMER;
 use super::wide::{config_dir, log_path, pcw, recipes_dir, to_wide, write_atomic};
+use windows_sys::Win32::UI::WindowsAndMessaging::WM_TIMER;
 
 #[path = "settings_pages.rs"]
 mod pages;
@@ -237,6 +237,7 @@ enum Button {
     ResetAllWindows,
     UndoShell,
     OpenHarness,
+    DemoMaterials,
 }
 
 struct Laid {
@@ -439,6 +440,11 @@ fn button_meta(id: Button) -> (&'static str, &'static str, &'static str) {
             "Turns off the OLED taskbar and black Start, restoring the values saved before AllBlack11 changed them. A value you changed yourself since then is left alone.",
             "Undo shell changes",
         ),
+        Button::DemoMaterials => (
+            "Materials demonstration",
+            "Opens a window that applies this look to itself, with a transparent, an opaque and a half-transparent panel. It shows how Windows materials behave. It does not show how another app will look.",
+            "Open demonstration",
+        ),
         Button::OpenHarness => (
             "Control harness",
             "A small window with every control type and state, for checking the legacy layer without relying on another app. It ships in the portable zip.",
@@ -475,9 +481,7 @@ fn row_height(row: &Row) -> i32 {
             }
         }
         Row::AddField(_) => 52 + GAP,
-        Row::Lines(items) => {
-            20 + items.iter().map(|line| 16 * lines(line, 64)).sum::<i32>() + GAP
-        }
+        Row::Lines(items) => 20 + items.iter().map(|line| 16 * lines(line, 64)).sum::<i32>() + GAP,
         Row::Buttons(_) => 52 + GAP,
         Row::WindowList | Row::RecipeList => 0, // sized by the caller
         Row::Filter => 52 + GAP,
@@ -689,7 +693,11 @@ unsafe extern "system" fn wndproc(hwnd: HWND, msg: u32, wparam: WPARAM, lparam: 
                     // Ctrl+Tab and Ctrl+Shift+Tab switch pages.
                     let count = Page::ALL.len();
                     let current = Page::ALL.iter().position(|p| *p == ui.page).unwrap_or(0);
-                    let next = if shift { (current + count - 1) % count } else { (current + 1) % count };
+                    let next = if shift {
+                        (current + count - 1) % count
+                    } else {
+                        (current + 1) % count
+                    };
                     ui.set_page(hwnd, Page::ALL[next]);
                     return 0;
                 }
@@ -1172,12 +1180,13 @@ impl Ui {
                     self.status = "Type an exe name, such as notepad.exe.".into();
                     return;
                 }
-                if let Some(index) = self
-                    .config
-                    .rules
-                    .iter()
-                    .position(|rule| rule.process.eq_ignore_ascii_case(&name) && rule.class.is_none() && rule.path.is_none() && rule.package.is_none() && rule.title.is_none())
-                {
+                if let Some(index) = self.config.rules.iter().position(|rule| {
+                    rule.process.eq_ignore_ascii_case(&name)
+                        && rule.class.is_none()
+                        && rule.path.is_none()
+                        && rule.package.is_none()
+                        && rule.title.is_none()
+                }) {
                     self.rule = Some(index);
                 } else {
                     let mut rule = Rule::for_process(&name);

@@ -67,7 +67,10 @@ struct Builder {
 
 impl Builder {
     fn new() -> Self {
-        Self { y: 8, out: Vec::new() }
+        Self {
+            y: 8,
+            out: Vec::new(),
+        }
     }
 
     fn push(&mut self, row: Row) {
@@ -168,7 +171,11 @@ impl Ui {
             target,
             "Pick a different target on the Apps page.".to_string(),
         ]));
-        b.push(Row::Header(if self.rule.is_some() { "Look for one app" } else { "Window look" }));
+        b.push(Row::Header(if self.rule.is_some() {
+            "Look for one app"
+        } else {
+            "Window look"
+        }));
         if self.rule.is_some() {
             b.push(Row::Toggle(Toggle::RuleOn));
             b.push(Row::Action(Button::UseDefault));
@@ -190,6 +197,7 @@ impl Ui {
         ));
         b.push(Row::Toggle(Toggle::Blur));
         b.push(Row::Action(Button::PreferAppDefaults));
+        b.push(Row::Action(Button::DemoMaterials));
         b.push(Row::Header("Focus Look"));
         b.push(Row::Toggle(Toggle::FocusLook));
         b.push(Row::Toggle(Toggle::Reapply));
@@ -205,7 +213,10 @@ impl Ui {
     fn rows_apps(&self) -> Vec<Laid> {
         let mut b = Builder::new();
         b.push(Row::Header("Pick a window"));
-        b.push(Row::Buttons(vec![Button::PickWindow, Button::RefreshWindows]));
+        b.push(Row::Buttons(vec![
+            Button::PickWindow,
+            Button::RefreshWindows,
+        ]));
         b.push(Row::Note(
             "Press Pick, drag the crosshair onto any window, and let go. Or choose from the list.",
         ));
@@ -243,7 +254,10 @@ impl Ui {
         ));
         b.push_h(Row::RuleList, list_height(self.config.rules.len()));
         if let Some(rule) = self.rule.and_then(|index| self.config.rules.get(index)) {
-            let mut detail = vec![format!("Selected: {}", rule.label()), format!("Priority {}", rule.priority)];
+            let mut detail = vec![
+                format!("Selected: {}", rule.label()),
+                format!("Priority {}", rule.priority),
+            ];
             if !rule.process.is_empty() {
                 detail.push(format!("Executable: {}", rule.process));
             }
@@ -280,7 +294,9 @@ impl Ui {
         };
         b.push(Row::Lines(conflict_lines));
         b.push(Row::Header("Never theme these apps"));
-        b.push(Row::Note("Games and launchers belong here. Use the exe name, such as steam.exe."));
+        b.push(Row::Note(
+            "Games and launchers belong here. Use the exe name, such as steam.exe.",
+        ));
         b.push_h(Row::ExcludeList, list_height(self.config.exclude.len()));
         b.push(Row::AddField(Button::AddExclude));
         b.push(Row::Action(Button::RemoveExclude));
@@ -294,7 +310,8 @@ impl Ui {
         b.push(Row::Choice(Choice::Palette));
         b.push(Row::Toggle(Toggle::EmulatedX64));
         let mut state = vec![if self.config.experimental_dark_legacy {
-            "On. Classic dialogs in eligible, non-elevated apps are recolored from inside the app.".to_string()
+            "On. Classic dialogs in eligible, non-elevated apps are recolored from inside the app."
+                .to_string()
         } else {
             "Off. Nothing is loaded into any other process.".to_string()
         }];
@@ -333,7 +350,11 @@ impl Ui {
                     format!(
                         "{} ({})",
                         recipe.name,
-                        if *trust == Trust::Bundled { "built in" } else { "imported, review before use" }
+                        if *trust == Trust::Bundled {
+                            "built in"
+                        } else {
+                            "imported, review before use"
+                        }
                     ),
                     recipe.description.clone(),
                     format!("Applies to: {}", recipe.target_label()),
@@ -498,11 +519,21 @@ pub fn paint_nav(c: &Canvas, ui: &Ui, lw: i32) {
             top + NAV_H - 4,
             page.title(),
             if selected { TEXT } else { MUTED },
-            if selected { ui.fonts.head } else { ui.fonts.body },
+            if selected {
+                ui.fonts.head
+            } else {
+                ui.fonts.body
+            },
             DT_CENTER | DT_VCENTER | DT_SINGLELINE,
         );
         if selected {
-            c.fill(left + 10, top + NAV_H - 5, left + width - 10, top + NAV_H - 2, ui.accent);
+            c.fill(
+                left + 10,
+                top + NAV_H - 5,
+                left + width - 10,
+                top + NAV_H - 2,
+                ui.accent,
+            );
         }
     }
 }
@@ -517,16 +548,45 @@ pub fn paint_trial_bar(c: &Canvas, ui: &Ui, lw: i32) {
         top,
         lw - MARGIN - 200,
         top + STATUS_H,
-        &format!("Trying “{}”. It reverts in {seconds} s unless you keep it.", ui.ext.trial_name),
+        &format!(
+            "Trying “{}”. It reverts in {seconds} s unless you keep it.",
+            ui.ext.trial_name
+        ),
         TEXT,
         ui.fonts.small,
         DT_LEFT | DT_VCENTER | DT_SINGLELINE | DT_END_ELLIPSIS,
     );
     let (keep, revert) = trial_pills(lw, top);
     c.round(keep.0, keep.1, keep.2, keep.3, 5, Some(ui.accent), None);
-    c.text(keep.0, keep.1, keep.2, keep.3, "Keep", 0x0000_0000, ui.fonts.small, DT_CENTER | DT_VCENTER | DT_SINGLELINE);
-    c.round(revert.0, revert.1, revert.2, revert.3, 5, Some(CARD_HI), Some(CARD_EDGE));
-    c.text(revert.0, revert.1, revert.2, revert.3, "Revert", TEXT, ui.fonts.small, DT_CENTER | DT_VCENTER | DT_SINGLELINE);
+    c.text(
+        keep.0,
+        keep.1,
+        keep.2,
+        keep.3,
+        "Keep",
+        0x0000_0000,
+        ui.fonts.small,
+        DT_CENTER | DT_VCENTER | DT_SINGLELINE,
+    );
+    c.round(
+        revert.0,
+        revert.1,
+        revert.2,
+        revert.3,
+        5,
+        Some(CARD_HI),
+        Some(CARD_EDGE),
+    );
+    c.text(
+        revert.0,
+        revert.1,
+        revert.2,
+        revert.3,
+        "Revert",
+        TEXT,
+        ui.fonts.small,
+        DT_CENTER | DT_VCENTER | DT_SINGLELINE,
+    );
 }
 
 impl Ui {
@@ -587,7 +647,9 @@ impl Ui {
         self.config = next;
         self.ext.trial_name = name.to_string();
         self.status = "Trying a new look. Nothing is saved until you press Keep.".into();
-        unsafe { windows_sys::Win32::UI::WindowsAndMessaging::SetTimer(self.hwnd, TIMER_UI, 500, None) };
+        unsafe {
+            windows_sys::Win32::UI::WindowsAndMessaging::SetTimer(self.hwnd, TIMER_UI, 500, None)
+        };
     }
 
     pub fn trial_keep(&mut self) {
@@ -602,6 +664,10 @@ impl Ui {
         cmdq::push(AppCommand::TrialRevert);
         self.post_command();
         self.status = "Reverted.".into();
+    }
+
+    fn accent_bgr_for_demo(&self) -> u32 {
+        registry::accent_bgr()
     }
 
     pub fn on_timer(&mut self, hwnd: HWND) {
@@ -648,7 +714,11 @@ impl Ui {
         if index < 0 {
             return;
         }
-        let Some(entry) = self.visible_windows().get(index as usize).map(|e| (*e).clone()) else {
+        let Some(entry) = self
+            .visible_windows()
+            .get(index as usize)
+            .map(|e| (*e).clone())
+        else {
             return;
         };
         self.select_window(entry);
@@ -667,19 +737,13 @@ impl Ui {
             Some(report) => {
                 let labels: Vec<String> = self.config.rules.iter().map(|r| r.label()).collect();
                 let (user, profile) = user_strings();
-                self.ext.report_lines = crate::render_report(
-                    &report,
-                    &labels,
-                    self.ext.show_titles,
-                    &user,
-                    &profile,
-                );
+                self.ext.report_lines =
+                    crate::render_report(&report, &labels, self.ext.show_titles, &user, &profile);
                 self.ext.report = Some(report);
             }
             None => {
                 self.ext.report = None;
-                self.ext.report_lines =
-                    vec!["That window has closed. Pick another.".to_string()];
+                self.ext.report_lines = vec!["That window has closed. Pick another.".to_string()];
                 self.ext.selected = None;
             }
         }
@@ -706,7 +770,8 @@ impl Ui {
                 self.select_window(entry);
             }
             None => {
-                self.status = "Drag the crosshair onto a window other than this one, then let go.".into();
+                self.status =
+                    "Drag the crosshair onto a window other than this one, then let go.".into();
             }
         }
     }
@@ -767,7 +832,9 @@ impl Ui {
             .iter()
             .enumerate()
             .filter_map(|(index, laid)| match &laid.row {
-                Row::Toggle(_) | Row::Choice(_) | Row::Action(_) | Row::AddField(_) => Some((index, 1)),
+                Row::Toggle(_) | Row::Choice(_) | Row::Action(_) | Row::AddField(_) => {
+                    Some((index, 1))
+                }
                 Row::Buttons(list) => Some((index, list.len())),
                 Row::Presets => Some((index, PRESETS.len())),
                 _ => None,
@@ -782,7 +849,11 @@ impl Ui {
         }
         let current = self.ext.focus.unwrap_or(usize::MAX);
         let next = if current == usize::MAX {
-            if backwards { list.len() - 1 } else { 0 }
+            if backwards {
+                list.len() - 1
+            } else {
+                0
+            }
         } else if backwards {
             (current + list.len() - 1) % list.len()
         } else {
@@ -799,7 +870,8 @@ impl Ui {
             return;
         };
         if count > 1 {
-            self.ext.focus_sub = (self.ext.focus_sub as i32 + delta).rem_euclid(count as i32) as usize;
+            self.ext.focus_sub =
+                (self.ext.focus_sub as i32 + delta).rem_euclid(count as i32) as usize;
         }
     }
 
@@ -842,7 +914,8 @@ impl Ui {
             Row::Buttons(buttons) => {
                 if let Some(id) = buttons.get(sub) {
                     if *id == Button::PickWindow {
-                        self.status = "Use the mouse for the crosshair, or pick from the list.".into();
+                        self.status =
+                            "Use the mouse for the crosshair, or pick from the list.".into();
                     } else {
                         self.button(*id);
                     }
@@ -869,8 +942,21 @@ pub fn paint_extra(c: &Canvas, ui: &Ui, row: &Laid, top: i32, lw: i32) {
             let mut y = top + 10;
             for line in lines {
                 let height = 16 * lines_needed(line, 64);
-                let (font, color) = if line.is_empty() { (fonts.small, MUTED) } else { (fonts.small, TEXT) };
-                c.text(left, y, right, y + height, line, color, font, DT_LEFT | DT_WORDBREAK);
+                let (font, color) = if line.is_empty() {
+                    (fonts.small, MUTED)
+                } else {
+                    (fonts.small, TEXT)
+                };
+                c.text(
+                    left,
+                    y,
+                    right,
+                    y + height,
+                    line,
+                    color,
+                    font,
+                    DT_LEFT | DT_WORDBREAK,
+                );
                 y += height;
             }
         }
@@ -880,43 +966,133 @@ pub fn paint_extra(c: &Canvas, ui: &Ui, row: &Laid, top: i32, lw: i32) {
                 let (l, t, r, b) = buttons_rect(lw, list.len(), index, row.h);
                 let (_, _, label) = button_meta(*id);
                 let hot = *id == Button::PickWindow && ui.ext.picking;
-                c.round(l, top + t, r, top + b, 5, Some(CARD_HI), Some(if hot { ui.accent } else { CARD_EDGE }));
-                c.text(l, top + t, r, top + b, label, TEXT, fonts.small, DT_CENTER | DT_VCENTER | DT_SINGLELINE | DT_END_ELLIPSIS);
+                c.round(
+                    l,
+                    top + t,
+                    r,
+                    top + b,
+                    5,
+                    Some(CARD_HI),
+                    Some(if hot { ui.accent } else { CARD_EDGE }),
+                );
+                c.text(
+                    l,
+                    top + t,
+                    r,
+                    top + b,
+                    label,
+                    TEXT,
+                    fonts.small,
+                    DT_CENTER | DT_VCENTER | DT_SINGLELINE | DT_END_ELLIPSIS,
+                );
             }
         }
         Row::WindowList => {
             card(c, top, row.h, lw);
             let visible = ui.visible_windows();
             if visible.is_empty() {
-                let text = if ui.ext.loaded { "No matching windows." } else { "Open this page to list windows." };
-                c.text(left, top + 8, right, top + 8 + LIST_LINE, text, MUTED, fonts.small, DT_LEFT | DT_VCENTER | DT_SINGLELINE);
+                let text = if ui.ext.loaded {
+                    "No matching windows."
+                } else {
+                    "Open this page to list windows."
+                };
+                c.text(
+                    left,
+                    top + 8,
+                    right,
+                    top + 8 + LIST_LINE,
+                    text,
+                    MUTED,
+                    fonts.small,
+                    DT_LEFT | DT_VCENTER | DT_SINGLELINE,
+                );
             }
             for (index, entry) in visible.iter().take(40).enumerate() {
                 let line_top = top + 8 + index as i32 * LIST_LINE;
-                let selected = ui.ext.selected.as_ref().is_some_and(|s| s.key == entry.key && s.pid == entry.pid);
+                let selected = ui
+                    .ext
+                    .selected
+                    .as_ref()
+                    .is_some_and(|s| s.key == entry.key && s.pid == entry.pid);
                 if selected {
-                    c.round(MARGIN + 6, line_top, lw - MARGIN - 6, line_top + LIST_LINE, 4, Some(CARD_HI), Some(ui.accent));
+                    c.round(
+                        MARGIN + 6,
+                        line_top,
+                        lw - MARGIN - 6,
+                        line_top + LIST_LINE,
+                        4,
+                        Some(CARD_HI),
+                        Some(ui.accent),
+                    );
                 }
-                c.text(left, line_top, right, line_top + LIST_LINE, &ui.window_line(entry), TEXT, fonts.small, DT_LEFT | DT_VCENTER | DT_SINGLELINE | DT_END_ELLIPSIS);
+                c.text(
+                    left,
+                    line_top,
+                    right,
+                    line_top + LIST_LINE,
+                    &ui.window_line(entry),
+                    TEXT,
+                    fonts.small,
+                    DT_LEFT | DT_VCENTER | DT_SINGLELINE | DT_END_ELLIPSIS,
+                );
             }
         }
         Row::RecipeList => {
             card(c, top, row.h, lw);
             if ui.ext.recipes.is_empty() {
-                c.text(left, top + 8, right, top + 8 + LIST_LINE, "No recipes found.", MUTED, fonts.small, DT_LEFT | DT_VCENTER | DT_SINGLELINE);
+                c.text(
+                    left,
+                    top + 8,
+                    right,
+                    top + 8 + LIST_LINE,
+                    "No recipes found.",
+                    MUTED,
+                    fonts.small,
+                    DT_LEFT | DT_VCENTER | DT_SINGLELINE,
+                );
             }
             for (index, (recipe, trust)) in ui.ext.recipes.iter().enumerate() {
                 let line_top = top + 8 + index as i32 * LIST_LINE;
                 if ui.ext.recipe_sel == Some(index) {
-                    c.round(MARGIN + 6, line_top, lw - MARGIN - 6, line_top + LIST_LINE, 4, Some(CARD_HI), Some(ui.accent));
+                    c.round(
+                        MARGIN + 6,
+                        line_top,
+                        lw - MARGIN - 6,
+                        line_top + LIST_LINE,
+                        4,
+                        Some(CARD_HI),
+                        Some(ui.accent),
+                    );
                 }
-                let tag = if *trust == Trust::Bundled { "built in" } else { "imported" };
-                c.text(left, line_top, right, line_top + LIST_LINE, &format!("{}  ·  {tag}", recipe.name), TEXT, fonts.small, DT_LEFT | DT_VCENTER | DT_SINGLELINE | DT_END_ELLIPSIS);
+                let tag = if *trust == Trust::Bundled {
+                    "built in"
+                } else {
+                    "imported"
+                };
+                c.text(
+                    left,
+                    line_top,
+                    right,
+                    line_top + LIST_LINE,
+                    &format!("{}  ·  {tag}", recipe.name),
+                    TEXT,
+                    fonts.small,
+                    DT_LEFT | DT_VCENTER | DT_SINGLELINE | DT_END_ELLIPSIS,
+                );
             }
         }
         Row::Filter => {
             card(c, top, row.h, lw);
-            c.text(left, top, left + 90, top + row.h - GAP, "Filter", TEXT, fonts.body, DT_LEFT | DT_VCENTER | DT_SINGLELINE);
+            c.text(
+                left,
+                top,
+                left + 90,
+                top + row.h - GAP,
+                "Filter",
+                TEXT,
+                fonts.body,
+                DT_LEFT | DT_VCENTER | DT_SINGLELINE,
+            );
         }
         _ => {}
     }
@@ -928,9 +1104,18 @@ pub fn lines_needed(text: &str, per_line: usize) -> i32 {
 
 /// Focus ring around the keyboard-focused row.
 pub fn paint_focus_ring(c: &Canvas, ui: &Ui, row: &Laid, top: i32, lw: i32) {
-    c.round(MARGIN - 2, top - 2, lw - MARGIN + 2, top + row.h - GAP + 2, 6, None, Some(ui.accent));
+    c.round(
+        MARGIN - 2,
+        top - 2,
+        lw - MARGIN + 2,
+        top + row.h - GAP + 2,
+        6,
+        None,
+        Some(ui.accent),
+    );
     if let Row::Buttons(list) = &row.row {
-        let (l, t, r, b) = buttons_rect(lw, list.len(), ui.ext.focus_sub.min(list.len() - 1), row.h);
+        let (l, t, r, b) =
+            buttons_rect(lw, list.len(), ui.ext.focus_sub.min(list.len() - 1), row.h);
         c.round(l - 2, top + t - 2, r + 2, top + b + 2, 6, None, Some(TEXT));
     }
     if matches!(row.row, Row::Presets) {
@@ -948,13 +1133,16 @@ impl Ui {
         match id {
             Toggle::FocusLook => self.config.focus.enabled = !self.config.focus.enabled,
             Toggle::ReduceBattery => {
-                self.config.reduce_effects.on_battery_saver = !self.config.reduce_effects.on_battery_saver
+                self.config.reduce_effects.on_battery_saver =
+                    !self.config.reduce_effects.on_battery_saver
             }
             Toggle::ReduceRemote => {
-                self.config.reduce_effects.on_remote_session = !self.config.reduce_effects.on_remote_session
+                self.config.reduce_effects.on_remote_session =
+                    !self.config.reduce_effects.on_remote_session
             }
             Toggle::ReduceTransparency => {
-                self.config.reduce_effects.on_transparency_off = !self.config.reduce_effects.on_transparency_off
+                self.config.reduce_effects.on_transparency_off =
+                    !self.config.reduce_effects.on_transparency_off
             }
             Toggle::EmulatedX64 => {
                 self.config.legacy.emulated_x64 = !self.config.legacy.emulated_x64;
@@ -978,7 +1166,11 @@ impl Ui {
     pub fn cycle_ext(&mut self, id: Choice) {
         match id {
             Choice::Palette => {
-                let next = if self.config.legacy.palette == "black" { "graphite" } else { "black" };
+                let next = if self.config.legacy.palette == "black" {
+                    "graphite"
+                } else {
+                    "black"
+                };
                 self.config.legacy.palette = next.to_string();
                 self.commit();
             }
@@ -1011,7 +1203,9 @@ impl Ui {
                         create: selected.create,
                     });
                     self.post_command();
-                    self.status = "Restoring that window. It stays as Windows draws it until you reload.".into();
+                    self.status =
+                        "Restoring that window. It stays as Windows draws it until you reload."
+                            .into();
                 }
             }
             Button::CopyReport => self.copy_report(),
@@ -1047,6 +1241,14 @@ impl Ui {
                 self.config.shell.black_shell = false;
                 self.status = "Shell changes are being undone from the saved originals.".into();
                 self.commit();
+            }
+            Button::DemoMaterials => {
+                super::super::demo::open(
+                    self.current_style(),
+                    self.accent_bgr_for_demo(),
+                    self.build,
+                );
+                self.status = "Opened the demonstration window.".into();
             }
             Button::OpenHarness => {
                 self.status = match super::super::legacy::hook_dll_path("AllBlack11-Harness.exe") {
@@ -1128,7 +1330,12 @@ impl Ui {
             return;
         };
         let exe = selected.exe.clone();
-        if !self.config.exclude.iter().any(|item| item.eq_ignore_ascii_case(&exe)) {
+        if !self
+            .config
+            .exclude
+            .iter()
+            .any(|item| item.eq_ignore_ascii_case(&exe))
+        {
             self.config.exclude.push(exe.clone());
         }
         self.status = format!("{exe} will no longer be themed.");
@@ -1142,7 +1349,8 @@ impl Ui {
         };
         let labels: Vec<String> = self.config.rules.iter().map(|r| r.label()).collect();
         let (user, profile) = user_strings();
-        let text = crate::render_report(&report, &labels, self.ext.show_titles, &user, &profile).join("\r\n");
+        let text = crate::render_report(&report, &labels, self.ext.show_titles, &user, &profile)
+            .join("\r\n");
         self.status = if set_clipboard_text(self.hwnd, &text) {
             if self.ext.show_titles {
                 "Copied, including the window title.".into()
@@ -1175,7 +1383,11 @@ impl Ui {
             .unwrap_or(0);
         book.set(&key, build, &arch, status, "", now);
         self.status = match super::super::cfgio::save_notebook(&book) {
-            Ok(()) => format!("Noted: {} on build {build} ({arch}): {}.", key, status.label()),
+            Ok(()) => format!(
+                "Noted: {} on build {build} ({arch}): {}.",
+                key,
+                status.label()
+            ),
             Err(err) => err,
         };
         self.refresh_report();
@@ -1238,7 +1450,11 @@ impl Ui {
             }
         }
         self.ext.recipes = list;
-        if self.ext.recipe_sel.is_some_and(|i| i >= self.ext.recipes.len()) {
+        if self
+            .ext
+            .recipe_sel
+            .is_some_and(|i| i >= self.ext.recipes.len())
+        {
             self.ext.recipe_sel = None;
         }
         self.update_recipe_diff();
@@ -1296,9 +1512,11 @@ impl Ui {
                     .and_then(|_| write_atomic(&target, &format!("{}\n", recipe.to_json())));
                 match result {
                     Ok(()) => {
-                        self.status = format!("Imported “{}”. Review it, then try it.", recipe.name);
+                        self.status =
+                            format!("Imported “{}”. Review it, then try it.", recipe.name);
                         self.refresh_recipes();
-                        self.ext.recipe_sel = self.ext.recipes.iter().position(|(r, _)| r.id == recipe.id);
+                        self.ext.recipe_sel =
+                            self.ext.recipes.iter().position(|(r, _)| r.id == recipe.id);
                         self.update_recipe_diff();
                     }
                     Err(err) => self.status = format!("Could not save the recipe: {err}"),
@@ -1309,11 +1527,15 @@ impl Ui {
     }
 
     fn export_recipe(&mut self) {
-        let Some(path) = file_dialog(self.hwnd, true, "Export the current look", "my-look.json") else {
+        let Some(path) = file_dialog(self.hwnd, true, "Export the current look", "my-look.json")
+        else {
             return;
         };
         let recipe = crate::export_recipe(&self.config, "my-look", "My look");
-        self.status = match write_atomic(std::path::Path::new(&path), &format!("{}\n", recipe.to_json())) {
+        self.status = match write_atomic(
+            std::path::Path::new(&path),
+            &format!("{}\n", recipe.to_json()),
+        ) {
             Ok(()) => "Exported.".into(),
             Err(err) => format!("Could not write the file: {err}"),
         };
@@ -1325,8 +1547,12 @@ impl Ui {
 // ---------------------------------------------------------------------------
 
 fn set_clipboard_text(hwnd: HWND, text: &str) -> bool {
-    use windows_sys::Win32::System::DataExchange::{CloseClipboard, EmptyClipboard, OpenClipboard, SetClipboardData};
-    use windows_sys::Win32::System::Memory::{GlobalAlloc, GlobalLock, GlobalUnlock, GMEM_MOVEABLE};
+    use windows_sys::Win32::System::DataExchange::{
+        CloseClipboard, EmptyClipboard, OpenClipboard, SetClipboardData,
+    };
+    use windows_sys::Win32::System::Memory::{
+        GlobalAlloc, GlobalLock, GlobalUnlock, GMEM_MOVEABLE,
+    };
     let wide: Vec<u16> = text.encode_utf16().chain(std::iter::once(0)).collect();
     unsafe {
         if OpenClipboard(hwnd) == 0 {
@@ -1353,14 +1579,16 @@ fn set_clipboard_text(hwnd: HWND, text: &str) -> bool {
 /// A standard Open or Save dialog. Returns the chosen path.
 fn file_dialog(owner: HWND, save: bool, title: &str, default_name: &str) -> Option<String> {
     use windows_sys::Win32::UI::Controls::Dialogs::{
-        GetOpenFileNameW, GetSaveFileNameW, OFN_FILEMUSTEXIST, OFN_OVERWRITEPROMPT, OFN_PATHMUSTEXIST,
-        OPENFILENAMEW,
+        GetOpenFileNameW, GetSaveFileNameW, OFN_FILEMUSTEXIST, OFN_OVERWRITEPROMPT,
+        OFN_PATHMUSTEXIST, OPENFILENAMEW,
     };
     let mut file = [0u16; 520];
     for (index, unit) in default_name.encode_utf16().take(500).enumerate() {
         file[index] = unit;
     }
-    let filter: Vec<u16> = "AllBlack11 recipe (*.json)\0*.json\0All files\0*.*\0\0".encode_utf16().collect();
+    let filter: Vec<u16> = "AllBlack11 recipe (*.json)\0*.json\0All files\0*.*\0\0"
+        .encode_utf16()
+        .collect();
     let title = to_wide(title);
     let mut dialog: OPENFILENAMEW = unsafe { std::mem::zeroed() };
     dialog.lStructSize = std::mem::size_of::<OPENFILENAMEW>() as u32;
@@ -1384,7 +1612,10 @@ fn file_dialog(owner: HWND, save: bool, title: &str, default_name: &str) -> Opti
     if ok == 0 {
         return None;
     }
-    let len = file.iter().position(|unit| *unit == 0).unwrap_or(file.len());
+    let len = file
+        .iter()
+        .position(|unit| *unit == 0)
+        .unwrap_or(file.len());
     Some(String::from_utf16_lossy(&file[..len]))
 }
 

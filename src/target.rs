@@ -80,7 +80,9 @@ pub fn route(controller_machine: u16, target: TargetArch) -> Route {
         // An x64 controller emulated on ARM64 sees its x64 siblings as x64 emulated.
         (MACHINE_AMD64, TargetArch::X64Emulated) => Route::Native,
         (_, TargetArch::Arm64Ec) => Route::Unsupported("arm64ec"),
-        (_, TargetArch::X86Emulated) | (_, TargetArch::X86OnX64) => Route::Unsupported("x86-process"),
+        (_, TargetArch::X86Emulated) | (_, TargetArch::X86OnX64) => {
+            Route::Unsupported("x86-process")
+        }
         (MACHINE_AMD64, TargetArch::Arm64Native) => Route::Unsupported("needs-arm64-build"),
         _ => Route::Unsupported("architecture"),
     }
@@ -91,7 +93,8 @@ pub fn pe_machine(header: &[u8]) -> Option<u16> {
     if header.len() < 0x40 || &header[0..2] != b"MZ" {
         return None;
     }
-    let offset = u32::from_le_bytes([header[0x3C], header[0x3D], header[0x3E], header[0x3F]]) as usize;
+    let offset =
+        u32::from_le_bytes([header[0x3C], header[0x3D], header[0x3E], header[0x3F]]) as usize;
     if offset.checked_add(6)? > header.len() || &header[offset..offset + 4] != b"PE\0\0" {
         return None;
     }
@@ -104,39 +107,75 @@ mod tests {
 
     #[test]
     fn detects_every_target_on_an_arm64_pc() {
-        assert_eq!(classify_target(MACHINE_ARM64, 0, Some(MACHINE_ARM64)), TargetArch::Arm64Native);
-        assert_eq!(classify_target(MACHINE_ARM64, 0, None), TargetArch::Arm64Native);
-        assert_eq!(classify_target(MACHINE_ARM64, MACHINE_AMD64, Some(MACHINE_AMD64)), TargetArch::X64Emulated);
-        assert_eq!(classify_target(MACHINE_ARM64, MACHINE_I386, None), TargetArch::X86Emulated);
+        assert_eq!(
+            classify_target(MACHINE_ARM64, 0, Some(MACHINE_ARM64)),
+            TargetArch::Arm64Native
+        );
+        assert_eq!(
+            classify_target(MACHINE_ARM64, 0, None),
+            TargetArch::Arm64Native
+        );
+        assert_eq!(
+            classify_target(MACHINE_ARM64, MACHINE_AMD64, Some(MACHINE_AMD64)),
+            TargetArch::X64Emulated
+        );
+        assert_eq!(
+            classify_target(MACHINE_ARM64, MACHINE_I386, None),
+            TargetArch::X86Emulated
+        );
     }
 
     #[test]
     fn arm64ec_is_an_x64_image_that_runs_natively() {
-        assert_eq!(classify_target(MACHINE_ARM64, 0, Some(MACHINE_AMD64)), TargetArch::Arm64Ec);
+        assert_eq!(
+            classify_target(MACHINE_ARM64, 0, Some(MACHINE_AMD64)),
+            TargetArch::Arm64Ec
+        );
     }
 
     #[test]
     fn detects_targets_on_an_x64_pc() {
-        assert_eq!(classify_target(MACHINE_AMD64, 0, Some(MACHINE_AMD64)), TargetArch::X64Native);
-        assert_eq!(classify_target(MACHINE_AMD64, MACHINE_I386, None), TargetArch::X86OnX64);
+        assert_eq!(
+            classify_target(MACHINE_AMD64, 0, Some(MACHINE_AMD64)),
+            TargetArch::X64Native
+        );
+        assert_eq!(
+            classify_target(MACHINE_AMD64, MACHINE_I386, None),
+            TargetArch::X86OnX64
+        );
         assert_eq!(classify_target(0, 0, None), TargetArch::Unknown);
     }
 
     #[test]
     fn arm64_controller_routes_native_and_emulated_targets_to_matching_binaries() {
         assert_eq!(route(MACHINE_ARM64, TargetArch::Arm64Native), Route::Native);
-        assert_eq!(route(MACHINE_ARM64, TargetArch::X64Emulated), Route::X64Helper);
+        assert_eq!(
+            route(MACHINE_ARM64, TargetArch::X64Emulated),
+            Route::X64Helper
+        );
         // Never load a pure ARM64 DLL into an ARM64EC process.
-        assert_eq!(route(MACHINE_ARM64, TargetArch::Arm64Ec), Route::Unsupported("arm64ec"));
-        assert_eq!(route(MACHINE_ARM64, TargetArch::X86Emulated), Route::Unsupported("x86-process"));
+        assert_eq!(
+            route(MACHINE_ARM64, TargetArch::Arm64Ec),
+            Route::Unsupported("arm64ec")
+        );
+        assert_eq!(
+            route(MACHINE_ARM64, TargetArch::X86Emulated),
+            Route::Unsupported("x86-process")
+        );
     }
 
     #[test]
     fn x64_controller_never_reaches_arm64_targets() {
         assert_eq!(route(MACHINE_AMD64, TargetArch::X64Native), Route::Native);
         assert_eq!(route(MACHINE_AMD64, TargetArch::X64Emulated), Route::Native);
-        assert_eq!(route(MACHINE_AMD64, TargetArch::Arm64Native), Route::Unsupported("needs-arm64-build"));
-        assert_eq!(route(MACHINE_AMD64, TargetArch::Arm64Ec), Route::Unsupported("arm64ec"));
+        assert_eq!(
+            route(MACHINE_AMD64, TargetArch::Arm64Native),
+            Route::Unsupported("needs-arm64-build")
+        );
+        assert_eq!(
+            route(MACHINE_AMD64, TargetArch::Arm64Ec),
+            Route::Unsupported("arm64ec")
+        );
     }
 
     #[test]
@@ -158,6 +197,9 @@ mod tests {
         assert_eq!(pe_machine(&pe[..0x20]), None);
         pe[0x3C] = 0xFF; // e_lfanew beyond the buffer
         assert_eq!(pe_machine(&pe), None);
-        assert_eq!(pe_machine(b"not a pe file at all, not even close, padding padding pad"), None);
+        assert_eq!(
+            pe_machine(b"not a pe file at all, not even close, padding padding pad"),
+            None
+        );
     }
 }

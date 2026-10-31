@@ -83,14 +83,23 @@ pub fn source_text(source: Source, rules: &[String]) -> String {
         Source::Rule(index) => format!(
             "rule {}{}",
             index + 1,
-            rules.get(index).map(|label| format!(" ({label})")).unwrap_or_default()
+            rules
+                .get(index)
+                .map(|label| format!(" ({label})"))
+                .unwrap_or_default()
         ),
     }
 }
 
 /// Plain-text lines for the inspector and for copy/paste. Never includes the title or user
 /// paths unless `private` is true.
-pub fn render(report: &Report, rule_labels: &[String], private: bool, user: &str, profile: &str) -> Vec<String> {
+pub fn render(
+    report: &Report,
+    rule_labels: &[String],
+    private: bool,
+    user: &str,
+    profile: &str,
+) -> Vec<String> {
     let mut lines: Vec<String> = Vec::new();
     let path = if private {
         report.path.clone()
@@ -98,7 +107,10 @@ pub fn render(report: &Report, rule_labels: &[String], private: bool, user: &str
         redact(&report.path, user, profile)
     };
     lines.push(format!("{} — {}", report.exe, report.class));
-    lines.push(format!("Process {} · {} · Windows build {}", report.pid, report.arch, report.build));
+    lines.push(format!(
+        "Process {} · {} · Windows build {}",
+        report.pid, report.arch, report.build
+    ));
     if !path.is_empty() {
         lines.push(format!("Path: {path}"));
     }
@@ -111,7 +123,10 @@ pub fn render(report: &Report, rule_labels: &[String], private: bool, user: &str
     lines.push(String::new());
     lines.push(report.explanation.headline.clone());
     let framework = &report.explanation.framework;
-    lines.push(format!("Looks like: {} (a guess from the window class).", framework.name));
+    lines.push(format!(
+        "Looks like: {} (a guess from the window class).",
+        framework.name
+    ));
     lines.push(framework.title_bar.text().to_string());
     lines.push(framework.client_note.to_string());
     for note in &report.explanation.notes {
@@ -147,9 +162,16 @@ pub fn render(report: &Report, rule_labels: &[String], private: bool, user: &str
     }
     if !report.attempts.is_empty() {
         lines.push(String::new());
-        lines.push("Last attempt (Windows accepted a value; that is not proof it is visible):".to_string());
+        lines.push(
+            "Last attempt (Windows accepted a value; that is not proof it is visible):".to_string(),
+        );
         for attempt in &report.attempts {
-            lines.push(format!("  {} ({}): {}", attempt.name, attempt.attribute, attempt.confirm.text()));
+            lines.push(format!(
+                "  {} ({}): {}",
+                attempt.name,
+                attempt.attribute,
+                attempt.confirm.text()
+            ));
         }
     }
     if let Some(legacy) = &report.legacy {
@@ -241,7 +263,10 @@ mod tests {
     #[test]
     fn rule_sources_read_as_rule_numbers_with_labels() {
         let labels = vec!["notepad.exe".to_string()];
-        assert_eq!(source_text(Source::Rule(0), &labels), "rule 1 (notepad.exe)");
+        assert_eq!(
+            source_text(Source::Rule(0), &labels),
+            "rule 1 (notepad.exe)"
+        );
         assert_eq!(source_text(Source::Default, &labels), "default look");
         assert_eq!(source_text(Source::Rule(5), &labels), "rule 6");
     }

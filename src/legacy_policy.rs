@@ -500,7 +500,11 @@ mod tests {
             Verdict::Skip("shell-surface")
         );
         assert_eq!(
-            window_verdict(HostKind::Explorer, "CabinetWClass", &["DirectUIHWND", "ReBarWindow32"]),
+            window_verdict(
+                HostKind::Explorer,
+                "CabinetWClass",
+                &["DirectUIHWND", "ReBarWindow32"]
+            ),
             Verdict::Skip("shell-surface")
         );
         assert_eq!(
@@ -540,7 +544,11 @@ mod tests {
 
     #[test]
     fn partial_dialogs_report_which_controls_stay_light() {
-        match window_verdict(HostKind::Other, "#32770", &["Static", "SysTabControl32", "RichEdit20W"]) {
+        match window_verdict(
+            HostKind::Other,
+            "#32770",
+            &["Static", "SysTabControl32", "RichEdit20W"],
+        ) {
             Verdict::Partial(list) => {
                 assert!(list.iter().any(|item| item == "SysTabControl32"));
                 assert!(list.iter().any(|item| item == "RichEdit20W"));
@@ -552,9 +560,18 @@ mod tests {
 
     #[test]
     fn denied_and_sensitive_processes_are_refused_everywhere() {
-        for exe in ["dwm.exe", "ShellExperienceHost.exe", "EasyAntiCheat.exe", "GeForceNOW.exe", "consent.exe"] {
+        for exe in [
+            "dwm.exe",
+            "ShellExperienceHost.exe",
+            "EasyAntiCheat.exe",
+            "GeForceNOW.exe",
+            "consent.exe",
+        ] {
             assert_eq!(host_kind(exe), HostKind::Denied, "{exe}");
-            assert_eq!(window_verdict(host_kind(exe), "#32770", &[]), Verdict::Skip("denied-process"));
+            assert_eq!(
+                window_verdict(host_kind(exe), "#32770", &[]),
+                Verdict::Skip("denied-process")
+            );
         }
         assert_eq!(host_kind("explorer.exe"), HostKind::Explorer);
         assert_eq!(host_kind("MMC.EXE"), HostKind::Mmc);
@@ -566,7 +583,11 @@ mod tests {
         assert_eq!(capability("Button", 0).tech, Tech::ThemeExplorer);
         assert_eq!(capability("Button", 1).tech, Tech::ThemeExplorer);
         for style in [2, 3, 4, 5, 6, 7, 9] {
-            assert_eq!(capability("Button", style).tech, Tech::Classic, "style {style}");
+            assert_eq!(
+                capability("Button", style).tech,
+                Tech::Classic,
+                "style {style}"
+            );
         }
         assert_eq!(capability("button", 0xB).level, Level::Unsupported);
         assert_eq!(capability("Button", 0xE).level, Level::Unsupported);
@@ -575,8 +596,18 @@ mod tests {
     #[test]
     fn every_family_in_the_table_has_a_note_and_nothing_claims_universal_support() {
         for class in [
-            "Static", "Edit", "Button", "ComboBox", "ListBox", "SysListView32", "SysTreeView32",
-            "SysTabControl32", "RichEdit20W", "SysLink", "DirectUIHWND", "SomethingNew",
+            "Static",
+            "Edit",
+            "Button",
+            "ComboBox",
+            "ListBox",
+            "SysListView32",
+            "SysTreeView32",
+            "SysTabControl32",
+            "RichEdit20W",
+            "SysLink",
+            "DirectUIHWND",
+            "SomethingNew",
         ] {
             let capability = capability(class, 0);
             assert!(!capability.note.is_empty(), "{class}");
@@ -588,13 +619,41 @@ mod tests {
     #[test]
     fn palettes_keep_text_readable() {
         for palette in PALETTES {
-            assert!(contrast_ratio(palette.text, palette.bg) >= 7.0, "{} body", palette.name);
-            assert!(contrast_ratio(palette.text, palette.edit_bg) >= 7.0, "{} edit", palette.name);
-            assert!(contrast_ratio(palette.text, palette.readonly_bg) >= 7.0, "{} readonly", palette.name);
-            assert!(contrast_ratio(palette.disabled_text, palette.bg) >= 3.0, "{} disabled", palette.name);
-            assert!(contrast_ratio(palette.disabled_text, palette.edit_bg) >= 3.0, "{} disabled edit", palette.name);
-            assert!(contrast_ratio(palette.link, palette.bg) >= 4.5, "{} link", palette.name);
-            assert!(contrast_ratio(palette.heading, palette.bg) >= 7.0, "{} heading", palette.name);
+            assert!(
+                contrast_ratio(palette.text, palette.bg) >= 7.0,
+                "{} body",
+                palette.name
+            );
+            assert!(
+                contrast_ratio(palette.text, palette.edit_bg) >= 7.0,
+                "{} edit",
+                palette.name
+            );
+            assert!(
+                contrast_ratio(palette.text, palette.readonly_bg) >= 7.0,
+                "{} readonly",
+                palette.name
+            );
+            assert!(
+                contrast_ratio(palette.disabled_text, palette.bg) >= 3.0,
+                "{} disabled",
+                palette.name
+            );
+            assert!(
+                contrast_ratio(palette.disabled_text, palette.edit_bg) >= 3.0,
+                "{} disabled edit",
+                palette.name
+            );
+            assert!(
+                contrast_ratio(palette.link, palette.bg) >= 4.5,
+                "{} link",
+                palette.name
+            );
+            assert!(
+                contrast_ratio(palette.heading, palette.bg) >= 7.0,
+                "{} heading",
+                palette.name
+            );
         }
         assert_eq!(palette("BLACK").name, "black");
         assert_eq!(palette("nonsense").name, "graphite");

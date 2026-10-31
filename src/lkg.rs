@@ -94,7 +94,12 @@ mod tests {
 
     #[test]
     fn a_corrupted_file_falls_back_to_the_last_known_good_one_and_says_so() {
-        for broken in ["{not json", "", r#"{"rules":[{"backdrop":"none"}]}"#, r#"{"schemaVersion":99}"#] {
+        for broken in [
+            "{not json",
+            "",
+            r#"{"rules":[{"backdrop":"none"}]}"#,
+            r#"{"schemaVersion":99}"#,
+        ] {
             let picked = pick(Some(broken), Some(GOOD));
             assert_eq!(picked.source, Source::LastKnownGood, "{broken:?}");
             assert_eq!(picked.config.rules.len(), 1);

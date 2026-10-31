@@ -57,7 +57,9 @@ mod win {
         GetTokenInformation, TokenElevation, SECURITY_ATTRIBUTES, TOKEN_ELEVATION, TOKEN_QUERY,
     };
     use windows_sys::Win32::Storage::FileSystem::{ReadFile, WriteFile, PIPE_ACCESS_DUPLEX};
-    use windows_sys::Win32::System::LibraryLoader::{GetModuleFileNameW, GetProcAddress, LoadLibraryW};
+    use windows_sys::Win32::System::LibraryLoader::{
+        GetModuleFileNameW, GetProcAddress, LoadLibraryW,
+    };
     use windows_sys::Win32::System::Pipes::{
         ConnectNamedPipe, CreateNamedPipeW, GetNamedPipeClientProcessId, PIPE_READMODE_BYTE,
         PIPE_REJECT_REMOTE_CLIENTS, PIPE_TYPE_BYTE, PIPE_WAIT,
@@ -102,7 +104,11 @@ mod win {
             return 2;
         }
         unsafe {
-            let parent_handle = OpenProcess(PROCESS_SYNCHRONIZE | PROCESS_QUERY_LIMITED_INFORMATION, 0, parent);
+            let parent_handle = OpenProcess(
+                PROCESS_SYNCHRONIZE | PROCESS_QUERY_LIMITED_INFORMATION,
+                0,
+                parent,
+            );
             if parent_handle.is_null() {
                 return 3;
             }
@@ -176,7 +182,15 @@ mod win {
         let mut buffer = [0u8; 256];
         loop {
             let mut read = 0u32;
-            if ReadFile(pipe, buffer.as_mut_ptr(), buffer.len() as u32, &mut read, null_mut()) == 0 || read == 0 {
+            if ReadFile(
+                pipe,
+                buffer.as_mut_ptr(),
+                buffer.len() as u32,
+                &mut read,
+                null_mut(),
+            ) == 0
+                || read == 0
+            {
                 break; // The controller went away.
             }
             pending.extend_from_slice(&buffer[..read as usize]);
@@ -190,7 +204,13 @@ mod win {
                 let mut out = reply.into_bytes();
                 out.push(b'\n');
                 let mut written = 0u32;
-                WriteFile(pipe, out.as_ptr(), out.len() as u32, &mut written, null_mut());
+                WriteFile(
+                    pipe,
+                    out.as_ptr(),
+                    out.len() as u32,
+                    &mut written,
+                    null_mut(),
+                );
                 if quit {
                     return;
                 }
@@ -226,7 +246,11 @@ mod win {
         }
     }
 
-    unsafe fn hook(thread: u32, hooks: &mut HashMap<u32, HHOOK>, module: &mut Option<HMODULE>) -> String {
+    unsafe fn hook(
+        thread: u32,
+        hooks: &mut HashMap<u32, HHOOK>,
+        module: &mut Option<HMODULE>,
+    ) -> String {
         if hooks.contains_key(&thread) {
             return "OK".into();
         }
@@ -255,7 +279,10 @@ mod win {
         };
         let handle = SetWindowsHookExW(
             WH_CALLWNDPROCRET,
-            Some(std::mem::transmute::<unsafe extern "system" fn() -> isize, unsafe extern "system" fn(i32, usize, isize) -> isize>(proc)),
+            Some(std::mem::transmute::<
+                unsafe extern "system" fn() -> isize,
+                unsafe extern "system" fn(i32, usize, isize) -> isize,
+            >(proc)),
             library,
             thread,
         );
@@ -269,7 +296,8 @@ mod win {
     /// The hook DLL is always the x64 copy next to this exe. Never a path from the pipe.
     fn hook_path() -> Option<String> {
         let mut buf = [0u16; 520];
-        let len = unsafe { GetModuleFileNameW(null_mut(), buf.as_mut_ptr(), buf.len() as u32) } as usize;
+        let len =
+            unsafe { GetModuleFileNameW(null_mut(), buf.as_mut_ptr(), buf.len() as u32) } as usize;
         if len == 0 || len >= buf.len() {
             return None;
         }
@@ -300,7 +328,9 @@ mod win {
             }
             let mut buf = [0u16; 520];
             let mut len = buf.len() as u32;
-            if QueryFullProcessImageNameW(process, PROCESS_NAME_WIN32, buf.as_mut_ptr(), &mut len) == 0 {
+            if QueryFullProcessImageNameW(process, PROCESS_NAME_WIN32, buf.as_mut_ptr(), &mut len)
+                == 0
+            {
                 return Err("unknown-process");
             }
             let full = String::from_utf16_lossy(&buf[..len as usize]);
@@ -314,7 +344,10 @@ mod win {
             }
             let image = read_machine(&full);
             // This helper is x64: it may only touch targets an x64 controller could.
-            match route(MACHINE_AMD64, classify_target(native, process_machine, image)) {
+            match route(
+                MACHINE_AMD64,
+                classify_target(native, process_machine, image),
+            ) {
                 Route::Native => {}
                 _ => return Err("architecture"),
             }
@@ -354,7 +387,11 @@ mod win {
 
     unsafe fn owns_dialog(thread: u32) -> bool {
         let mut found: BOOL = FALSE;
-        EnumThreadWindows(thread, Some(dialog_probe), &mut found as *mut BOOL as LPARAM);
+        EnumThreadWindows(
+            thread,
+            Some(dialog_probe),
+            &mut found as *mut BOOL as LPARAM,
+        );
         found != 0
     }
 
@@ -395,7 +432,15 @@ mod win {
         let message = RegisterWindowMessageW(wide("AllBlack11.HookStop").as_ptr());
         if message != 0 {
             let mut result = 0usize;
-            SendMessageTimeoutW(HWND_BROADCAST, message, 0, 0, SMTO_ABORTIFHUNG, 300, &mut result);
+            SendMessageTimeoutW(
+                HWND_BROADCAST,
+                message,
+                0,
+                0,
+                SMTO_ABORTIFHUNG,
+                300,
+                &mut result,
+            );
         }
         remove_all(hooks);
     }

@@ -76,7 +76,9 @@ pub fn framework_hint(class: &str, exe: &str, style: u32) -> FrameworkHint {
             "The web content is opaque and drawn by the app, so a backdrop material behind it will not show. Many of these apps draw their own title bar.",
             true,
         )
-    } else if lower == "winuidesktopwin32windowclass" || lower == "microsoft.ui.content.desktopchildsitebridge" {
+    } else if lower == "winuidesktopwin32windowclass"
+        || lower == "microsoft.ui.content.desktopchildsitebridge"
+    {
         (
             Framework::WinUi,
             "WinUI 3",
@@ -125,7 +127,11 @@ pub fn framework_hint(class: &str, exe: &str, style: u32) -> FrameworkHint {
             "The console host draws the client area.",
             false,
         )
-    } else if lower == "opusapp" || lower == "xlmain" || lower == "pptframeclass" || lower == "olkexplorer" {
+    } else if lower == "opusapp"
+        || lower == "xlmain"
+        || lower == "pptframeclass"
+        || lower == "olkexplorer"
+    {
         (
             Framework::Office,
             "Microsoft Office",
@@ -133,7 +139,12 @@ pub fn framework_hint(class: &str, exe: &str, style: u32) -> FrameworkHint {
             true,
         )
     } else if lower.is_empty() {
-        (Framework::Unknown, "Unknown", "No class information.", false)
+        (
+            Framework::Unknown,
+            "Unknown",
+            "No class information.",
+            false,
+        )
     } else {
         (
             Framework::ClassicWin32,
@@ -250,7 +261,13 @@ pub struct AttributeSupport {
 /// What the effects pipeline can use on this Windows build. Build numbers come from
 /// Microsoft's documentation of each `DWMWA_*` value.
 pub fn attribute_support(build: u32) -> Vec<AttributeSupport> {
-    let at = |min: u32| if build >= min { Support::Supported } else { Support::Unsupported };
+    let at = |min: u32| {
+        if build >= min {
+            Support::Supported
+        } else {
+            Support::Unsupported
+        }
+    };
     vec![
         AttributeSupport {
             name: "Dark title bar",
@@ -291,7 +308,11 @@ pub fn attribute_support(build: u32) -> Vec<AttributeSupport> {
         AttributeSupport {
             name: "Tinted acrylic",
             attribute: 0,
-            support: if build >= 22000 { Support::Experimental } else { Support::Unsupported },
+            support: if build >= 22000 {
+                Support::Experimental
+            } else {
+                Support::Unsupported
+            },
             note: "SetWindowCompositionAttribute, undocumented. Falls back to Acrylic if refused.",
         },
     ]
@@ -367,12 +388,18 @@ pub fn explain(facts: &WindowFacts, config: &Config, accent_bgr: u32, build: u32
         }
         Decision::Skip(reason) => (
             false,
-            format!("AllBlack11 leaves this window alone. {}", reason_text(reason)),
+            format!(
+                "AllBlack11 leaves this window alone. {}",
+                reason_text(reason)
+            ),
             Some(reason),
         ),
     };
     if build != 0 && build < 22000 {
-        notes.push("This Windows build is older than Windows 11, so most effects are unavailable.".to_string());
+        notes.push(
+            "This Windows build is older than Windows 11, so most effects are unavailable."
+                .to_string(),
+        );
     }
     Explanation {
         applied,
@@ -403,26 +430,75 @@ mod tests {
         let frameless = framework_hint("Chrome_WidgetWin_1", "app.exe", 0);
         assert_eq!(frameless.title_bar, TitleBar::Custom);
 
-        assert_eq!(framework_hint("#32770", "a.exe", WS_CAPTION).framework, Framework::ClassicDialog);
-        assert_eq!(framework_hint("HwndWrapper[App.exe;;1234]", "a.exe", WS_CAPTION).framework, Framework::Wpf);
-        assert_eq!(framework_hint("CabinetWClass", "explorer.exe", WS_CAPTION).framework, Framework::FileExplorer);
-        assert_eq!(framework_hint("CASCADIA_HOSTING_WINDOW_CLASS", "WindowsTerminal.exe", WS_CAPTION).framework, Framework::Terminal);
-        assert_eq!(framework_hint("Notepad", "notepad.exe", WS_CAPTION).title_bar, TitleBar::System);
-        assert_eq!(framework_hint("", "a.exe", WS_CAPTION).framework, Framework::Unknown);
+        assert_eq!(
+            framework_hint("#32770", "a.exe", WS_CAPTION).framework,
+            Framework::ClassicDialog
+        );
+        assert_eq!(
+            framework_hint("HwndWrapper[App.exe;;1234]", "a.exe", WS_CAPTION).framework,
+            Framework::Wpf
+        );
+        assert_eq!(
+            framework_hint("CabinetWClass", "explorer.exe", WS_CAPTION).framework,
+            Framework::FileExplorer
+        );
+        assert_eq!(
+            framework_hint(
+                "CASCADIA_HOSTING_WINDOW_CLASS",
+                "WindowsTerminal.exe",
+                WS_CAPTION
+            )
+            .framework,
+            Framework::Terminal
+        );
+        assert_eq!(
+            framework_hint("Notepad", "notepad.exe", WS_CAPTION).title_bar,
+            TitleBar::System
+        );
+        assert_eq!(
+            framework_hint("", "a.exe", WS_CAPTION).framework,
+            Framework::Unknown
+        );
     }
 
     #[test]
     fn every_reason_the_policy_can_return_has_a_real_sentence() {
         for reason in [
-            "disabled", "child", "no-class", "class", "toolwindow", "no-frame", "click-through",
-            "fullscreen", "tiny", "popup", "unknown-process", "excluded", "explorer-shell",
-            "borderless-composition", "rule", "denied-process", "shell-surface",
-            "contains-shell-surface", "not-a-dialog", "not-legacy", "protected", "elevated",
-            "arm64ec", "x86-process", "needs-arm64-build", "x64-helper-off", "architecture",
+            "disabled",
+            "child",
+            "no-class",
+            "class",
+            "toolwindow",
+            "no-frame",
+            "click-through",
+            "fullscreen",
+            "tiny",
+            "popup",
+            "unknown-process",
+            "excluded",
+            "explorer-shell",
+            "borderless-composition",
+            "rule",
+            "denied-process",
+            "shell-surface",
+            "contains-shell-surface",
+            "not-a-dialog",
+            "not-legacy",
+            "protected",
+            "elevated",
+            "arm64ec",
+            "x86-process",
+            "needs-arm64-build",
+            "x64-helper-off",
+            "architecture",
         ] {
             let text = reason_text(reason);
             assert!(text.len() > 20, "{reason}");
-            assert_ne!(text, reason_text("definitely-not-a-reason"), "{reason} has no text");
+            assert_ne!(
+                text,
+                reason_text("definitely-not-a-reason"),
+                "{reason} has no text"
+            );
         }
     }
 
@@ -441,7 +517,12 @@ mod tests {
 
     #[test]
     fn confirm_never_claims_visual_confirmation() {
-        for confirm in [Confirm::NotApplied, Confirm::Rejected(-2147024809), Confirm::AcceptedUnverified, Confirm::ReadbackMatches] {
+        for confirm in [
+            Confirm::NotApplied,
+            Confirm::Rejected(-2147024809),
+            Confirm::AcceptedUnverified,
+            Confirm::ReadbackMatches,
+        ] {
             let text = confirm.text();
             assert!(!text.to_lowercase().contains("confirmed"), "{text}");
         }
@@ -472,6 +553,9 @@ mod tests {
         let config = Config::default();
         let answer = explain(&facts, &config, 0, 26100);
         assert!(answer.applied);
-        assert!(answer.notes.iter().any(|note| note.contains("paint over it") || note.contains("own title bar")));
+        assert!(answer
+            .notes
+            .iter()
+            .any(|note| note.contains("paint over it") || note.contains("own title bar")));
     }
 }

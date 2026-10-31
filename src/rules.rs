@@ -140,14 +140,21 @@ pub fn match_rule(rule: &Rule, identity: &WindowIdentity<'_>) -> Option<Vec<Crit
         matched.push(Criterion::Path);
     }
     if let Some(package) = &rule.package {
-        if package.is_empty() || identity.package.is_empty() || !glob_match(package, identity.package) {
+        if package.is_empty()
+            || identity.package.is_empty()
+            || !glob_match(package, identity.package)
+        {
             return None;
         }
         matched.push(Criterion::Package);
     }
     if let Some(title) = &rule.title {
         let hay = identity.title?;
-        if title.is_empty() || !hay.to_ascii_lowercase().contains(&title.to_ascii_lowercase()) {
+        if title.is_empty()
+            || !hay
+                .to_ascii_lowercase()
+                .contains(&title.to_ascii_lowercase())
+        {
             return None;
         }
         matched.push(Criterion::Title);
@@ -297,7 +304,9 @@ const FIELDS: [(&str, Getter); 9] = [
     ("corners", |s| s.corners.is_some()),
     ("acrylic tint", |s| s.acrylic_tint.is_some()),
     ("acrylic opacity", |s| s.acrylic_opacity.is_some()),
-    ("blur while dragging", |s| s.tinted_acrylic_on_move_fallback.is_some()),
+    ("blur while dragging", |s| {
+        s.tinted_acrylic_on_move_fallback.is_some()
+    }),
 ];
 
 // ---------------------------------------------------------------------------
@@ -332,12 +341,18 @@ fn matchers(rule: &Rule) -> [Option<String>; 5] {
 
 fn specificity(rule: &Rule) -> u32 {
     let set = matchers(rule);
-    [Criterion::Exe, Criterion::Class, Criterion::Path, Criterion::Package, Criterion::Title]
-        .iter()
-        .zip(set.iter())
-        .filter(|(_, value)| value.is_some())
-        .map(|(criterion, _)| criterion.weight())
-        .sum()
+    [
+        Criterion::Exe,
+        Criterion::Class,
+        Criterion::Path,
+        Criterion::Package,
+        Criterion::Title,
+    ]
+    .iter()
+    .zip(set.iter())
+    .filter(|(_, value)| value.is_some())
+    .map(|(criterion, _)| criterion.weight())
+    .sum()
 }
 
 /// Rule pairs whose outcome depends on nothing but file order.
@@ -410,9 +425,15 @@ mod tests {
 
     #[test]
     fn glob_basics_are_case_and_slash_insensitive() {
-        assert!(glob_match("C:\\Program Files\\Vendor\\*", "c:/program files/vendor/app.exe"));
+        assert!(glob_match(
+            "C:\\Program Files\\Vendor\\*",
+            "c:/program files/vendor/app.exe"
+        ));
         assert!(glob_match("*\\app.exe", "D:\\x\\y\\App.exe"));
-        assert!(glob_match("Microsoft.Windows*_8wekyb3d8bbwe", "Microsoft.WindowsTerminal_8wekyb3d8bbwe"));
+        assert!(glob_match(
+            "Microsoft.Windows*_8wekyb3d8bbwe",
+            "Microsoft.WindowsTerminal_8wekyb3d8bbwe"
+        ));
         assert!(glob_match("a?c", "abc"));
         assert!(!glob_match("a?c", "ac"));
         assert!(!glob_match("*.exe", "app.dll"));
@@ -445,12 +466,20 @@ mod tests {
             ..Default::default()
         };
         let ranked = rank(&c.rules, &id);
-        assert_eq!(ranked.iter().map(|r| r.index).collect::<Vec<_>>(), vec![2, 1, 0]);
-        assert_eq!(why_it_won(&ranked[0], &ranked[1]), "priority 5 beats priority 0");
+        assert_eq!(
+            ranked.iter().map(|r| r.index).collect::<Vec<_>>(),
+            vec![2, 1, 0]
+        );
+        assert_eq!(
+            why_it_won(&ranked[0], &ranked[1]),
+            "priority 5 beats priority 0"
+        );
         assert!(why_it_won(&ranked[1], &ranked[2]).contains("more specifically"));
 
         // Same priority and specificity: file order.
-        let c = config(r#"{"rules":[{"process":"a.exe","backdrop":"mica"},{"process":"a.exe","backdrop":"none"}]}"#);
+        let c = config(
+            r#"{"rules":[{"process":"a.exe","backdrop":"mica"},{"process":"a.exe","backdrop":"none"}]}"#,
+        );
         let ranked = rank(&c.rules, &WindowIdentity::exe("a.exe"));
         assert_eq!(ranked[0].index, 0);
         assert!(why_it_won(&ranked[0], &ranked[1]).contains("earlier rule"));
@@ -488,7 +517,9 @@ mod tests {
 
     #[test]
     fn a_path_or_package_rule_never_matches_an_unknown_path_or_package() {
-        let c = config(r#"{"rules":[{"path":"*","backdrop":"none"},{"package":"*","backdrop":"none"}]}"#);
+        let c = config(
+            r#"{"rules":[{"path":"*","backdrop":"none"},{"package":"*","backdrop":"none"}]}"#,
+        );
         let unknown = WindowIdentity::exe("a.exe");
         assert!(rank(&c.rules, &unknown).is_empty());
     }
@@ -549,7 +580,9 @@ mod tests {
             ]}"#,
         );
         let conflicts = find_conflicts(&c.rules);
-        assert!(conflicts.iter().any(|x| x.first == 0 && x.second == 1 && x.kind == ConflictKind::Duplicate));
+        assert!(conflicts
+            .iter()
+            .any(|x| x.first == 0 && x.second == 1 && x.kind == ConflictKind::Duplicate));
         // b.exe+X vs b.exe+Y contradict: no conflict. b.exe+X vs X only: different specificity.
         assert!(!conflicts.iter().any(|x| x.first == 2 && x.second == 3));
         assert!(!conflicts.iter().any(|x| x.first == 2 && x.second == 4));

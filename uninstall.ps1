@@ -124,6 +124,7 @@ while ((Get-Process -Name "AllBlack11" -ErrorAction SilentlyContinue) -and ((Get
     Start-Sleep -Milliseconds 200
 }
 Get-Process -Name "AllBlack11" -ErrorAction SilentlyContinue | Stop-Process -Force
+Get-Process -Name "AllBlack11Helper.x64" -ErrorAction SilentlyContinue | Stop-Process -Force
 
 $cfg = Join-Path $env:APPDATA "AllBlack11"
 Restore-ShellBackup (Join-Path $cfg "shell-backup.json")

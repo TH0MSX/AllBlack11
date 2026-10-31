@@ -269,14 +269,32 @@ pub fn readback(
     backdrop: i32,
 ) -> Vec<(u32, bool)> {
     let mut out = vec![
-        (ATTR_DARK, get_i32(hwnd, ATTR_DARK) == Some(i32::from(style.dark_mode))),
-        (ATTR_CORNERS, get_u32(hwnd, ATTR_CORNERS) == Some(style.corners.dwm_value())),
-        (ATTR_CAPTION, get_u32(hwnd, ATTR_CAPTION) == Some(style.caption.to_colorref(accent_bgr))),
-        (ATTR_BORDER, get_u32(hwnd, ATTR_BORDER) == Some(style.border.to_colorref(accent_bgr))),
-        (ATTR_TEXT, get_u32(hwnd, ATTR_TEXT) == Some(style.text.to_colorref(accent_bgr))),
+        (
+            ATTR_DARK,
+            get_i32(hwnd, ATTR_DARK) == Some(i32::from(style.dark_mode)),
+        ),
+        (
+            ATTR_CORNERS,
+            get_u32(hwnd, ATTR_CORNERS) == Some(style.corners.dwm_value()),
+        ),
+        (
+            ATTR_CAPTION,
+            get_u32(hwnd, ATTR_CAPTION) == Some(style.caption.to_colorref(accent_bgr)),
+        ),
+        (
+            ATTR_BORDER,
+            get_u32(hwnd, ATTR_BORDER) == Some(style.border.to_colorref(accent_bgr)),
+        ),
+        (
+            ATTR_TEXT,
+            get_u32(hwnd, ATTR_TEXT) == Some(style.text.to_colorref(accent_bgr)),
+        ),
     ];
     if build >= BUILD_BACKDROP {
-        out.push((ATTR_BACKDROP, get_i32(hwnd, ATTR_BACKDROP) == Some(backdrop)));
+        out.push((
+            ATTR_BACKDROP,
+            get_i32(hwnd, ATTR_BACKDROP) == Some(backdrop),
+        ));
     }
     out
 }

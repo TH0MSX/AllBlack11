@@ -47,9 +47,9 @@ mod win {
         GetCurrentProcess, GetCurrentThreadId, GetGuiResources, IsWow64Process2,
     };
     use windows_sys::Win32::UI::Controls::{
-        InitCommonControlsEx, DRAWITEMSTRUCT, ICC_LISTVIEW_CLASSES, ICC_TAB_CLASSES, ICC_TREEVIEW_CLASSES,
-        ICC_BAR_CLASSES, ICC_PROGRESS_CLASS, ICC_LINK_CLASS, ICC_UPDOWN_CLASS, INITCOMMONCONTROLSEX,
-        LVCOLUMNW, LVITEMW, TCITEMW, TVINSERTSTRUCTW,
+        InitCommonControlsEx, DRAWITEMSTRUCT, ICC_BAR_CLASSES, ICC_LINK_CLASS,
+        ICC_LISTVIEW_CLASSES, ICC_PROGRESS_CLASS, ICC_TAB_CLASSES, ICC_TREEVIEW_CLASSES,
+        ICC_UPDOWN_CLASS, INITCOMMONCONTROLSEX, LVCOLUMNW, LVITEMW, TCITEMW, TVINSERTSTRUCTW,
     };
     use windows_sys::Win32::UI::HiDpi::{
         GetDpiForWindow, SetProcessDpiAwarenessContext, DPI_AWARENESS_CONTEXT_PER_MONITOR_AWARE_V2,
@@ -57,12 +57,11 @@ mod win {
     use windows_sys::Win32::UI::Input::KeyboardAndMouse::EnableWindow;
     use windows_sys::Win32::UI::WindowsAndMessaging::{
         CreateDialogIndirectParamW, CreateWindowExW, DefWindowProcW, DispatchMessageW,
-        GetClientRect, GetDlgItem, GetMessageW, GetWindowTextW, IsDialogMessageW,
-        PostQuitMessage, RegisterWindowMessageW, SendMessageW, SetWindowLongPtrW, SetWindowPos,
-        SetWindowTextW, SetWindowsHookExW, ShowWindow, TranslateMessage, UnhookWindowsHookEx,
-        GWLP_USERDATA, HHOOK, MSG, SWP_NOZORDER, SW_SHOW, WH_CALLWNDPROCRET, WM_CLOSE, WM_COMMAND,
-        WM_DESTROY, WM_DRAWITEM, WM_INITDIALOG, WM_SETFONT, WM_SHOWWINDOW, WS_CHILD, WS_TABSTOP,
-        WS_VISIBLE,
+        GetClientRect, GetDlgItem, GetMessageW, GetWindowTextW, IsDialogMessageW, PostQuitMessage,
+        RegisterWindowMessageW, SendMessageW, SetWindowLongPtrW, SetWindowPos, SetWindowTextW,
+        SetWindowsHookExW, ShowWindow, TranslateMessage, UnhookWindowsHookEx, GWLP_USERDATA, HHOOK,
+        MSG, SWP_NOZORDER, SW_SHOW, WH_CALLWNDPROCRET, WM_CLOSE, WM_COMMAND, WM_DESTROY,
+        WM_DRAWITEM, WM_INITDIALOG, WM_SETFONT, WM_SHOWWINDOW, WS_CHILD, WS_TABSTOP, WS_VISIBLE,
     };
 
     use crate::policy::{palette, SharedState, FLAG_CLASSIC_BUTTONS, FLAG_THEME_PUSH_BUTTONS};
@@ -190,13 +189,21 @@ mod win {
     fn title_text() -> String {
         let (mut process, mut native) = (0u16, 0u16);
         unsafe { IsWow64Process2(GetCurrentProcess(), &mut process, &mut native) };
-        let me = if cfg!(target_arch = "aarch64") { "ARM64" } else { "x64" };
+        let me = if cfg!(target_arch = "aarch64") {
+            "ARM64"
+        } else {
+            "x64"
+        };
         let host = match native {
             0xAA64 => "ARM64 PC",
             0x8664 => "x64 PC",
             _ => "unknown PC",
         };
-        let mode = if cfg!(feature = "classic") { "classic (no visual styles)" } else { "manifested" };
+        let mode = if cfg!(feature = "classic") {
+            "classic (no visual styles)"
+        } else {
+            "manifested"
+        };
         format!("AllBlack11 Harness - {me} build on {host} - {mode}")
     }
 
@@ -211,7 +218,13 @@ mod win {
         const WS_MAXIMIZEBOX: u32 = 0x0001_0000;
         const DS_MODALFRAME: u32 = 0x80;
         let mut bytes = Vec::new();
-        let style = WS_POPUP | WS_CAPTION | WS_SYSMENU | WS_THICKFRAME | WS_MINIMIZEBOX | WS_MAXIMIZEBOX | DS_MODALFRAME;
+        let style = WS_POPUP
+            | WS_CAPTION
+            | WS_SYSMENU
+            | WS_THICKFRAME
+            | WS_MINIMIZEBOX
+            | WS_MAXIMIZEBOX
+            | DS_MODALFRAME;
         bytes.extend_from_slice(&style.to_le_bytes());
         bytes.extend_from_slice(&0u32.to_le_bytes());
         bytes.extend_from_slice(&0u16.to_le_bytes()); // cdit
@@ -229,13 +242,33 @@ mod win {
         bytes
     }
 
-    unsafe extern "system" fn dialog_proc(hwnd: HWND, msg: u32, wparam: WPARAM, lparam: LPARAM) -> isize {
+    unsafe extern "system" fn dialog_proc(
+        hwnd: HWND,
+        msg: u32,
+        wparam: WPARAM,
+        lparam: LPARAM,
+    ) -> isize {
         match msg {
             WM_INITDIALOG => {
                 let dpi = GetDpiForWindow(hwnd).max(96);
                 let k = dpi as f32 / 96.0;
                 let name = wide("Segoe UI");
-                let font = CreateFontW(-((15 * dpi as i32 + 48) / 96), 0, 0, 0, 400, 0, 0, 0, 1, 0, 0, 5, 0, name.as_ptr());
+                let font = CreateFontW(
+                    -((15 * dpi as i32 + 48) / 96),
+                    0,
+                    0,
+                    0,
+                    400,
+                    0,
+                    0,
+                    0,
+                    1,
+                    0,
+                    0,
+                    5,
+                    0,
+                    name.as_ptr(),
+                );
                 let state = Box::new(State {
                     dialog: hwnd,
                     font,
@@ -248,13 +281,24 @@ mod win {
                     owner_brush: CreateSolidBrush(0x0000_80FF),
                 });
                 SetWindowLongPtrW(hwnd, GWLP_USERDATA, Box::into_raw(state) as isize);
-                let state = &mut *(windows_sys::Win32::UI::WindowsAndMessaging::GetWindowLongPtrW(hwnd, GWLP_USERDATA) as *mut State);
+                let state = &mut *(windows_sys::Win32::UI::WindowsAndMessaging::GetWindowLongPtrW(
+                    hwnd,
+                    GWLP_USERDATA,
+                ) as *mut State);
                 // Self-hook first when asked for, so every control is created under it.
                 if std::env::args().any(|arg| arg == "--self-hook") {
                     start_self_hook(state);
                 }
                 build_controls(state);
-                SetWindowPos(hwnd, null_mut(), 80, 60, (1000.0 * k) as i32, (700.0 * k) as i32, SWP_NOZORDER);
+                SetWindowPos(
+                    hwnd,
+                    null_mut(),
+                    80,
+                    60,
+                    (1000.0 * k) as i32,
+                    (700.0 * k) as i32,
+                    SWP_NOZORDER,
+                );
                 refresh_counts(state);
                 1
             }
@@ -306,7 +350,8 @@ mod win {
     }
 
     unsafe fn state_of(hwnd: HWND) -> *mut State {
-        windows_sys::Win32::UI::WindowsAndMessaging::GetWindowLongPtrW(hwnd, GWLP_USERDATA) as *mut State
+        windows_sys::Win32::UI::WindowsAndMessaging::GetWindowLongPtrW(hwnd, GWLP_USERDATA)
+            as *mut State
     }
 
     // ---- control construction ---------------------------------------------------------
@@ -362,45 +407,234 @@ mod win {
         .iter()
         .enumerate()
         {
-            make(state, "BUTTON", label, tab | BS_PUSHBUTTON, 0, (12 + index as i32 * 156, 10, 150, 28), *ctl);
+            make(
+                state,
+                "BUTTON",
+                label,
+                tab | BS_PUSHBUTTON,
+                0,
+                (12 + index as i32 * 156, 10, 150, 28),
+                *ctl,
+            );
         }
         make(state, "STATIC", "", 0, 0, (12, 44, 960, 20), ID_REPORT);
 
         // ---- column 1: buttons ----
-        make(state, "BUTTON", "Buttons", BS_GROUPBOX, 0, (12, 72, 300, 292), next());
+        make(
+            state,
+            "BUTTON",
+            "Buttons",
+            BS_GROUPBOX,
+            0,
+            (12, 72, 300, 292),
+            next(),
+        );
         let b = |dy: i32| (28, 94 + dy, 268, 24);
-        make(state, "BUTTON", "Push button", tab | BS_PUSHBUTTON, 0, b(0), next());
-        make(state, "BUTTON", "Default push button", tab | BS_DEFPUSHBUTTON, 0, b(30), next());
-        make(state, "BUTTON", "Disabled push button", tab | WS_DISABLED | BS_PUSHBUTTON, 0, b(60), next());
-        let c1 = make(state, "BUTTON", "Checkbox, checked", tab | BS_AUTOCHECKBOX, 0, b(90), next());
+        make(
+            state,
+            "BUTTON",
+            "Push button",
+            tab | BS_PUSHBUTTON,
+            0,
+            b(0),
+            next(),
+        );
+        make(
+            state,
+            "BUTTON",
+            "Default push button",
+            tab | BS_DEFPUSHBUTTON,
+            0,
+            b(30),
+            next(),
+        );
+        make(
+            state,
+            "BUTTON",
+            "Disabled push button",
+            tab | WS_DISABLED | BS_PUSHBUTTON,
+            0,
+            b(60),
+            next(),
+        );
+        let c1 = make(
+            state,
+            "BUTTON",
+            "Checkbox, checked",
+            tab | BS_AUTOCHECKBOX,
+            0,
+            b(90),
+            next(),
+        );
         SendMessageW(c1, BM_SETCHECK, 1, 0);
-        make(state, "BUTTON", "Checkbox, unchecked", tab | BS_AUTOCHECKBOX, 0, b(114), next());
-        let c3 = make(state, "BUTTON", "Disabled checkbox, checked", WS_DISABLED | BS_AUTOCHECKBOX, 0, b(138), next());
+        make(
+            state,
+            "BUTTON",
+            "Checkbox, unchecked",
+            tab | BS_AUTOCHECKBOX,
+            0,
+            b(114),
+            next(),
+        );
+        let c3 = make(
+            state,
+            "BUTTON",
+            "Disabled checkbox, checked",
+            WS_DISABLED | BS_AUTOCHECKBOX,
+            0,
+            b(138),
+            next(),
+        );
         SendMessageW(c3, BM_SETCHECK, 1, 0);
-        make(state, "BUTTON", "Three-state checkbox", tab | BS_AUTO3STATE, 0, b(162), next());
-        let r1 = make(state, "BUTTON", "Radio, selected", tab | BS_AUTORADIOBUTTON, 0, b(186), next());
+        make(
+            state,
+            "BUTTON",
+            "Three-state checkbox",
+            tab | BS_AUTO3STATE,
+            0,
+            b(162),
+            next(),
+        );
+        let r1 = make(
+            state,
+            "BUTTON",
+            "Radio, selected",
+            tab | BS_AUTORADIOBUTTON,
+            0,
+            b(186),
+            next(),
+        );
         SendMessageW(r1, BM_SETCHECK, 1, 0);
-        make(state, "BUTTON", "Radio, not selected", BS_AUTORADIOBUTTON, 0, b(210), next());
-        make(state, "BUTTON", "Disabled radio", WS_DISABLED | BS_AUTORADIOBUTTON, 0, b(234), next());
-        make(state, "BUTTON", "Owner-drawn: left alone (orange)", tab | BS_OWNERDRAW, 0, b(262), next());
+        make(
+            state,
+            "BUTTON",
+            "Radio, not selected",
+            BS_AUTORADIOBUTTON,
+            0,
+            b(210),
+            next(),
+        );
+        make(
+            state,
+            "BUTTON",
+            "Disabled radio",
+            WS_DISABLED | BS_AUTORADIOBUTTON,
+            0,
+            b(234),
+            next(),
+        );
+        make(
+            state,
+            "BUTTON",
+            "Owner-drawn: left alone (orange)",
+            tab | BS_OWNERDRAW,
+            0,
+            b(262),
+            next(),
+        );
 
         // ---- column 2: text ----
-        make(state, "BUTTON", "Text and fields", BS_GROUPBOX, 0, (324, 72, 320, 420), next());
+        make(
+            state,
+            "BUTTON",
+            "Text and fields",
+            BS_GROUPBOX,
+            0,
+            (324, 72, 320, 420),
+            next(),
+        );
         let t = |dy: i32| (340, 94 + dy, 288, 24);
         make(state, "STATIC", "Static label", 0, 0, t(0), next());
-        make(state, "STATIC", "Disabled static label", WS_DISABLED, 0, t(26), next());
-        make(state, "STATIC", "Clickable static (SS_NOTIFY)", SS_NOTIFY, 0, t(52), next());
-        make(state, "SysLink", "A <a href=\"https://example.com\">link</a> in text", tab, 0, t(78), next());
-        make(state, "EDIT", "Edit, editable", tab | WS_BORDER | ES_AUTOHSCROLL, 0, t(108), next());
-        make(state, "EDIT", "Edit, read-only", tab | WS_BORDER | ES_AUTOHSCROLL | ES_READONLY, 0, t(138), next());
-        make(state, "EDIT", "Edit, disabled", WS_DISABLED | WS_BORDER | ES_AUTOHSCROLL, 0, t(168), next());
-        make(state, "EDIT", "password", tab | WS_BORDER | ES_PASSWORD | ES_AUTOHSCROLL, 0, t(198), next());
         make(
-            state, "EDIT", "Multiline edit.\r\nSecond line.\r\nThird line.\r\nFourth line.\r\nFifth line.",
-            tab | WS_BORDER | WS_VSCROLL | ES_MULTILINE | ES_AUTOVSCROLL, 0, (340, 228, 288, 76), next(),
+            state,
+            "STATIC",
+            "Disabled static label",
+            WS_DISABLED,
+            0,
+            t(26),
+            next(),
         );
-        let combo = make(state, "COMBOBOX", "", tab | CBS_DROPDOWN | WS_VSCROLL, 0, (340, 312, 288, 120), next());
-        let droplist = make(state, "COMBOBOX", "", tab | CBS_DROPDOWNLIST | WS_VSCROLL, 0, (340, 342, 288, 120), next());
+        make(
+            state,
+            "STATIC",
+            "Clickable static (SS_NOTIFY)",
+            SS_NOTIFY,
+            0,
+            t(52),
+            next(),
+        );
+        make(
+            state,
+            "SysLink",
+            "A <a href=\"https://example.com\">link</a> in text",
+            tab,
+            0,
+            t(78),
+            next(),
+        );
+        make(
+            state,
+            "EDIT",
+            "Edit, editable",
+            tab | WS_BORDER | ES_AUTOHSCROLL,
+            0,
+            t(108),
+            next(),
+        );
+        make(
+            state,
+            "EDIT",
+            "Edit, read-only",
+            tab | WS_BORDER | ES_AUTOHSCROLL | ES_READONLY,
+            0,
+            t(138),
+            next(),
+        );
+        make(
+            state,
+            "EDIT",
+            "Edit, disabled",
+            WS_DISABLED | WS_BORDER | ES_AUTOHSCROLL,
+            0,
+            t(168),
+            next(),
+        );
+        make(
+            state,
+            "EDIT",
+            "password",
+            tab | WS_BORDER | ES_PASSWORD | ES_AUTOHSCROLL,
+            0,
+            t(198),
+            next(),
+        );
+        make(
+            state,
+            "EDIT",
+            "Multiline edit.\r\nSecond line.\r\nThird line.\r\nFourth line.\r\nFifth line.",
+            tab | WS_BORDER | WS_VSCROLL | ES_MULTILINE | ES_AUTOVSCROLL,
+            0,
+            (340, 228, 288, 76),
+            next(),
+        );
+        let combo = make(
+            state,
+            "COMBOBOX",
+            "",
+            tab | CBS_DROPDOWN | WS_VSCROLL,
+            0,
+            (340, 312, 288, 120),
+            next(),
+        );
+        let droplist = make(
+            state,
+            "COMBOBOX",
+            "",
+            tab | CBS_DROPDOWNLIST | WS_VSCROLL,
+            0,
+            (340, 342, 288, 120),
+            next(),
+        );
         for item in ["First item", "Second item", "Third item"] {
             let w = wide(item);
             SendMessageW(combo, CB_ADDSTRING, 0, w.as_ptr() as LPARAM);
@@ -408,17 +642,60 @@ mod win {
         }
         SendMessageW(combo, CB_SETCURSEL, 1, 0);
         SendMessageW(droplist, CB_SETCURSEL, 0, 0);
-        let list = make(state, "LISTBOX", "", tab | WS_BORDER | WS_VSCROLL | LBS_NOTIFY, 0, (340, 374, 288, 70), next());
-        for item in ["Listbox item one", "Listbox item two (selected)", "Listbox item three", "Item four", "Item five"] {
+        let list = make(
+            state,
+            "LISTBOX",
+            "",
+            tab | WS_BORDER | WS_VSCROLL | LBS_NOTIFY,
+            0,
+            (340, 374, 288, 70),
+            next(),
+        );
+        for item in [
+            "Listbox item one",
+            "Listbox item two (selected)",
+            "Listbox item three",
+            "Item four",
+            "Item five",
+        ] {
             SendMessageW(list, LB_ADDSTRING, 0, wide(item).as_ptr() as LPARAM);
         }
         SendMessageW(list, LB_SETCURSEL, 1, 0);
-        make(state, "RICHEDIT50W", "Rich edit: left as it is (partial support)", tab | WS_BORDER | ES_MULTILINE, 0, (340, 450, 288, 34), next());
+        make(
+            state,
+            "RICHEDIT50W",
+            "Rich edit: left as it is (partial support)",
+            tab | WS_BORDER | ES_MULTILINE,
+            0,
+            (340, 450, 288, 34),
+            next(),
+        );
 
         // ---- column 3: common controls ----
-        make(state, "BUTTON", "Lists, trees and bars", BS_GROUPBOX, 0, (656, 72, 330, 600), next());
-        let lv = make(state, "SysListView32", "", tab | WS_BORDER | LVS_REPORT | LVS_SHOWSELALWAYS, WS_EX_CLIENTEDGE, (672, 94, 298, 130), next());
-        SendMessageW(lv, LVM_SETEXTENDEDLISTVIEWSTYLE, 0, (LVS_EX_CHECKBOXES | LVS_EX_FULLROWSELECT) as LPARAM);
+        make(
+            state,
+            "BUTTON",
+            "Lists, trees and bars",
+            BS_GROUPBOX,
+            0,
+            (656, 72, 330, 600),
+            next(),
+        );
+        let lv = make(
+            state,
+            "SysListView32",
+            "",
+            tab | WS_BORDER | LVS_REPORT | LVS_SHOWSELALWAYS,
+            WS_EX_CLIENTEDGE,
+            (672, 94, 298, 130),
+            next(),
+        );
+        SendMessageW(
+            lv,
+            LVM_SETEXTENDEDLISTVIEWSTYLE,
+            0,
+            (LVS_EX_CHECKBOXES | LVS_EX_FULLROWSELECT) as LPARAM,
+        );
         for (index, title) in ["Name", "Kind"].iter().enumerate() {
             let mut text = wide(title);
             let mut column: LVCOLUMNW = std::mem::zeroed();
@@ -427,7 +704,14 @@ mod win {
             column.pszText = text.as_mut_ptr();
             SendMessageW(lv, LVM_INSERTCOLUMNW, index, &column as *const _ as LPARAM);
         }
-        for (row, (name, kind)) in [("Alpha", "first"), ("Bravo (selected)", "second"), ("Charlie", "third")].iter().enumerate() {
+        for (row, (name, kind)) in [
+            ("Alpha", "first"),
+            ("Bravo (selected)", "second"),
+            ("Charlie", "third"),
+        ]
+        .iter()
+        .enumerate()
+        {
             let mut text = wide(name);
             let mut item: LVITEMW = std::mem::zeroed();
             item.mask = 0x1; // LVIF_TEXT
@@ -440,7 +724,15 @@ mod win {
             subitem.pszText = sub.as_mut_ptr();
             SendMessageW(lv, LVM_SETITEMTEXTW, row, &subitem as *const _ as LPARAM);
         }
-        let tv = make(state, "SysTreeView32", "", tab | WS_BORDER | TVS_HASLINES | TVS_HASBUTTONS | TVS_LINESATROOT | TVS_SHOWSELALWAYS, WS_EX_CLIENTEDGE, (672, 232, 298, 120), next());
+        let tv = make(
+            state,
+            "SysTreeView32",
+            "",
+            tab | WS_BORDER | TVS_HASLINES | TVS_HASBUTTONS | TVS_LINESATROOT | TVS_SHOWSELALWAYS,
+            WS_EX_CLIENTEDGE,
+            (672, 232, 298, 120),
+            next(),
+        );
         let mut root_text = wide("Tree root");
         let mut insert: TVINSERTSTRUCTW = std::mem::zeroed();
         insert.hInsertAfter = 0xFFFF_0001usize as _; // TVI_LAST
@@ -456,7 +748,15 @@ mod win {
             child.Anonymous.item.pszText = text.as_mut_ptr();
             SendMessageW(tv, TVM_INSERTITEMW, 0, &child as *const _ as LPARAM);
         }
-        let tabs = make(state, "SysTabControl32", "", tab, 0, (672, 362, 298, 70), next());
+        let tabs = make(
+            state,
+            "SysTabControl32",
+            "",
+            tab,
+            0,
+            (672, 362, 298, 70),
+            next(),
+        );
         for (index, title) in ["General", "Advanced"].iter().enumerate() {
             let mut text = wide(title);
             let mut item: TCITEMW = std::mem::zeroed();
@@ -464,9 +764,25 @@ mod win {
             item.pszText = text.as_mut_ptr();
             SendMessageW(tabs, TCM_INSERTITEMW, index, &item as *const _ as LPARAM);
         }
-        let progress = make(state, "msctls_progress32", "", 0, 0, (672, 444, 298, 18), next());
+        let progress = make(
+            state,
+            "msctls_progress32",
+            "",
+            0,
+            0,
+            (672, 444, 298, 18),
+            next(),
+        );
         SendMessageW(progress, PBM_SETPOS, 60, 0);
-        let slider = make(state, "msctls_trackbar32", "", tab | TBS_AUTOTICKS, 0, (672, 470, 298, 34), next());
+        let slider = make(
+            state,
+            "msctls_trackbar32",
+            "",
+            tab | TBS_AUTOTICKS,
+            0,
+            (672, 470, 298, 34),
+            next(),
+        );
         SendMessageW(slider, TBM_SETPOS, 1, 40);
         make(state, "STATIC", "Tab strip, rich edit and the progress bar keep their light look by design:\r\nthe capability table lists them as partial or untouched.", 0, 0, (672, 516, 298, 120), next());
     }
@@ -495,7 +811,14 @@ mod win {
                 EnableWindow(hwnd, enable);
             }
         }
-        set_text(GetDlgItem(state.dialog, ID_DISABLE as i32), if state.controls_disabled { "Enable controls" } else { "Disable controls" });
+        set_text(
+            GetDlgItem(state.dialog, ID_DISABLE as i32),
+            if state.controls_disabled {
+                "Enable controls"
+            } else {
+                "Disable controls"
+            },
+        );
     }
 
     unsafe fn toggle_readonly(state: &mut State) {
@@ -503,27 +826,65 @@ mod win {
         let on = usize::from(state.readonly);
         each_stateful(state, |hwnd| {
             let mut class = [0u16; 16];
-            windows_sys::Win32::UI::WindowsAndMessaging::GetClassNameW(hwnd, class.as_mut_ptr(), 16);
-            if String::from_utf16_lossy(&class).trim_end_matches('\0').eq_ignore_ascii_case("Edit") {
+            windows_sys::Win32::UI::WindowsAndMessaging::GetClassNameW(
+                hwnd,
+                class.as_mut_ptr(),
+                16,
+            );
+            if String::from_utf16_lossy(&class)
+                .trim_end_matches('\0')
+                .eq_ignore_ascii_case("Edit")
+            {
                 SendMessageW(hwnd, EM_SETREADONLY, on, 0);
             }
         });
-        set_text(GetDlgItem(state.dialog, ID_READONLY as i32), if state.readonly { "Read-only off" } else { "Read-only on" });
+        set_text(
+            GetDlgItem(state.dialog, ID_READONLY as i32),
+            if state.readonly {
+                "Read-only off"
+            } else {
+                "Read-only on"
+            },
+        );
     }
 
     unsafe fn add_late_controls(state: &mut State) {
         state.late_count += 1;
         let y = 500 + (state.late_count - 1) % 4 * 30;
         let n = state.late_count;
-        make(state, "BUTTON", &format!("Late checkbox #{n}"), WS_TABSTOP | BS_AUTOCHECKBOX, 0, (28, y.min(640), 200, 24), 2000 + n as u16);
-        make(state, "EDIT", &format!("Late edit #{n}"), WS_TABSTOP | WS_BORDER | ES_AUTOHSCROLL, 0, (236, y.min(640), 76, 24), 2100 + n as u16);
+        make(
+            state,
+            "BUTTON",
+            &format!("Late checkbox #{n}"),
+            WS_TABSTOP | BS_AUTOCHECKBOX,
+            0,
+            (28, y.min(640), 200, 24),
+            2000 + n as u16,
+        );
+        make(
+            state,
+            "EDIT",
+            &format!("Late edit #{n}"),
+            WS_TABSTOP | WS_BORDER | ES_AUTOHSCROLL,
+            0,
+            (236, y.min(640), 76, 24),
+            2100 + n as u16,
+        );
     }
 
     unsafe fn apply_palette(state: &mut State) {
-        set_text(GetDlgItem(state.dialog, ID_PALETTE as i32), if state.black { "Palette: black" } else { "Palette: graphite" });
+        set_text(
+            GetDlgItem(state.dialog, ID_PALETTE as i32),
+            if state.black {
+                "Palette: black"
+            } else {
+                "Palette: graphite"
+            },
+        );
         if let Some(hook) = &state.self_hook {
             let chosen = palette(if state.black { "black" } else { "graphite" });
-            let mut next = SharedState::from_palette(chosen, FLAG_CLASSIC_BUTTONS | FLAG_THEME_PUSH_BUTTONS);
+            let mut next =
+                SharedState::from_palette(chosen, FLAG_CLASSIC_BUTTONS | FLAG_THEME_PUSH_BUTTONS);
             next.enabled = 1;
             std::ptr::write_volatile(hook.shared, next);
             windows_sys::Win32::Graphics::Gdi::InvalidateRect(state.dialog, null(), 1);
@@ -543,15 +904,24 @@ mod win {
         let mut buf = [0u16; 520];
         let len = GetModuleFileNameW(null_mut(), buf.as_mut_ptr(), buf.len() as u32) as usize;
         let exe = String::from_utf16_lossy(&buf[..len]);
-        let dir = std::path::Path::new(&exe).parent().map(|p| p.to_path_buf()).unwrap_or_default();
+        let dir = std::path::Path::new(&exe)
+            .parent()
+            .map(|p| p.to_path_buf())
+            .unwrap_or_default();
         let dll = dir.join("AllBlack11Hook.dll");
         let module = LoadLibraryW(wide(&dll.display().to_string()).as_ptr());
         if module.is_null() {
-            set_report(state, "Self-hook: AllBlack11Hook.dll was not found next to the harness.");
+            set_report(
+                state,
+                "Self-hook: AllBlack11Hook.dll was not found next to the harness.",
+            );
             return false;
         }
         let Some(proc) = GetProcAddress(module, b"AllBlack11HookProcRet\0".as_ptr()) else {
-            set_report(state, "Self-hook: the DLL has no AllBlack11HookProcRet export.");
+            set_report(
+                state,
+                "Self-hook: the DLL has no AllBlack11HookProcRet export.",
+            );
             return false;
         };
         let mapping = CreateFileMappingW(
@@ -566,18 +936,30 @@ mod win {
             set_report(state, "Self-hook: could not create the shared state.");
             return false;
         }
-        let view = MapViewOfFile(mapping, FILE_MAP_ALL_ACCESS, 0, 0, std::mem::size_of::<SharedState>());
+        let view = MapViewOfFile(
+            mapping,
+            FILE_MAP_ALL_ACCESS,
+            0,
+            0,
+            std::mem::size_of::<SharedState>(),
+        );
         if view.Value.is_null() {
             set_report(state, "Self-hook: could not map the shared state.");
             return false;
         }
         let shared = view.Value as *mut SharedState;
-        let mut value = SharedState::from_palette(palette(if state.black { "black" } else { "graphite" }), FLAG_CLASSIC_BUTTONS | FLAG_THEME_PUSH_BUTTONS);
+        let mut value = SharedState::from_palette(
+            palette(if state.black { "black" } else { "graphite" }),
+            FLAG_CLASSIC_BUTTONS | FLAG_THEME_PUSH_BUTTONS,
+        );
         value.enabled = 1;
         std::ptr::write_volatile(shared, value);
         let hook = SetWindowsHookExW(
             WH_CALLWNDPROCRET,
-            Some(std::mem::transmute::<unsafe extern "system" fn() -> isize, unsafe extern "system" fn(i32, WPARAM, LPARAM) -> LRESULT>(proc)),
+            Some(std::mem::transmute::<
+                unsafe extern "system" fn() -> isize,
+                unsafe extern "system" fn(i32, WPARAM, LPARAM) -> LRESULT,
+            >(proc)),
             module,
             GetCurrentThreadId(),
         );
@@ -585,7 +967,11 @@ mod win {
             set_report(state, "Self-hook: SetWindowsHookEx failed.");
             return false;
         }
-        state.self_hook = Some(SelfHook { module, hook, shared });
+        state.self_hook = Some(SelfHook {
+            module,
+            hook,
+            shared,
+        });
         // Treat the dialog now: the hook only sees messages from here on.
         SendMessageW(state.dialog, WM_SHOWWINDOW, 1, 0);
         true
@@ -607,10 +993,16 @@ mod win {
     unsafe fn toggle_self_hook(state: &mut State) {
         if state.self_hook.is_some() {
             stop_self_hook(state);
-            set_text(GetDlgItem(state.dialog, ID_SELF_HOOK as i32), "Self-hook: off");
+            set_text(
+                GetDlgItem(state.dialog, ID_SELF_HOOK as i32),
+                "Self-hook: off",
+            );
             windows_sys::Win32::Graphics::Gdi::InvalidateRect(state.dialog, null(), 1);
         } else if start_self_hook(state) {
-            set_text(GetDlgItem(state.dialog, ID_SELF_HOOK as i32), "Self-hook: on");
+            set_text(
+                GetDlgItem(state.dialog, ID_SELF_HOOK as i32),
+                "Self-hook: on",
+            );
         }
     }
 
@@ -618,7 +1010,10 @@ mod win {
 
     unsafe fn gui_counts() -> (u32, u32) {
         let process = GetCurrentProcess();
-        (GetGuiResources(process, GR_GDIOBJECTS), GetGuiResources(process, GR_USEROBJECTS))
+        (
+            GetGuiResources(process, GR_GDIOBJECTS),
+            GetGuiResources(process, GR_USEROBJECTS),
+        )
     }
 
     unsafe fn cycle_test(state: &mut State) {
@@ -656,7 +1051,11 @@ mod win {
     unsafe fn refresh_counts(state: &State) {
         let (gdi, user) = gui_counts();
         let mut current = [0u16; 400];
-        let len = GetWindowTextW(GetDlgItem(state.dialog, ID_REPORT as i32), current.as_mut_ptr(), 400);
+        let len = GetWindowTextW(
+            GetDlgItem(state.dialog, ID_REPORT as i32),
+            current.as_mut_ptr(),
+            400,
+        );
         let existing = String::from_utf16_lossy(&current[..len.max(0) as usize]);
         if existing.is_empty() || existing.starts_with("GDI objects") {
             set_text(

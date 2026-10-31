@@ -91,8 +91,16 @@ unsafe extern "system" fn collect(hwnd: HWND, lparam: LPARAM) -> BOOL {
     if GetWindowLongPtrW(hwnd, GWL_EXSTYLE) as u32 & WS_EX_TOOLWINDOW != 0 {
         return 1;
     }
-    let mut rect = RECT { left: 0, top: 0, right: 0, bottom: 0 };
-    if GetWindowRect(hwnd, &mut rect) == 0 || rect.right - rect.left < 40 || rect.bottom - rect.top < 24 {
+    let mut rect = RECT {
+        left: 0,
+        top: 0,
+        right: 0,
+        bottom: 0,
+    };
+    if GetWindowRect(hwnd, &mut rect) == 0
+        || rect.right - rect.left < 40
+        || rect.bottom - rect.top < 24
+    {
         return 1;
     }
     if is_cloaked(hwnd) {

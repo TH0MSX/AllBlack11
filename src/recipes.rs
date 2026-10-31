@@ -93,7 +93,8 @@ pub fn parse_recipe(text: &str) -> Result<Recipe, String> {
     if text.len() > MAX_BYTES {
         return Err(format!("recipe is larger than {} KB", MAX_BYTES / 1024));
     }
-    let value: Value = serde_json::from_str(text).map_err(|err| format!("not valid JSON: {err}"))?;
+    let value: Value =
+        serde_json::from_str(text).map_err(|err| format!("not valid JSON: {err}"))?;
     let object = value.as_object().ok_or("recipe must be a JSON object")?;
     let look = object
         .get("look")
@@ -109,7 +110,10 @@ pub fn parse_recipe(text: &str) -> Result<Recipe, String> {
     }
     let recipe: Recipe = serde_json::from_value(value).map_err(|err| err.to_string())?;
     if recipe.schema != SCHEMA {
-        return Err(format!("unsupported schema {} (this build reads schema {SCHEMA})", recipe.schema));
+        return Err(format!(
+            "unsupported schema {} (this build reads schema {SCHEMA})",
+            recipe.schema
+        ));
     }
     if !valid_id(&recipe.id) {
         return Err("id must be 1-48 characters of a-z, 0-9, '-', '_' or '.'".into());
@@ -225,7 +229,10 @@ fn fields(style: &Style) -> [(&'static str, String); 9] {
             "acrylic opacity",
             format!("{:.0}%", f64::from(style.acrylic_opacity) / 255.0 * 100.0),
         ),
-        ("blur while dragging", style.tinted_acrylic_on_move_fallback.to_string()),
+        (
+            "blur while dragging",
+            style.tinted_acrylic_on_move_fallback.to_string(),
+        ),
     ]
 }
 
@@ -303,7 +310,10 @@ pub fn apply(config: &mut Config, recipe: &Recipe) -> Vec<Change> {
     match &recipe.matcher {
         None => overlay(&mut config.defaults, &recipe.look),
         Some(m) => {
-            let index = config.rules.iter().position(|rule| rule_matches_recipe(rule, m));
+            let index = config
+                .rules
+                .iter()
+                .position(|rule| rule_matches_recipe(rule, m));
             let index = index.unwrap_or_else(|| {
                 let mut rule = Rule::for_process(m.process.as_deref().unwrap_or(""));
                 rule.class = m.class.clone();
@@ -343,26 +353,37 @@ mod tests {
     use crate::legacy_policy::contrast_ratio;
 
     fn minimal(extra_look: &str) -> String {
-        format!(
-            r#"{{"schema":1,"id":"x","name":"X","look":{{{extra_look}}}}}"#
-        )
+        format!(r#"{{"schema":1,"id":"x","name":"X","look":{{{extra_look}}}}}"#)
     }
 
     #[test]
     fn every_bundled_recipe_parses_and_keeps_text_readable() {
         let all = bundled();
-        assert_eq!(all.len(), BUNDLED_JSON.len(), "a bundled recipe failed to parse");
+        assert_eq!(
+            all.len(),
+            BUNDLED_JSON.len(),
+            "a bundled recipe failed to parse"
+        );
         for recipe in &all {
             let look = recipe.look.merge_onto(base_style());
-            if let (Some(caption), Some(text)) = (
-                look.caption.components(0),
-                look.text.components(0),
-            ) {
-                let cr = |(r, g, b): (u8, u8, u8)| u32::from(r) | (u32::from(g) << 8) | (u32::from(b) << 16);
+            if let (Some(caption), Some(text)) =
+                (look.caption.components(0), look.text.components(0))
+            {
+                let cr = |(r, g, b): (u8, u8, u8)| {
+                    u32::from(r) | (u32::from(g) << 8) | (u32::from(b) << 16)
+                };
                 let ratio = contrast_ratio(cr(caption), cr(text));
-                assert!(ratio >= 7.0, "{} caption/text contrast {ratio:.1}", recipe.id);
+                assert!(
+                    ratio >= 7.0,
+                    "{} caption/text contrast {ratio:.1}",
+                    recipe.id
+                );
             }
-            assert!(!recipe.notes.is_empty(), "{} should say what it is not", recipe.id);
+            assert!(
+                !recipe.notes.is_empty(),
+                "{} should say what it is not",
+                recipe.id
+            );
         }
         // IDs are unique.
         let mut ids: Vec<&str> = all.iter().map(|r| r.id.as_str()).collect();
@@ -386,7 +407,10 @@ mod tests {
             &minimal(r#""backdrop":"cmd /c calc""#),
             &minimal(r#""acrylicOpacity":9"#),
         ] {
-            assert!(parse_recipe(bad).is_err(), "should have been refused: {bad}");
+            assert!(
+                parse_recipe(bad).is_err(),
+                "should have been refused: {bad}"
+            );
         }
         assert!(parse_recipe(&minimal(r##""captionColor":"#101010""##)).is_ok());
     }
@@ -399,19 +423,29 @@ mod tests {
         assert!(parse_recipe(&with("Bad Id!", "X")).is_err());
         assert!(parse_recipe(&with("", "X")).is_err());
         assert!(parse_recipe(&with("ok", "  ")).is_err());
-        assert!(parse_recipe(&with("ok", "bell\u{7}")).is_err() || parse_recipe(&with("ok", "bell\\u0007")).is_err());
+        assert!(
+            parse_recipe(&with("ok", "bell\u{7}")).is_err()
+                || parse_recipe(&with("ok", "bell\\u0007")).is_err()
+        );
         assert!(parse_recipe(r#"{"schema":2,"id":"x","name":"X","look":{}}"#).is_err());
         assert!(parse_recipe("{not json").is_err());
         assert!(parse_recipe("[]").is_err());
-        let huge = format!(r#"{{"schema":1,"id":"x","name":"X","look":{{}},"description":"{}"}}"#, "a".repeat(MAX_BYTES));
+        let huge = format!(
+            r#"{{"schema":1,"id":"x","name":"X","look":{{}},"description":"{}"}}"#,
+            "a".repeat(MAX_BYTES)
+        );
         assert!(parse_recipe(&huge).is_err());
-        let long_note = format!(r#"{{"schema":1,"id":"x","name":"X","look":{{}},"notes":["{}"]}}"#, "n".repeat(300));
+        let long_note = format!(
+            r#"{{"schema":1,"id":"x","name":"X","look":{{}},"notes":["{}"]}}"#,
+            "n".repeat(300)
+        );
         assert!(parse_recipe(&long_note).is_err());
     }
 
     #[test]
     fn matchers_must_name_something_and_process_is_a_file_name() {
-        let base = |m: &str| format!(r#"{{"schema":1,"id":"x","name":"X","look":{{}},"match":{m}}}"#);
+        let base =
+            |m: &str| format!(r#"{{"schema":1,"id":"x","name":"X","look":{{}},"match":{m}}}"#);
         assert!(parse_recipe(&base("{}")).is_err());
         assert!(parse_recipe(&base(r#"{"process":"C:\\Windows\\notepad.exe"}"#)).is_err());
         assert!(parse_recipe(&base(r#"{"process":"notepad.exe"}"#)).is_ok());
@@ -450,11 +484,21 @@ mod tests {
         .unwrap();
         apply(&mut config, &recipe);
         apply(&mut config, &recipe);
-        assert_eq!(config.rules.len(), 1, "applying twice must not duplicate the rule");
-        assert_eq!(config.rules[0].class.as_deref(), Some("CASCADIA_HOSTING_WINDOW_CLASS"));
+        assert_eq!(
+            config.rules.len(),
+            1,
+            "applying twice must not duplicate the rule"
+        );
+        assert_eq!(
+            config.rules[0].class.as_deref(),
+            Some("CASCADIA_HOSTING_WINDOW_CLASS")
+        );
         assert_eq!(config.rules[0].style.backdrop, Some(Backdrop::Acrylic));
         // Default look, shell and exclusions are untouched.
-        assert_eq!(config.defaults.backdrop, crate::Config::default().defaults.backdrop);
+        assert_eq!(
+            config.defaults.backdrop,
+            crate::Config::default().defaults.backdrop
+        );
         assert!(config.shell.black_shell);
         assert_eq!(config.exclude.last().map(String::as_str), Some("keep.exe"));
     }

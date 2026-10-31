@@ -29,7 +29,9 @@ mod win {
     use std::sync::atomic::{AtomicBool, AtomicIsize, AtomicU32, AtomicU8, AtomicUsize, Ordering};
     use std::sync::Mutex;
 
-    use windows_sys::Win32::Foundation::{BOOL, FALSE, HINSTANCE, HWND, LPARAM, LRESULT, TRUE, WPARAM};
+    use windows_sys::Win32::Foundation::{
+        BOOL, FALSE, HINSTANCE, HWND, LPARAM, LRESULT, TRUE, WPARAM,
+    };
     use windows_sys::Win32::Graphics::Gdi::{
         CreateSolidBrush, FillRect, GetCurrentObject, GetObjectW, GetStockObject, InvalidateRect,
         SetBkColor, SetTextColor, HBRUSH, HDC, LOGFONTW, OBJ_FONT,
@@ -44,10 +46,10 @@ mod win {
     use windows_sys::Win32::UI::WindowsAndMessaging::{
         CallNextHookEx, CallWindowProcW, DefWindowProcW, EnumChildWindows, GetClassNameW,
         GetClientRect, GetParent, GetWindowLongPtrW, RegisterWindowMessageW, SendMessageW,
-        SetWindowLongPtrW, CWPRETSTRUCT, GWLP_WNDPROC, GWL_STYLE, HC_ACTION, WNDPROC, WM_CREATE,
+        SetWindowLongPtrW, CWPRETSTRUCT, GWLP_WNDPROC, GWL_STYLE, HC_ACTION, WM_CREATE,
         WM_CTLCOLORBTN, WM_CTLCOLORDLG, WM_CTLCOLOREDIT, WM_CTLCOLORLISTBOX, WM_CTLCOLORMSGBOX,
         WM_CTLCOLORSCROLLBAR, WM_CTLCOLORSTATIC, WM_ERASEBKGND, WM_INITDIALOG, WM_NCDESTROY,
-        WM_SHOWWINDOW,
+        WM_SHOWWINDOW, WNDPROC,
     };
 
     use crate::policy::SharedState;
@@ -553,7 +555,11 @@ mod win {
         SendMessageW(hwnd, LVM_SETTEXTBKCOLOR, 0, bg as LPARAM);
         let header = SendMessageW(hwnd, LVM_GETHEADER, 0, 0) as HWND;
         if !header.is_null() && claim(header, Kind::Themed).is_some() {
-            SetWindowTheme(header, wide("DarkMode_ItemsView").as_ptr(), std::ptr::null());
+            SetWindowTheme(
+                header,
+                wide("DarkMode_ItemsView").as_ptr(),
+                std::ptr::null(),
+            );
         }
     }
 

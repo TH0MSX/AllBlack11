@@ -69,18 +69,37 @@ mod tests {
 
     #[test]
     fn allows_a_native_dialog() {
-        assert_eq!(inject_allowed(&target("notepad.exe", "#32770")), Ok(Route::Native));
+        assert_eq!(
+            inject_allowed(&target("notepad.exe", "#32770")),
+            Ok(Route::Native)
+        );
         // MMC dialogs are dialogs; the MMC main frame is not.
-        assert_eq!(inject_allowed(&target("mmc.exe", "#32770")), Ok(Route::Native));
-        assert_eq!(inject_allowed(&target("mmc.exe", "MMCMainFrame")), Err("not-legacy"));
+        assert_eq!(
+            inject_allowed(&target("mmc.exe", "#32770")),
+            Ok(Route::Native)
+        );
+        assert_eq!(
+            inject_allowed(&target("mmc.exe", "MMCMainFrame")),
+            Err("not-legacy")
+        );
     }
 
     #[test]
     fn explorer_control_panel_and_folder_windows_are_refused_whatever_the_title() {
         // There is no title parameter: titles are localized and editable, so they are never
         // consulted. Class alone keeps Explorer's windows out.
-        for class in ["CabinetWClass", "ExploreWClass", "ShellTabWindowClass", "WorkerW", "Progman"] {
-            assert_eq!(inject_allowed(&target("explorer.exe", class)), Err("not-legacy"), "{class}");
+        for class in [
+            "CabinetWClass",
+            "ExploreWClass",
+            "ShellTabWindowClass",
+            "WorkerW",
+            "Progman",
+        ] {
+            assert_eq!(
+                inject_allowed(&target("explorer.exe", class)),
+                Err("not-legacy"),
+                "{class}"
+            );
         }
     }
 
@@ -98,10 +117,22 @@ mod tests {
         game.excluded = true;
         assert_eq!(inject_allowed(&game), Err("excluded"));
 
-        assert_eq!(inject_allowed(&target("dwm.exe", "#32770")), Err("excluded"));
-        assert_eq!(inject_allowed(&target("EasyAntiCheat.exe", "#32770")), Err("excluded"));
-        assert_eq!(inject_allowed(&target("notepad.exe", "Notepad")), Err("not-legacy"));
-        assert_eq!(inject_allowed(&target("", "#32770")), Err("unknown-process"));
+        assert_eq!(
+            inject_allowed(&target("dwm.exe", "#32770")),
+            Err("excluded")
+        );
+        assert_eq!(
+            inject_allowed(&target("EasyAntiCheat.exe", "#32770")),
+            Err("excluded")
+        );
+        assert_eq!(
+            inject_allowed(&target("notepad.exe", "Notepad")),
+            Err("not-legacy")
+        );
+        assert_eq!(
+            inject_allowed(&target("", "#32770")),
+            Err("unknown-process")
+        );
     }
 
     #[test]

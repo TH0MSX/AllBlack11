@@ -8,7 +8,11 @@ fn main() {
     }
     let manifest_dir = PathBuf::from(std::env::var("CARGO_MANIFEST_DIR").unwrap());
     let out_dir = PathBuf::from(std::env::var("OUT_DIR").unwrap());
-    let rc = manifest_dir.join(if std::env::var("CARGO_FEATURE_CLASSIC").is_ok() { "harness-classic.rc" } else { "harness.rc" });
+    let rc = manifest_dir.join(if std::env::var("CARGO_FEATURE_CLASSIC").is_ok() {
+        "harness-classic.rc"
+    } else {
+        "harness.rc"
+    });
     let res = out_dir.join("harness.res");
     let obj = out_dir.join("harness.obj");
     let machine = if target.contains("aarch64") || target.contains("arm64") {

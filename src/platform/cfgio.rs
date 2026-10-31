@@ -26,7 +26,10 @@ pub fn load_notebook() -> crate::Notebook {
 }
 
 pub fn save_notebook(book: &crate::Notebook) -> Result<(), String> {
-    write_atomic(&super::wide::notebook_path(), &format!("{}\n", book.to_json()))
+    write_atomic(
+        &super::wide::notebook_path(),
+        &format!("{}\n", book.to_json()),
+    )
 }
 
 /// Keep a copy of the config that last parsed and applied. Never overwrites a good copy with

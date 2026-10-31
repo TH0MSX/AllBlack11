@@ -78,7 +78,10 @@ impl Notebook {
         }
         let book: Notebook = serde_json::from_str(text).map_err(|err| err.to_string())?;
         if book.version > NOTEBOOK_VERSION {
-            return Err(format!("compat.json is version {}, newer than this build understands", book.version));
+            return Err(format!(
+                "compat.json is version {}, newer than this build understands",
+                book.version
+            ));
         }
         Ok(book)
     }
@@ -103,7 +106,11 @@ impl Notebook {
 
     pub fn set(&mut self, key: &str, build: u32, arch: &str, status: Status, note: &str, now: u64) {
         let key = key.to_ascii_lowercase();
-        let note: String = note.chars().filter(|c| !c.is_control()).take(MAX_NOTE).collect();
+        let note: String = note
+            .chars()
+            .filter(|c| !c.is_control())
+            .take(MAX_NOTE)
+            .collect();
         if let Some(entry) = self
             .entries
             .iter_mut()
@@ -158,18 +165,35 @@ mod tests {
     fn no_record_means_untested_and_results_are_per_build_and_arch() {
         let mut book = Notebook::default();
         assert_eq!(book.status_for("app.exe", 26100, "arm64"), Status::Untested);
-        book.set("App.exe", 26100, "arm64", Status::Verified, "frame and backdrop fine", 10);
+        book.set(
+            "App.exe",
+            26100,
+            "arm64",
+            Status::Verified,
+            "frame and backdrop fine",
+            10,
+        );
         assert_eq!(book.status_for("app.exe", 26100, "arm64"), Status::Verified);
         // Another build or another process architecture is a different question.
         assert_eq!(book.status_for("app.exe", 22631, "arm64"), Status::Untested);
-        assert_eq!(book.status_for("app.exe", 26100, "x64-emulated"), Status::Untested);
+        assert_eq!(
+            book.status_for("app.exe", 26100, "x64-emulated"),
+            Status::Untested
+        );
     }
 
     #[test]
     fn set_updates_in_place_and_reset_returns_to_untested() {
         let mut book = Notebook::default();
         book.set("a.exe", 1, "x64", Status::Partial, "caption only", 1);
-        book.set("a.exe", 1, "x64", Status::Unsupported, "custom title bar", 2);
+        book.set(
+            "a.exe",
+            1,
+            "x64",
+            Status::Unsupported,
+            "custom title bar",
+            2,
+        );
         assert_eq!(book.entries.len(), 1);
         assert_eq!(book.get("a.exe", 1, "x64").unwrap().updated, 2);
         assert!(book.reset("A.EXE", 1, "x64"));
@@ -180,7 +204,14 @@ mod tests {
     #[test]
     fn round_trip_notes_are_bounded_and_future_versions_are_refused() {
         let mut book = Notebook::default();
-        book.set("a.exe", 1, "x64", Status::Experimental, &"x".repeat(1000), 3);
+        book.set(
+            "a.exe",
+            1,
+            "x64",
+            Status::Experimental,
+            &"x".repeat(1000),
+            3,
+        );
         assert_eq!(book.entries[0].note.chars().count(), MAX_NOTE);
         let parsed = Notebook::parse(&book.to_json()).unwrap();
         assert_eq!(parsed, book);
@@ -193,10 +224,19 @@ mod tests {
     fn the_notebook_is_capped_by_dropping_the_stalest_entry() {
         let mut book = Notebook::default();
         for index in 0..(MAX_ENTRIES + 5) {
-            book.set(&format!("app{index}.exe"), 1, "x64", Status::Partial, "", index as u64 + 1);
+            book.set(
+                &format!("app{index}.exe"),
+                1,
+                "x64",
+                Status::Partial,
+                "",
+                index as u64 + 1,
+            );
         }
         assert_eq!(book.entries.len(), MAX_ENTRIES);
         assert!(book.get("app0.exe", 1, "x64").is_none());
-        assert!(book.get(&format!("app{}.exe", MAX_ENTRIES + 4), 1, "x64").is_some());
+        assert!(book
+            .get(&format!("app{}.exe", MAX_ENTRIES + 4), 1, "x64")
+            .is_some());
     }
 }

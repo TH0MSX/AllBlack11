@@ -135,7 +135,10 @@ pub fn disable_black_shell(backup: &mut ShellBackup) -> Result<(), String> {
         if palette_ours {
             delete_value(ACCENT, PALETTE_VALUE)?;
         }
-        if still_ours(&read_dword(PERSONALIZE, COLOR_PREVALENCE), COLOR_PREVALENCE_WRITTEN) {
+        if still_ours(
+            &read_dword(PERSONALIZE, COLOR_PREVALENCE),
+            COLOR_PREVALENCE_WRITTEN,
+        ) {
             write_dword(PERSONALIZE, COLOR_PREVALENCE, 0)?;
         }
     } else {
@@ -251,7 +254,6 @@ fn write_black_palette() -> Result<bool, String> {
     write_binary(ACCENT, PALETTE_VALUE, &bytes[..32])?;
     Ok(true)
 }
-
 
 /// Restore the saved original only while the value is still the one we wrote.
 fn restore_named_if_ours(

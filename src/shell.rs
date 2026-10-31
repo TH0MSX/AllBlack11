@@ -183,7 +183,11 @@ mod tests {
 
     #[test]
     fn restore_only_while_the_value_is_still_the_one_we_wrote() {
-        let slot = |present, value| DwordSlot { present, value, already_applied: false };
+        let slot = |present, value| DwordSlot {
+            present,
+            value,
+            already_applied: false,
+        };
         assert!(still_ours(&slot(true, OLED_WRITTEN), OLED_WRITTEN));
         // Changed by the user or another program since: leave it alone.
         assert!(!still_ours(&slot(true, 0), OLED_WRITTEN));
@@ -194,12 +198,24 @@ mod tests {
 
         let mut bytes = vec![0u8; 32];
         blacken_shell_slots(&mut bytes);
-        let ours = BinarySlot { present: true, bytes: bytes.clone(), already_applied: false };
+        let ours = BinarySlot {
+            present: true,
+            bytes: bytes.clone(),
+            already_applied: false,
+        };
         assert!(palette_still_ours(&ours));
         bytes[17] = 0x40; // Windows or the user changed the accent
-        let changed = BinarySlot { present: true, bytes, already_applied: false };
+        let changed = BinarySlot {
+            present: true,
+            bytes,
+            already_applied: false,
+        };
         assert!(!palette_still_ours(&changed));
-        assert!(!palette_still_ours(&BinarySlot { present: false, bytes: vec![], already_applied: false }));
+        assert!(!palette_still_ours(&BinarySlot {
+            present: false,
+            bytes: vec![],
+            already_applied: false
+        }));
     }
 
     #[test]

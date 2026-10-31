@@ -12,6 +12,7 @@ mod app;
 mod cfgio;
 mod cmdq;
 mod composition;
+mod demo;
 mod dwm;
 mod helper;
 mod icon;

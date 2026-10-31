@@ -78,7 +78,10 @@ mod tests {
                 0,
                 "Presets",
                 ItemKind::Submenu,
-                vec![item(20, "Pure OLED", ItemKind::Action, vec![]), item(21, "Classic Mica", ItemKind::Action, vec![])],
+                vec![
+                    item(20, "Pure OLED", ItemKind::Action, vec![]),
+                    item(21, "Classic Mica", ItemKind::Action, vec![]),
+                ],
             ),
             item(0, "", ItemKind::Separator, vec![]),
             item(0, "", ItemKind::Separator, vec![]),

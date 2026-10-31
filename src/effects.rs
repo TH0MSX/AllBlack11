@@ -129,11 +129,16 @@ mod tests {
 
         system = full();
         system.remote_session = true;
-        assert_eq!(reduce_reason(&all_on(), &system), Some("a remote desktop session"));
+        assert_eq!(
+            reduce_reason(&all_on(), &system),
+            Some("a remote desktop session")
+        );
 
         system = full();
         system.transparency_enabled = false;
-        assert!(reduce_reason(&all_on(), &system).unwrap().contains("transparency"));
+        assert!(reduce_reason(&all_on(), &system)
+            .unwrap()
+            .contains("transparency"));
         let mut cfg = all_on();
         cfg.on_transparency_off = false;
         assert_eq!(reduce_reason(&cfg, &system), None);
@@ -143,7 +148,12 @@ mod tests {
     fn reducing_removes_material_but_keeps_everything_else() {
         let mut style = base_style();
         style.corners = Corners::Square;
-        for backdrop in [Backdrop::Mica, Backdrop::MicaAlt, Backdrop::Acrylic, Backdrop::TintedAcrylic] {
+        for backdrop in [
+            Backdrop::Mica,
+            Backdrop::MicaAlt,
+            Backdrop::Acrylic,
+            Backdrop::TintedAcrylic,
+        ] {
             style.backdrop = backdrop;
             let out = reduced(&style, Some("battery saver"));
             assert_eq!(out.backdrop, Backdrop::None);
@@ -158,7 +168,10 @@ mod tests {
 
     #[test]
     fn focus_look_marks_active_and_calms_inactive() {
-        let focus = FocusSettings { enabled: true, ..FocusSettings::default() };
+        let focus = FocusSettings {
+            enabled: true,
+            ..FocusSettings::default()
+        };
         let style = base_style(); // black caption, white text, accent border
         let active = focus_style(&style, &focus, &Explicit::default(), true, 0);
         assert_eq!(active.border, Color::Accent);
@@ -171,10 +184,17 @@ mod tests {
 
     #[test]
     fn a_rule_that_sets_a_color_always_wins_over_focus_look() {
-        let focus = FocusSettings { enabled: true, ..FocusSettings::default() };
+        let focus = FocusSettings {
+            enabled: true,
+            ..FocusSettings::default()
+        };
         let mut style = base_style();
         style.border = Color::Rgb { r: 255, g: 0, b: 0 };
-        let explicit = Explicit { border: true, text: true, caption: false };
+        let explicit = Explicit {
+            border: true,
+            text: true,
+            caption: false,
+        };
         for active in [true, false] {
             let out = focus_style(&style, &focus, &explicit, active, 0);
             assert_eq!(out.border, style.border);
@@ -184,11 +204,21 @@ mod tests {
 
     #[test]
     fn inactive_text_is_never_dimmed_below_readable_contrast() {
-        let focus = FocusSettings { enabled: true, ..FocusSettings::default() };
+        let focus = FocusSettings {
+            enabled: true,
+            ..FocusSettings::default()
+        };
         let mut style = base_style();
-        style.caption = Color::Rgb { r: 0x9A, g: 0x9A, b: 0x9A }; // same gray as the dim text
+        style.caption = Color::Rgb {
+            r: 0x9A,
+            g: 0x9A,
+            b: 0x9A,
+        }; // same gray as the dim text
         let out = focus_style(&style, &focus, &Explicit::default(), false, 0);
-        assert_eq!(out.text, style.text, "dim text on a gray caption would be unreadable");
+        assert_eq!(
+            out.text, style.text,
+            "dim text on a gray caption would be unreadable"
+        );
         // A system-chosen caption: contrast is unknowable, so do not gamble.
         style.caption = Color::Default;
         let out = focus_style(&style, &focus, &Explicit::default(), false, 0);
@@ -200,6 +230,9 @@ mod tests {
         let focus = FocusSettings::default();
         assert!(!focus.enabled);
         let style = base_style();
-        assert_eq!(focus_style(&style, &focus, &Explicit::default(), false, 0), style);
+        assert_eq!(
+            focus_style(&style, &focus, &Explicit::default(), false, 0),
+            style
+        );
     }
 }

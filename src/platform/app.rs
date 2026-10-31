@@ -232,6 +232,9 @@ pub fn start() -> i32 {
     if args.iter().any(|arg| arg == "--exit") {
         return cmd_exit();
     }
+    if args.iter().any(|arg| arg == "--reload") {
+        return cmd_reload();
+    }
     if args.iter().any(|arg| arg == "--restart-explorer") {
         return cmd_restart_explorer();
     }
@@ -262,6 +265,7 @@ fn help_text() -> String {
          Settings                 Tray menu, or double-click the icon\n\
          AllBlack11.exe --check   Validate config.json and print a diagnostics report\n\
                                   (also writes %APPDATA%\\AllBlack11\\check.txt)\n\
+         AllBlack11.exe --reload  Ask the running app to re-read config.json\n\
          AllBlack11.exe --restart-explorer  Restart the taskbar, Start and desktop\n\
          AllBlack11.exe --quiet   With --restore or --restart-explorer: no message box\n\
          AllBlack11.exe --restore Quit, undo the shell tweaks and CaptionHeight, keep the config\n\
@@ -383,6 +387,18 @@ fn cmd_exit() -> i32 {
         SetEvent(handle);
         CloseHandle(handle);
     }
+    0
+}
+
+/// Ask the running instance to re-read config.json, as if Settings had just saved it.
+fn cmd_reload() -> i32 {
+    let class = class_name();
+    let existing = unsafe { FindWindowW(pcw(class), null()) };
+    if existing.is_null() {
+        say("AllBlack11 is not running.\n");
+        return 1;
+    }
+    unsafe { PostMessageW(existing, settings::WM_SETTINGS_APPLIED, 0, 0) };
     0
 }
 
@@ -865,7 +881,9 @@ fn on_setting_change(lparam: LPARAM) {
             app.hold.clear();
             app.last_apply.clear();
             app.apply_startup();
-            if !contrast && app.config.experimental_dark_legacy && legacy::set_active(true, &legacy_options(&app.config)).is_ok()
+            if !contrast
+                && app.config.experimental_dark_legacy
+                && legacy::set_active(true, &legacy_options(&app.config)).is_ok()
             {
                 app.scan_legacy();
             }
@@ -1267,7 +1285,10 @@ impl App {
             "AllBlack11: off".into()
         } else {
             match self.reduce {
-                Some(_) => format!("AllBlack11: {} windows (reduced effects)", self.themed_count()),
+                Some(_) => format!(
+                    "AllBlack11: {} windows (reduced effects)",
+                    self.themed_count()
+                ),
                 None => format!("AllBlack11: {} windows", self.themed_count()),
             }
         }
@@ -2080,7 +2101,6 @@ impl App {
         }
     }
 
-
     // ---- effective look: Focus Look and reduced effects -----------------------------------
 
     fn effective_style(&self, facts: &WindowFacts, key: i64, style: Style) -> Style {
@@ -2095,10 +2115,9 @@ impl App {
             };
             let resolved = crate::resolve(&self.config, &identity, self.accent_bgr);
             let from_rule = |name: &str| {
-                resolved
-                    .sources
-                    .iter()
-                    .any(|(field, source)| *field == name && matches!(source, crate::Source::Rule(_)))
+                resolved.sources.iter().any(|(field, source)| {
+                    *field == name && matches!(source, crate::Source::Rule(_))
+                })
             };
             let explicit = crate::Explicit {
                 caption: from_rule("title bar color"),
@@ -2151,7 +2170,9 @@ impl App {
                     create,
                     style,
                 } => self.try_window(key, pid, create, style),
-                AppCommand::RestoreWindow { key, pid, create } => self.restore_window(key, pid, create),
+                AppCommand::RestoreWindow { key, pid, create } => {
+                    self.restore_window(key, pid, create)
+                }
                 AppCommand::TrialStart(config) => self.trial_start(*config),
                 AppCommand::TrialKeep => self.trial_end(true),
                 AppCommand::TrialRevert => self.trial_end(false),
@@ -2173,7 +2194,11 @@ impl App {
 
     fn try_window(&mut self, key: i64, pid: u32, create: u64, style: Style) {
         if !self.same_window(key, pid, create) {
-            self.balloon("AllBlack11", "That window has closed or been replaced.", false);
+            self.balloon(
+                "AllBlack11",
+                "That window has closed or been replaced.",
+                false,
+            );
             return;
         }
         let hwnd = key_to_hwnd(key);
@@ -2198,7 +2223,11 @@ impl App {
 
     fn restore_window(&mut self, key: i64, pid: u32, create: u64) {
         if !self.same_window(key, pid, create) {
-            self.balloon("AllBlack11", "That window has closed or been replaced.", false);
+            self.balloon(
+                "AllBlack11",
+                "That window has closed or been replaced.",
+                false,
+            );
             return;
         }
         self.try_windows.remove(&key);
@@ -2227,7 +2256,11 @@ impl App {
             }
         }
         self.commit(pending);
-        if self.trial.as_ref().is_some_and(|trial| now >= trial.deadline) {
+        if self
+            .trial
+            .as_ref()
+            .is_some_and(|trial| now >= trial.deadline)
+        {
             self.trial_end(false);
         }
         if self.try_windows.is_empty() && self.trial.is_none() {
@@ -2284,11 +2317,19 @@ impl App {
     /// Put the last known good config back. The broken file is kept next to it.
     fn restore_lkg(&mut self) -> bool {
         let Some(good) = cfgio::load_lkg() else {
-            self.balloon("AllBlack11", "There is no last known good config yet.", true);
+            self.balloon(
+                "AllBlack11",
+                "There is no last known good config yet.",
+                true,
+            );
             return false;
         };
         if parse_config(&good).is_err() {
-            self.balloon("AllBlack11", "The saved last known good config is not usable.", true);
+            self.balloon(
+                "AllBlack11",
+                "The saved last known good config is not usable.",
+                true,
+            );
             return false;
         }
         if let Ok(current) = std::fs::read_to_string(&self.config_file) {
@@ -2360,11 +2401,19 @@ impl App {
             }
             None => ("unknown", "unknown".to_string(), None),
         };
-        let attempts = match self.last_ops
+        let attempts = match self
+            .last_ops
             .get(&key)
-            .filter(|rec| rec.pid == pid && (rec.create == 0 || rec.create == create)) {
+            .filter(|rec| rec.pid == pid && (rec.create == 0 || rec.create == create))
+        {
             Some(record) => {
-                let read = dwm::readback(hwnd, &record.style, self.accent_bgr, self.build, record.backdrop);
+                let read = dwm::readback(
+                    hwnd,
+                    &record.style,
+                    self.accent_bgr,
+                    self.build,
+                    record.backdrop,
+                );
                 let mut list: Vec<crate::Attempt> = record
                     .attempts
                     .iter()
@@ -2414,7 +2463,11 @@ impl App {
             }
         }
         let book = cfgio::load_notebook();
-        let compat_key = if package.is_empty() { exe.to_ascii_lowercase() } else { package.clone() };
+        let compat_key = if package.is_empty() {
+            exe.to_ascii_lowercase()
+        } else {
+            package.clone()
+        };
         let entry = book.get(&compat_key, self.build, &arch_text).cloned();
         Some(crate::Report {
             exe,
@@ -2428,7 +2481,10 @@ impl App {
             explanation,
             attempts,
             legacy: legacy_view,
-            compat: entry.as_ref().map(|e| e.status).unwrap_or(crate::CompatStatus::Untested),
+            compat: entry
+                .as_ref()
+                .map(|e| e.status)
+                .unwrap_or(crate::CompatStatus::Untested),
             compat_note: entry.map(|e| e.note).unwrap_or_default(),
             rule_lines,
             support: crate::attribute_support(self.build)

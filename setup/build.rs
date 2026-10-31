@@ -58,6 +58,26 @@ fn main() {
             );
         }
     }
+    // Optional files: present for some builds only (the helper and x64 hook ship in the
+    // ARM64 package; the harness ships in both). Whatever exists is embedded.
+    let mut code = String::from("pub static EXTRAS: &[(&str, &[u8])] = &[\n");
+    for name in [
+        "AllBlack11Helper.x64.exe",
+        "AllBlack11Hook.x64.dll",
+        "AllBlack11-Harness.exe",
+        "AllBlack11-Harness-Classic.exe",
+    ] {
+        let path = PathBuf::from(&payload).join(name);
+        println!("cargo:rerun-if-changed={}", path.display());
+        if path.is_file() {
+            let escaped = path.display().to_string().replace('\\', "/");
+            code.push_str(&format!(
+                "    (\"{name}\", include_bytes!(\"{escaped}\")),\n"
+            ));
+        }
+    }
+    code.push_str("];\n");
+    std::fs::write(out_dir.join("extras.rs"), code).expect("write extras.rs");
 }
 
 fn find_tool(base: &str) -> String {

@@ -19,7 +19,13 @@ pub fn path_and_package(pid: u32, want_package: bool) -> (String, String) {
         }
         let mut buf = [0u16; 1024];
         let mut length = buf.len() as u32;
-        let path = if QueryFullProcessImageNameW(handle, PROCESS_NAME_WIN32, buf.as_mut_ptr(), &mut length) != 0 {
+        let path = if QueryFullProcessImageNameW(
+            handle,
+            PROCESS_NAME_WIN32,
+            buf.as_mut_ptr(),
+            &mut length,
+        ) != 0
+        {
             String::from_utf16_lossy(&buf[..length as usize])
         } else {
             String::new()

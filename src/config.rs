@@ -580,7 +580,10 @@ pub fn parse_config(text: &str) -> Result<Config, String> {
             ));
         }
         if rule.priority.unsigned_abs() > 1000 {
-            return Err(format!("rule {} priority should be between -1000 and 1000", index + 1));
+            return Err(format!(
+                "rule {} priority should be between -1000 and 1000",
+                index + 1
+            ));
         }
     }
     // Older files (schemaVersion missing or 1) load unchanged. The new version is written
@@ -714,7 +717,12 @@ mod tests {
             .exclude
             .iter()
             .any(|name| name.eq_ignore_ascii_case("GeForceNOW.exe")));
-        let style = resolve_style(&config, &crate::rules::WindowIdentity::exe("notepad.exe"), 0xFF74_8501).unwrap();
+        let style = resolve_style(
+            &config,
+            &crate::rules::WindowIdentity::exe("notepad.exe"),
+            0xFF74_8501,
+        )
+        .unwrap();
         assert!(style.dark_mode);
         assert_eq!(style.backdrop, Backdrop::Mica);
         assert_eq!(style.caption.to_colorref(0), 0x0000_0000);
@@ -734,7 +742,12 @@ mod tests {
     #[test]
     fn empty_object_uses_builtin_base() {
         let config = parse_config("{}").unwrap();
-        let style = resolve_style(&config, &crate::rules::WindowIdentity::exe("notepad.exe"), FALLBACK_ACCENT_BGR).unwrap();
+        let style = resolve_style(
+            &config,
+            &crate::rules::WindowIdentity::exe("notepad.exe"),
+            FALLBACK_ACCENT_BGR,
+        )
+        .unwrap();
         assert_eq!(style.caption.to_colorref(0), 0);
         assert_eq!(style.border, Color::Accent);
         assert_eq!(style.backdrop, Backdrop::Mica);
@@ -752,11 +765,18 @@ mod tests {
             }"#,
         )
         .unwrap();
-        let notepad = resolve_style(&config, &crate::rules::WindowIdentity::exe("notepad.exe"), FALLBACK_ACCENT_BGR).unwrap();
+        let notepad = resolve_style(
+            &config,
+            &crate::rules::WindowIdentity::exe("notepad.exe"),
+            FALLBACK_ACCENT_BGR,
+        )
+        .unwrap();
         assert_eq!(notepad.backdrop, Backdrop::MicaAlt);
         assert_eq!(notepad.border, Color::None);
         assert_eq!(notepad.caption.to_colorref(0), 0);
-        assert!(resolve_style(&config, &crate::rules::WindowIdentity::exe("calc.exe"), 0).is_none());
+        assert!(
+            resolve_style(&config, &crate::rules::WindowIdentity::exe("calc.exe"), 0).is_none()
+        );
     }
 
     #[test]
@@ -768,8 +788,15 @@ mod tests {
             }"##,
         )
         .unwrap();
-        assert!(resolve_style(&config, &crate::rules::WindowIdentity::exe("calc.exe"), 0).is_none());
-        let notepad = resolve_style(&config, &crate::rules::WindowIdentity::exe("notepad.exe"), 0).unwrap();
+        assert!(
+            resolve_style(&config, &crate::rules::WindowIdentity::exe("calc.exe"), 0).is_none()
+        );
+        let notepad = resolve_style(
+            &config,
+            &crate::rules::WindowIdentity::exe("notepad.exe"),
+            0,
+        )
+        .unwrap();
         assert_eq!(
             notepad.caption,
             Color::Rgb {
@@ -832,7 +859,12 @@ mod tests {
     #[test]
     fn tinted_acrylic_defaults_and_rule_override() {
         let config = parse_config(bundled_default_json()).unwrap();
-        let style = resolve_style(&config, &crate::rules::WindowIdentity::exe("notepad.exe"), 0).unwrap();
+        let style = resolve_style(
+            &config,
+            &crate::rules::WindowIdentity::exe("notepad.exe"),
+            0,
+        )
+        .unwrap();
         assert_eq!(style.backdrop, Backdrop::Mica);
         assert_eq!(
             acrylic_gradient(style.acrylic_tint, style.acrylic_opacity, 0),
@@ -856,7 +888,8 @@ mod tests {
             }"##,
         )
         .unwrap();
-        let style = resolve_style(&config, &crate::rules::WindowIdentity::exe("mmc.exe"), 0).unwrap();
+        let style =
+            resolve_style(&config, &crate::rules::WindowIdentity::exe("mmc.exe"), 0).unwrap();
         assert_eq!(style.backdrop, Backdrop::TintedAcrylic);
         assert_eq!(style.acrylic_opacity, opacity_byte(0.8).unwrap());
         assert!(!style.tinted_acrylic_on_move_fallback);
@@ -928,7 +961,9 @@ mod tests {
 
     #[test]
     fn saving_records_the_schema_version_and_round_trips() {
-        let config = parse_config(r#"{"rules":[{"class":"Notepad","backdrop":"none","priority":3}]}"#).unwrap();
+        let config =
+            parse_config(r#"{"rules":[{"class":"Notepad","backdrop":"none","priority":3}]}"#)
+                .unwrap();
         let text = serde_json::to_string_pretty(&config).unwrap();
         assert!(text.contains("\"schemaVersion\": 2"), "{text}");
         let again = parse_config(&text).unwrap();

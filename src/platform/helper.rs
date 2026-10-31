@@ -17,7 +17,9 @@ use std::sync::Mutex;
 use std::time::{Duration, Instant};
 
 use windows_sys::Win32::Foundation::{CloseHandle, GENERIC_READ, GENERIC_WRITE, HANDLE, HWND};
-use windows_sys::Win32::Security::Cryptography::{BCryptGenRandom, BCRYPT_USE_SYSTEM_PREFERRED_RNG};
+use windows_sys::Win32::Security::Cryptography::{
+    BCryptGenRandom, BCRYPT_USE_SYSTEM_PREFERRED_RNG,
+};
 use windows_sys::Win32::Storage::FileSystem::{CreateFileW, ReadFile, WriteFile, OPEN_EXISTING};
 use windows_sys::Win32::System::Pipes::{GetNamedPipeServerProcessId, WaitNamedPipeW};
 use windows_sys::Win32::System::Threading::TerminateProcess;
@@ -58,7 +60,8 @@ pub fn installed() -> bool {
     if BUILD_MACHINE != crate::arch::MACHINE_ARM64 {
         return false;
     }
-    let present = |name: &str| super::legacy::hook_dll_path(name).is_some_and(|path| path.is_file());
+    let present =
+        |name: &str| super::legacy::hook_dll_path(name).is_some_and(|path| path.is_file());
     present(HELPER_EXE) && present(HELPER_HOOK)
 }
 
@@ -71,7 +74,10 @@ pub fn hook_thread(thread: u32, _hwnd: HWND) {
         return;
     }
     if state.tx.is_none() {
-        if state.retry_after.is_some_and(|until| Instant::now() < until) {
+        if state
+            .retry_after
+            .is_some_and(|until| Instant::now() < until)
+        {
             return;
         }
         let (tx, rx) = mpsc::channel();
@@ -124,7 +130,13 @@ impl Link {
         line.push(b'\n');
         let mut written = 0u32;
         let ok = unsafe {
-            WriteFile(self.pipe, line.as_ptr(), line.len() as u32, &mut written, std::ptr::null_mut())
+            WriteFile(
+                self.pipe,
+                line.as_ptr(),
+                line.len() as u32,
+                &mut written,
+                std::ptr::null_mut(),
+            )
         };
         if ok == 0 {
             return None;
@@ -133,7 +145,15 @@ impl Link {
         let mut byte = [0u8; 1];
         loop {
             let mut read = 0u32;
-            let ok = unsafe { ReadFile(self.pipe, byte.as_mut_ptr(), 1, &mut read, std::ptr::null_mut()) };
+            let ok = unsafe {
+                ReadFile(
+                    self.pipe,
+                    byte.as_mut_ptr(),
+                    1,
+                    &mut read,
+                    std::ptr::null_mut(),
+                )
+            };
             if ok == 0 || read == 0 {
                 return None;
             }
@@ -158,7 +178,12 @@ impl Drop for Link {
 fn random_hex() -> Option<String> {
     let mut bytes = [0u8; 16];
     let status = unsafe {
-        BCryptGenRandom(std::ptr::null_mut(), bytes.as_mut_ptr(), bytes.len() as u32, BCRYPT_USE_SYSTEM_PREFERRED_RNG)
+        BCryptGenRandom(
+            std::ptr::null_mut(),
+            bytes.as_mut_ptr(),
+            bytes.len() as u32,
+            BCRYPT_USE_SYSTEM_PREFERRED_RNG,
+        )
     };
     if status != 0 {
         return None;
@@ -209,7 +234,10 @@ fn spawn_and_connect() -> Option<(Link, u32)> {
 
 fn worker(rx: mpsc::Receiver<Cmd>) {
     let Some((link, pid)) = spawn_and_connect() else {
-        log_line("warn", "the x64 helper could not be started; emulated x64 dialogs are skipped for now");
+        log_line(
+            "warn",
+            "the x64 helper could not be started; emulated x64 dialogs are skipped for now",
+        );
         let mut state = STATE.lock().unwrap_or_else(|err| err.into_inner());
         state.tx = None;
         state.hooked.clear();
@@ -229,7 +257,11 @@ fn worker(rx: mpsc::Receiver<Cmd>) {
                 if let Some(reply) = link.request(&format!("HOOK {thread}")) {
                     if reply != "OK" {
                         // The helper refused (for instance: elevated, or no dialog). Fine.
-                        STATE.lock().unwrap_or_else(|err| err.into_inner()).hooked.retain(|t| *t != thread);
+                        STATE
+                            .lock()
+                            .unwrap_or_else(|err| err.into_inner())
+                            .hooked
+                            .retain(|t| *t != thread);
                     }
                 } else {
                     break;
