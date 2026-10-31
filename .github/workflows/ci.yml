@@ -2,8 +2,9 @@ name: CI
 
 on:
   push:
-    branches: [main]
+    branches: [main, 'claude/next-preview-3.6']
   pull_request:
+  workflow_dispatch:
 
 jobs:
   check:
@@ -20,8 +21,11 @@ jobs:
           (cd hook && cargo fmt --check)
           (cd setup && cargo fmt --check)
           (cd harness && cargo fmt --check)
-      - name: Unit tests (host)
+          (cd helper && cargo fmt --check)
+      - name: Unit tests (Linux host; pure logic only)
         run: cargo test --lib
+      - name: Every Settings control is still on a page
+        run: python3 scripts/check-controls.py
       - name: Type-check every Windows crate for both CPUs
         run: |
           for target in aarch64-pc-windows-msvc x86_64-pc-windows-msvc; do
@@ -30,5 +34,38 @@ jobs:
             (cd harness && cargo check --target $target)
             (cd harness && cargo check --target $target --features classic)
           done
+          (cd helper && cargo check --target x86_64-pc-windows-msvc)
       - name: Clippy (errors only)
         run: cargo clippy --target aarch64-pc-windows-msvc -- -A warnings
+
+  # Real Windows runners. These are the only jobs that can compile and run the Windows-only
+  # code natively; the Linux job above only cross-compiles it. A pass here still does not
+  # exercise the tray, Settings window or hooks: nothing in CI does. That is the hardware
+  # smoke test's job.
+  windows:
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - runner: windows-latest
+            label: x64
+          - runner: windows-11-arm
+            label: arm64
+    name: windows-${{ matrix.label }}
+    runs-on: ${{ matrix.runner }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - name: Unit tests (native Windows)
+        run: cargo test --lib
+      - name: Build every crate natively
+        shell: bash
+        run: |
+          cargo build
+          (cd hook && cargo build)
+          (cd harness && cargo build)
+      - name: Build the x64 helper (it ships x64-only)
+        if: matrix.label == 'x64'
+        run: cd helper && cargo build
+      - name: Windows-only unit tests compile
+        run: cargo test --no-run

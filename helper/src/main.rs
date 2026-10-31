@@ -31,13 +31,13 @@ fn main() {
 #[allow(dead_code)]
 mod arch;
 #[cfg(windows)]
-#[path = "../../src/helper_protocol.rs"]
-#[allow(dead_code)]
-mod protocol;
-#[cfg(windows)]
 #[path = "../../src/legacy_policy.rs"]
 #[allow(dead_code)]
 mod policy;
+#[cfg(windows)]
+#[path = "../../src/helper_protocol.rs"]
+#[allow(dead_code)]
+mod protocol;
 #[cfg(windows)]
 #[path = "../../src/target.rs"]
 #[allow(dead_code)]
@@ -54,7 +54,8 @@ mod win {
     use std::ptr::{null, null_mut};
 
     use windows_sys::Win32::Foundation::{
-        CloseHandle, LocalFree, BOOL, FALSE, FILETIME, HANDLE, HMODULE, HWND, INVALID_HANDLE_VALUE, LPARAM,
+        CloseHandle, LocalFree, BOOL, FALSE, FILETIME, HANDLE, HMODULE, HWND, INVALID_HANDLE_VALUE,
+        LPARAM,
     };
     use windows_sys::Win32::Security::Authorization::{
         ConvertStringSecurityDescriptorToSecurityDescriptorW, SDDL_REVISION_1,
@@ -71,9 +72,10 @@ mod win {
         PIPE_REJECT_REMOTE_CLIENTS, PIPE_TYPE_BYTE, PIPE_WAIT,
     };
     use windows_sys::Win32::System::Threading::{
-        ExitProcess, GetProcessIdOfThread, GetProcessTimes, IsWow64Process2, OpenProcess, OpenProcessToken,
-        OpenThread, QueryFullProcessImageNameW, WaitForSingleObject, INFINITE, PROCESS_NAME_WIN32,
-        PROCESS_QUERY_LIMITED_INFORMATION, PROCESS_SYNCHRONIZE, THREAD_QUERY_LIMITED_INFORMATION,
+        ExitProcess, GetProcessIdOfThread, GetProcessTimes, IsWow64Process2, OpenProcess,
+        OpenProcessToken, OpenThread, QueryFullProcessImageNameW, WaitForSingleObject, INFINITE,
+        PROCESS_NAME_WIN32, PROCESS_QUERY_LIMITED_INFORMATION, PROCESS_SYNCHRONIZE,
+        THREAD_QUERY_LIMITED_INFORMATION,
     };
     use windows_sys::Win32::UI::WindowsAndMessaging::{
         EnumThreadWindows, GetClassNameW, RegisterWindowMessageW, SendMessageTimeoutW,
@@ -205,7 +207,15 @@ mod win {
         let mut buffer = [0u8; 128];
         loop {
             let mut read = 0u32;
-            if ReadFile(pipe, buffer.as_mut_ptr(), buffer.len() as u32, &mut read, null_mut()) == 0 || read == 0 {
+            if ReadFile(
+                pipe,
+                buffer.as_mut_ptr(),
+                buffer.len() as u32,
+                &mut read,
+                null_mut(),
+            ) == 0
+                || read == 0
+            {
                 break; // The controller went away.
             }
             let Ok(batch) = lines.push(&buffer[..read as usize]) else {
@@ -216,7 +226,13 @@ mod win {
                 let mut out = reply.to_line().into_bytes();
                 out.push(b'\n');
                 let mut written = 0u32;
-                WriteFile(pipe, out.as_ptr(), out.len() as u32, &mut written, null_mut());
+                WriteFile(
+                    pipe,
+                    out.as_ptr(),
+                    out.len() as u32,
+                    &mut written,
+                    null_mut(),
+                );
                 if quit {
                     return;
                 }

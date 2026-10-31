@@ -71,7 +71,7 @@ mod tests {
 
     fn sample() -> Vec<Item> {
         vec![
-            item(0, "AllBlack11 3.5 Preview", ItemKind::Title, vec![]),
+            item(0, "AllBlack11 3.6 Preview", ItemKind::Title, vec![]),
             item(0, "", ItemKind::Separator, vec![]),
             item(1, "Enabled", ItemKind::Checked(true), vec![]),
             item(

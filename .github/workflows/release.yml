@@ -65,7 +65,7 @@ jobs:
             dist/*.exe
             dist/*.zip
           body_path: notes.md
-          # A tag with a suffix (v3.5.0-preview.1) is a pre-release and never becomes "latest".
+          # A tag with a suffix (v3.6.0-preview.1) is a pre-release and never becomes "latest".
           prerelease: ${{ contains(github.ref_name, '-') }}
           make_latest: ${{ !contains(github.ref_name, '-') }}
         env:
