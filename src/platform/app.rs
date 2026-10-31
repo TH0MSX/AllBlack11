@@ -258,7 +258,15 @@ pub fn start() -> i32 {
     if args.iter().any(|arg| arg == "--restore") {
         return cmd_restore();
     }
-    if let Some(unknown) = args.iter().find(|arg| arg.as_str() != "--quiet") {
+    // Accepted on a normal start: --quiet, --safe (see `begin_session`), and the QA flag
+    // --open-settings[=N] that opens Settings on page N once the app is up.
+    let known = |arg: &String| {
+        arg == "--quiet"
+            || arg == "--safe"
+            || arg == "--open-settings"
+            || arg.starts_with("--open-settings=")
+    };
+    if let Some(unknown) = args.iter().find(|arg| !known(arg)) {
         wide::emit(&format!("Unknown argument: {unknown}\n\n{}", help_text()));
         return 2;
     }
@@ -285,6 +293,8 @@ fn help_text() -> String {
          AllBlack11.exe --reload  Ask the running app to re-read config.json\n\
          AllBlack11.exe --restart-explorer  Restart the taskbar, Start and desktop\n\
          AllBlack11.exe --quiet   With --restore or --restart-explorer: no message box\n\
+         AllBlack11.exe --safe    Start in safe mode: experimental features off for this run\n\
+         AllBlack11.exe --open-settings[=N]  Start and open Settings (page N, 0 = Home)\n\
          AllBlack11.exe --restore Quit, undo the shell tweaks and CaptionHeight, keep the config\n\
          AllBlack11.exe --version Print the version\n\
          AllBlack11.exe --help    Show this help\n\
@@ -644,6 +654,16 @@ fn run() -> Result<(), String> {
         shellwin::broadcast_immersive_color();
     }
 
+    if let Some(page) = std::env::args().find_map(|arg| {
+        if arg == "--open-settings" {
+            Some(0)
+        } else {
+            arg.strip_prefix("--open-settings=")
+                .and_then(|n| n.parse::<usize>().ok())
+        }
+    }) {
+        settings::open_page(hwnd, page);
+    }
     unsafe { message_loop(hwnd) };
     shutdown();
     Ok(())
