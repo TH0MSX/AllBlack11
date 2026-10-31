@@ -58,6 +58,21 @@ pub fn fingerprint_of(hwnd: HWND) -> Option<Fingerprint> {
         return None;
     }
     let (create, _) = super::app::process_basic(pid)?;
+    fingerprint_with(hwnd, pid, create)
+}
+
+/// The same fingerprint when the caller already knows the process id and creation time (the
+/// host caches them), so this costs a few user32 calls and no process handle. The window's
+/// thread must still belong to `pid`, or it is a different window.
+pub fn fingerprint_with(hwnd: HWND, pid: u32, create: u64) -> Option<Fingerprint> {
+    if hwnd.is_null() {
+        return None;
+    }
+    let mut live_pid = 0u32;
+    let thread = unsafe { GetWindowThreadProcessId(hwnd, &mut live_pid) };
+    if thread == 0 || live_pid != pid {
+        return None;
+    }
     let ex_style = unsafe { GetWindowLongPtrW(hwnd, GWL_EXSTYLE) } as u32;
     Some(Fingerprint {
         pid,

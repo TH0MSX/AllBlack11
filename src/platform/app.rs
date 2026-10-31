@@ -1959,7 +1959,9 @@ impl App {
     }
 
     fn ensure_original(&mut self, key: i64, hwnd: HWND, pid: u32, create: u64) {
-        let live = super::inspect::fingerprint_of(hwnd);
+        // Hot path (runs on every re-style): the caller's cached pid and creation time are
+        // reused, so this makes a few user32 calls and opens no process handle.
+        let live = super::inspect::fingerprint_with(hwnd, pid, create);
         if let Some(existing) = self.originals.get(&key) {
             if snapshot_is_for(existing, pid, create, live.as_ref()) {
                 return;
@@ -2163,7 +2165,7 @@ impl App {
                 continue;
             }
             if let Some((pid, create, _)) = self.identity(hwnd) {
-                let live = super::inspect::fingerprint_of(hwnd);
+                let live = super::inspect::fingerprint_with(hwnd, pid, create);
                 if self
                     .originals
                     .get(&key)
@@ -2731,6 +2733,8 @@ impl App {
             }
         }
         log_line("info", "resumed");
+        // Pausing stopped the Day/Night timer; arm it again and catch up on the clock.
+        self.schedule_tick();
         self.update_tray();
         settings::notify_external_change();
     }
@@ -3010,15 +3014,28 @@ impl App {
     }
 }
 
-/// A recorded original belongs to this live window. Snapshots from older versions have no
-/// fingerprint and fall back to the process check alone.
+/// A recorded original may still belong to this live window. Snapshots from older versions
+/// have no fingerprint and fall back to the process check alone.
+///
+/// "Uncertain" (a style bit an app can toggle changed) keeps the record: re-capturing would
+/// store our own styled values as the "original". It is still not used to restore; that needs
+/// the strict `snapshot_matches_live`.
 fn snapshot_is_for(
     snap: &StoredSnapshot,
     pid: u32,
     create: u64,
     live: Option<&crate::Fingerprint>,
 ) -> bool {
-    same_process(snap, pid, create) && snapshot_matches_live(snap, live)
+    if !same_process(snap, pid, create) {
+        return false;
+    }
+    match &snap.fingerprint {
+        Some(recorded) => !matches!(
+            crate::check_identity(recorded, live),
+            crate::Identity::Different(_)
+        ),
+        None => true,
+    }
 }
 
 fn snapshot_matches_live(snap: &StoredSnapshot, live: Option<&crate::Fingerprint>) -> bool {

@@ -62,7 +62,12 @@ Files from 1.x to 3.0 load unchanged. The next time AllBlack11 saves, it writes 
   ],
   "focus": { "enabled": true, "activeBorder": "accent", "inactiveBorder": "none", "inactiveText": "#9A9A9A" },
   "reduceEffects": { "onBatterySaver": true, "onRemoteSession": true, "onTransparencyOff": true },
-  "legacy": { "palette": "graphite", "emulatedX64": false }
+  "legacy": { "palette": "graphite", "emulatedX64": false },
+  "features": {
+    "identityAccents": false,
+    "paletteHotkey": false,
+    "dayNight": { "enabled": false, "dayScene": "graphite", "nightScene": "oled-black", "dayStarts": "07:00", "nightStarts": "20:00" }
+  }
 }
 ```
 
@@ -75,6 +80,16 @@ Files from 1.x to 3.0 load unchanged. The next time AllBlack11 saves, it writes 
 **Reduce effects**: each condition switches backdrop materials to plain colors while it holds. The active reason is shown in Settings. Colors, corners and dark mode are unchanged.
 
 **Legacy**: `palette` is `graphite` or `black`. `emulatedX64` is ARM64-only and needs the packaged helper.
+
+**Features** (all optional, all off, independent; the whole section is omitted from the file until something differs from the defaults, so 3.5 can still read an untouched config):
+
+- `identityAccents`: gives each app a stable border color, only where no rule sets a border. Assignments are kept in `accents.json` (app names and colors, never window titles).
+- `paletteHotkey`: Ctrl+Alt+Space opens the command palette from anywhere. One `RegisterHotKey`, no keyboard hook.
+- `dayNight`: switches scene by local time. `dayScene` and `nightScene` are a scene id (`oled-black`, `graphite`, `midnight-accent`, `focus`, `living-room`) or the id of a look in `lookbook.json`. Times are `HH:MM`, 24-hour; the two must differ and the day may run past midnight. Invalid times make the config fail to load rather than being guessed.
+
+Safe mode (Shift at launch, `--safe`, or two unclean ends in a row) turns `experimentalDarkLegacy`, `legacy.emulatedX64` and every feature above off **in memory for that run**; the file is not changed.
+
+Other files in the data folder: `lookbook.json` (your saved looks), `accents.json`, `session.json` (whether the last run ended cleanly), `compat.json`, `config.lkg.json`.
 
 ## Recipes
 

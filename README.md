@@ -77,7 +77,7 @@ Windows 11 dark mode still paints gray title bars, a gray taskbar, and a tinted 
 - 🔁 **Undo everywhere:** original frame attributes go back on Exit, Disable, or Reset. Shell tweaks are HKCU only, snapshotted, and undone from the same menu or the uninstaller.
 - 🧪 **Optional and off by default:** **Dark legacy windows**. A same-architecture hook DLL recolors classic dialogs such as Run. See [Safety](#️-safety-and-uninstall).
 
-## 🧪 3.5 Preview (pre-release)
+## 🧪 3.6 Preview (pre-release)
 
 AllBlack11 works in three honest layers. Knowing which one a window is in explains most "why didn't it change?" questions.
 
@@ -87,7 +87,7 @@ AllBlack11 works in three honest layers. Knowing which one a window is in explai
 | **B. Legacy layer** (opt-in) | Recolors the controls of *classic dialogs* (Run, old installers, property pages) from inside the app: labels, edit boxes, buttons, check boxes, combo and list boxes, list views, tree views. | Yes, per dialog, only same-CPU, non-elevated, never games or shell |
 | **C. App integrations** | None ship yet. | No |
 
-What 3.5 adds:
+What the 3.5 and 3.6 previews add:
 
 - **Legacy dark mode that holds up.** Each control family has its own technique, states stay readable, controls that cannot be darkened safely are left alone and reported, and Explorer, Control Panel and dialogs with embedded web or Explorer views are never touched. A built-in **control harness** lets you check it without relying on another app.
 - **Window picker and inspector.** Drag a crosshair onto any window to see its executable, class, CPU type, which rule applied and why, where each setting came from, and what Windows answered. The report says "accepted by Windows; appearance not verified" and never claims more.
@@ -95,6 +95,11 @@ What 3.5 adds:
 - **Rules that explain themselves.** Match by executable, class, path, package or (optionally) title, with clear precedence and conflict warnings.
 - **Safe to experiment.** Presets and recipes run as a 15-second trial; a broken config falls back to the last known good one; shell restores skip anything you changed yourself.
 - **Experimental on ARM64:** an on-demand x64 helper for emulated x64 dialogs. It has not been run on hardware yet.
+- **Fix this app (3.6).** Pick a window and see, per surface (title bar, border, backdrop, app content, classic controls), what can change and why, then preview it for 20 seconds, save it as a rule, exclude the app, or restore it.
+- **Scenes and a Look Book (3.6).** OLED Black, Graphite, Midnight Accent, Focus and Living Room, plus looks you save. Switching a scene never touches your per-app rules. Build a look from a picture, compare before and after on windows AllBlack11 owns, and switch from the tray or the **command palette** (Ctrl+K in Settings).
+- **Safety page (3.6).** Emergency pause, reset, undo shell changes, last known good, safe start after repeated crashes, and the status of every experimental piece. Identity accents, Day / Night scenes and the palette hotkey are optional and off by default.
+
+**Everything in 3.6 is unverified on real Windows hardware** and ships only as a pre-release; see `docs/dev/EVIDENCE.md`.
 
 Honest limits: Chromium, Electron, WinUI and many modern apps draw their own opaque client area and often their own title bar, so a backdrop cannot show through them and caption colors may not apply. AllBlack11 does not change whole-window opacity, and no feature here is universal. Screen readers cannot yet read the custom-drawn Settings controls (keyboard access works).
 

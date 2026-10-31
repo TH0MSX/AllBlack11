@@ -1,5 +1,29 @@
 # Changelog
 
+## 3.6.0-preview.1
+
+A **pre-release** continuing the 3.5 preview. **Nothing in it has been run on Windows by the author.** It is unit-tested (197 tests on Linux), cross-compiled for ARM64 and x64, and CI builds it on Windows runners. `docs/dev/EVIDENCE.md` says feature by feature what that does and does not prove, and `docs/dev/SMOKE-TEST.md` starts with the ordered hardware pass.
+
+**Signature flow: pick a window, see what can change, preview, keep or undo**
+- **Fix this app** (Apps page). Pick any window and get its executable, process architecture and helper route, a guess at the framework (labeled as a guess), and a separate line for title bar, border, backdrop, app content area and classic-dialog controls. Choosing an app never implies every control inside it can be themed. Safe actions: Preview here (20 s), Save as rule, Exclude, Restore.
+- **Style receipt**: for each setting, what was requested, what Windows answered, and what is seen on screen, which is always "not verified". Redacted when copied.
+- **Scenes**: OLED Black, Graphite, Midnight Accent, Focus, Living Room, plus your own **Look Book** (save, rename, delete, compare). A scene changes the default look and Focus Look only; per-app rules, exclusions, the shell and the legacy layer are never touched. Try (15 s, Keep or revert), a tray **Scenes** submenu, and one-step undo.
+- **Palette from a picture**: reads at most 64 x 64 sample points from a picture you choose, on this PC, and builds a dark frame look with readable text (at least 7:1) and a visible border (at least 3:1).
+- **Before / after**: two windows AllBlack11 owns, same content, one untouched. It does not capture or predict other apps.
+- **Command palette**: tray menu, Ctrl+K in Settings, optional Ctrl+Alt+Space. Pick a window, switch scenes, pause, restore, open any page.
+- **Safety page** (replaces Diagnostics): emergency **Pause** and **Resume**, reset windows, undo shell changes, turn off experimental features, last known good, helper status, and a **safe start** (two unclean ends in a row, Shift at launch, or `--safe`).
+
+**Optional, off by default, each independent**: Identity accents (a stable border color per app), Day / Night scenes (a timer for the next boundary only; re-checked after sleep and on time or time-zone changes; it cannot wake the PC), the palette hotkey. Safe mode switches all of them off for that run.
+
+**Fixes from the audit (all were real in 3.5)**
+- A tray preset, reload or enable toggle during a 15 s trial no longer lets the trial "revert" over it later. Keep now writes the file first and reverts if the write fails.
+- A reused window handle inside the same process is detected by a fingerprint before any apply or restore.
+- The x64 helper: bounded queue and reply wait, backoff after failure, no state clobbering when stopped and restarted quickly, stop-and-quit when the option is turned off, and the helper checks its parent's creation time.
+
+**Config**: a new optional `features` section, written only when something differs from the defaults, so an untouched config stays readable by 3.5.
+
+**Not in this version** (deferred, not stubbed): Window Anatomy view, per-window undo timeline, display-aware scenes, the controller-friendly Living Room view, Recipe Remixer, saved thumbnails, capturing another app's window.
+
 ## 3.5.0-preview.1
 
 A **pre-release**. 3.0 Preview stays the latest release until the smoke test in `docs/dev/SMOKE-TEST.md` has been run on real ARM64 and x64 hardware. **Nothing new in this version has been run on Windows by the author yet**: it is built and unit-tested (110 tests) and cross-compiled for ARM64 and x64, and `docs/dev/EVIDENCE.md` lists, feature by feature, what that does and does not prove.
