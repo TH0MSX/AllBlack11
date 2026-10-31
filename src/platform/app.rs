@@ -1476,6 +1476,12 @@ impl App {
                     self.config.experimental_dark_legacy = false;
                 }
             }
+        } else if want_hook && old.legacy != self.config.legacy {
+            // Palette or helper switch changed while the layer is on: update in place.
+            let _ = legacy::set_active(true, &legacy_options(&self.config));
+            if !self.config.legacy.emulated_x64 {
+                legacy::stop_helper();
+            }
         }
         self.accent_bgr = registry::accent_bgr();
         self.apps_dark = registry::apps_prefer_dark();

@@ -6,3 +6,4 @@
 .xwin-cache
 setup/target
 harness/target
+helper/target

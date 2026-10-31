@@ -377,6 +377,11 @@ pub fn hook_dll_path(name: &str) -> Option<std::path::PathBuf> {
     Some(dir.join(name))
 }
 
+/// Stop the x64 helper and the hooks it holds, without touching native hooks.
+pub fn stop_helper() {
+    super::helper::stop_all();
+}
+
 /// Whether the packaged x64 helper and x64 hook are installed next to the exe.
 pub fn helper_installed() -> bool {
     super::helper::installed()
