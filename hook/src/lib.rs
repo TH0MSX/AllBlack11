@@ -308,10 +308,15 @@ mod win {
             Some(collect_hwnd),
             &mut found as *mut Vec<HWND> as LPARAM,
         );
+        // Nested dialogs first, so one that gets refused is known before any of its
+        // controls are looked at. Enumeration order does not promise parents come first.
+        for child in &found {
+            if class_name(*child) == "#32770" {
+                treat_dialog(*child, depth + 1);
+            }
+        }
         for child in found {
-            if class_name(child) == "#32770" {
-                treat_dialog(child, depth + 1);
-            } else {
+            if class_name(child) != "#32770" && !refused_ancestor(child) {
                 treat_control(child);
             }
         }

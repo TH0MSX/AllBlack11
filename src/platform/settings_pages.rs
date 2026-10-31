@@ -655,7 +655,9 @@ impl Ui {
     pub fn trial_keep(&mut self) {
         cmdq::push(AppCommand::TrialKeep);
         self.post_command();
-        // The trial ran with the shell untouched; saving now applies any shell part too.
+        // The host ends the trial when it handles the command above. Mark it ended here too,
+        // so the save below is allowed. It also applies any shell part the trial skipped.
+        TRIAL_DEADLINE.store(0, Ordering::Relaxed);
         self.status = "Kept.".into();
         self.commit();
     }

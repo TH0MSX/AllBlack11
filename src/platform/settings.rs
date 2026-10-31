@@ -613,7 +613,7 @@ unsafe extern "system" fn wndproc(hwnd: HWND, msg: u32, wparam: WPARAM, lparam: 
                     ui.begin_pick(hwnd);
                     return 0;
                 }
-                if let Some(slider) = ui.hit_slider(cy) {
+                if let Some(slider) = ui.hit_slider(cy).filter(|_| !ui.trial_active()) {
                     ui.drag = Some(slider);
                     SetCapture(hwnd);
                     ui.set_slider(hwnd, slider, lx);
@@ -1002,6 +1002,11 @@ impl Ui {
     }
 
     fn commit(&mut self) {
+        if self.trial_active() {
+            // A trial is running in memory. Saving now would persist it without a Keep.
+            self.status = "Keep or revert the trial look first.".into();
+            return;
+        }
         if let Err(err) = cfgio::store(&self.config) {
             self.status = format!("Could not save: {err}");
             return;
