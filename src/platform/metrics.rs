@@ -86,12 +86,8 @@ fn read_backup() -> Result<Option<MetricsBackup>, String> {
 }
 
 fn write_backup(backup: &MetricsBackup) -> Result<(), String> {
-    let path = backup_path();
-    if let Some(parent) = path.parent() {
-        std::fs::create_dir_all(parent).map_err(|err| err.to_string())?;
-    }
     let text = serde_json::to_string_pretty(backup).map_err(|err| err.to_string())?;
-    std::fs::write(path, format!("{text}\n")).map_err(|err| err.to_string())
+    super::wide::write_atomic(&backup_path(), &format!("{text}\n"))
 }
 
 fn backup_path() -> std::path::PathBuf {

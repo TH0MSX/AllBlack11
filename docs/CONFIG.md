@@ -90,9 +90,17 @@ A `shell-backup.json` that already contains slots is not overwritten. If that fi
 
 Shipped excludes cover GeForce NOW, Steam, Epic, GOG Galaxy, Battle.net, Ubisoft, EA, Riot, and the NVIDIA overlay. File Explorer is themed only for folder windows (`CabinetWClass`).
 
+## Presets
+
+The tray **Presets** menu and the top of Settings rewrite `default` (and `shell`, for Pure OLED and Factory defaults) and leave `rules`, `exclude`, and the startup options alone. Pure OLED: backdrop `none`, border `none`, black caption, white text, both shell flags on. Accent glass: `tintedAcrylic`, black tint, opacity `0.70`, accent border. Classic Mica: `mica`, black caption, accent border. Factory defaults: the shipped `default` block and both shell flags off.
+
 ## Settings window
 
-The tray **Settings…** item, and a double-click on the icon, open a native Win32 window. It is drawn with GDI in the AllBlack11 process. There is no WebView. The frame uses Mica and immersive dark mode. The client is a solid near-black fill so the text stays sharp.
+The tray **Settings…** item, and a double-click on the icon, open a native Win32 window. It is drawn with GDI in the AllBlack11 process. There is no WebView. The frame uses Mica and immersive dark mode. The client is pure black so the text stays sharp and OLED pixels stay off.
+
+Every coordinate is logical (96 dpi) and scaled once, so layout, hit-testing and the edit boxes stay aligned at any display scale and when the window moves between monitors. The preview at the top is drawn from the same `Style` the theming pass uses, so it matches what a window gets.
+
+Adding or removing an app in a list, or picking a preset, rewrites `config.json` the same way the tray does. The file is written to a temporary name and renamed, so a crash cannot leave a half-written config.
 
 Edits write `config.json` immediately. Shell toggles update HKCU the same way the tray menu does. The caption-height slider writes `CaptionHeight` only when you release it, and only after the original value has been copied to `metrics-backup.json`. Set the slider back to **System** to restore that value. Sign out for Windows to pick the height up.
 

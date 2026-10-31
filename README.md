@@ -13,6 +13,8 @@
 
 <p align="center"><strong>Make Windows 11 truly black.</strong> OLED-friendly, featherweight, fully reversible.</p>
 
+<p align="center"><b>3.0 Preview</b> adds a real Setup.exe, a rebuilt Settings window with a live preview, presets, and Restart Explorer. <a href="https://github.com/TH0MSX/AllBlack11/releases/tag/v3.0.0-preview.1">Get the preview</a> · <a href="CHANGELOG.md">What changed</a></p>
+
 <p align="center">Made by <a href="https://github.com/TH0MSX">@TH0MSX</a> with AI assistance (Cursor), tested daily on real ARM64 hardware.</p>
 
 ## 🌙 Why
@@ -46,11 +48,23 @@ Windows 11 dark mode still paints gray title bars, a gray taskbar, and a tinted 
       <br>Frames, shell colors, autostart, and a full undo.
     </td>
   </tr>
+  <tr>
+    <td width="50%" align="center">
+      <img src="docs/screenshots/settings.png" alt="AllBlack11 Settings: live preview, quick looks, and one card per option" width="100%">
+      <br><strong>Settings with a live preview</strong>
+      <br>One card per option, an explanation under each, and a preview that redraws as you change things.
+    </td>
+    <td width="50%" align="center">
+      <img src="docs/screenshots/setup.png" alt="AllBlack11 Setup on Windows 11 ARM64" width="100%">
+      <br><strong>A regular Setup</strong>
+      <br>Native ARM64 installer. Per user, no administrator rights, with an Apps entry and a clean uninstall.
+    </td>
+  </tr>
 </table>
 
 - Per-window dark captions, border, text color, corners, and backdrop (Mica, Mica Alt, Acrylic, or tinted acrylic).
 - A dark or light tray menu with Windows 11 spacing and rounded corners. It follows the system app theme.
-- A native Settings window (no WebView) for every config option, including per-app rules and exclusions. Double-click the tray icon or choose **Settings…**.
+- A native Settings window (no WebView) with a live preview, one card per option, presets, per-app rules and exclusions. Double-click the tray icon or choose **Settings…**.
 - Rules by exe name, plus a built-in skip list for the shell, games, and launchers.
 - Out-of-context window events. No polling loop while the PC is idle.
 - Original frame attributes go back on Exit, Disable, or Reset.
@@ -59,67 +73,73 @@ Windows 11 dark mode still paints gray title bars, a gray taskbar, and a tinted 
 
 ## 📦 Download
 
-Grab the latest zip from **[github.com/TH0MSX/AllBlack11/releases/latest](https://github.com/TH0MSX/AllBlack11/releases/latest)**.
+| PC | Installer (recommended) | Portable zip |
+| --- | --- | --- |
+| Snapdragon and other ARM64 | `AllBlack11-Setup-arm64.exe` | `AllBlack11-arm64.zip` |
+| Intel and AMD | `AllBlack11-Setup-x64.exe` | `AllBlack11-x64.zip` |
 
-| PC | Zip |
-| --- | --- |
-| Snapdragon and other ARM64 | `AllBlack11-arm64.zip` |
-| Intel and AMD | `AllBlack11-x64.zip` |
+- **Preview (3.0):** [github.com/TH0MSX/AllBlack11/releases/tag/v3.0.0-preview.1](https://github.com/TH0MSX/AllBlack11/releases/tag/v3.0.0-preview.1). It is a pre-release, so GitHub's "latest" link does not point at it.
+- **Stable:** [github.com/TH0MSX/AllBlack11/releases/latest](https://github.com/TH0MSX/AllBlack11/releases/latest). Zip only.
 
-The ARM64 build is native. The x64 zip runs on ARM64 only under emulation. `install.ps1` checks the CPU with `IsWow64Process2`, including when PowerShell itself is the x64 emulator.
+The ARM64 build is native. The x64 build runs on ARM64 only under emulation, and Settings > About tells you when that is happening.
 
 ## 🛠️ Install
 
-1. Unzip the download.
-2. Right-click `install.ps1` and choose **Run with PowerShell**.
+**Setup.exe (3.0 and newer).** Run the installer for your CPU. It installs for your account only, so there is no administrator prompt. It adds a Start menu shortcut and an entry in Settings > Apps, and it can start AllBlack11 at sign-in. Running a newer Setup updates in place and keeps your config. To uninstall, use Settings > Apps, or run Setup again and choose **Uninstall**. Uninstall puts the Windows settings AllBlack11 changed back first, then asks whether to keep your config.
 
-No administrator account. `-NoAutostart` skips the HKCU Run value if you launch the script yourself:
+Silent install for scripts: `AllBlack11-Setup-arm64.exe /S` (add `/NOAUTOSTART`, `/NOSHORTCUT`, `/NOLAUNCH` as needed). Silent uninstall: `AllBlack11-Setup-arm64.exe --uninstall /S` (add `/PURGE` to delete the config too).
+
+**Zip.** Unzip, right-click `install.ps1`, choose **Run with PowerShell**. `-NoAutostart` skips the HKCU Run value:
 
 ```powershell
 powershell -ExecutionPolicy Bypass -File .\install.ps1
 ```
 
-The script copies `AllBlack11.exe` and `AllBlack11Hook.dll` to `%LOCALAPPDATA%\Programs\AllBlack11`, creates `%APPDATA%\AllBlack11\config.json` when you do not have one, and adds `AllBlack11` under `HKCU\Software\Microsoft\Windows\CurrentVersion\Run`. The hook DLL stays on disk until you opt in.
+Both paths copy `AllBlack11.exe` and `AllBlack11Hook.dll` to `%LOCALAPPDATA%\Programs\AllBlack11`, create `%APPDATA%\AllBlack11\config.json` when you do not have one, and add `AllBlack11` under `HKCU\Software\Microsoft\Windows\CurrentVersion\Run`. The hook DLL stays on disk until you opt in.
 
-The exe is unsigned. SmartScreen may say it protected your PC. Choose **More info**, then **Run anyway**.
+The binaries are unsigned. SmartScreen may say it protected your PC. Choose **More info**, then **Run anyway**.
 
-If `%APPDATA%\PepaTheme\config.json` is still there and the new config is not, the first launch copies that config and `snapshots.json`. The installer also asks the old `PepaTheme.exe --exit`, removes its Run value, and deletes `%LOCALAPPDATA%\Programs\PepaTheme`.
+If `%APPDATA%\PepaTheme\config.json` is still there and the new config is not, the first launch (or Setup) copies that config and `snapshots.json`, stops the old PepaTheme, removes its Run value, and deletes `%LOCALAPPDATA%\Programs\PepaTheme`.
 
-## 🖱️ Tray menu
+## 🖱️ Tray menu and Settings
 
 Right-click the icon for the menu. A single left-click opens it too. Double-click opens Settings.
 
 ```
-AllBlack11
+AllBlack11 3.0 Preview · ARM64
 ──────────
-Enabled
-Reload config
-Open config
-Settings…
-Reset all windows
+Enabled                  Master switch for dark title bars, borders and backdrops.
+Settings…                Every option, with a live preview and an explanation.
+Presets  ›               Pure OLED · Accent glass · Classic Mica · Factory defaults
 ──────────
-Shell
-    OLED taskbar
-    Black Start, taskbar & notification center
+Shell  ›                 OLED taskbar · Black Start, taskbar & notification center
+                         Restart Explorer…
+Maintenance  ›           Reload config · Open config · Open data folder
+                         Write diagnostics report · Reset all windows
 ──────────
 Start with Windows
 ──────────
 Exit
 ```
 
-A check mark means that item is on. In dark mode the menu is dark, with padded rows and rounded corners. Light mode stays light. High contrast uses the normal system menu.
+Menu items carry a one-line explanation of what they do. A check mark means that item is on. In dark mode the menu is dark, with padded rows and rounded corners. Light mode stays light. High contrast uses the normal system menu.
+
+**Settings** is a native window in the same near-black as the rest. Every option sits on its own card: the name and a plain-language explanation on the left, the control on the right. A **live preview** is pinned at the top. It redraws a mock window, Start menu and taskbar from your current config, so you can see what a backdrop, corner style, border, tint or shell toggle does before you look at a real window. It also has the presets, per-app rules, exclusions, **Restart Explorer**, and an **About** card that says whether you are running natively on ARM64.
 
 | Item | What it does |
 | --- | --- |
 | **Enabled** | Window-frame pass. Off restores frames and is saved in the config. |
-| **Reload config** | Reads `config.json` again. |
-| **Open config** | Opens the JSON in your editor. |
-| **Settings…** | Native settings window. Same as a double-click on the tray icon. |
-| **Reset all windows** | Puts frames back until you reload or turn Enabled on again. |
+| **Presets** | One-click looks. They rewrite the default look; rules and exclusions are kept. |
 | **OLED taskbar** | `UseOLEDTaskbarTransparency` = 1. |
 | **Black Start, taskbar & notification center** | Black shell palette, transparency on, light theme off. |
+| **Restart Explorer…** | Ends `explorer.exe` and lets Windows start it again. Open File Explorer windows close, so it asks first. Use it when a shell change does not show up. |
+| **Reload / Open config / Open data folder** | Reads `config.json` again, or opens it or its folder. |
+| **Write diagnostics report** | Writes `check.txt` (version, CPU type, Windows build, settings) and opens it. |
+| **Reset all windows** | Puts frames back until you reload or turn Enabled on again. |
 | **Start with Windows** | The HKCU Run value. |
 | **Exit** | Restores frames and quits. Shell toggles stay until you uncheck them or uninstall. |
+
+Command line: `AllBlack11.exe --check` prints the diagnostics report, `--restart-explorer` restarts the shell, and `--restore` quits the app and undoes the shell tweaks and CaptionHeight without needing the tray (add `--quiet` for scripts).
 
 ## ⚙️ Configuration
 
@@ -231,6 +251,8 @@ Same program, new name. The first launch copies the old config and snapshots whe
 ## 🗺️ Roadmap
 
 - A signed build, if a certificate is available.
+- A screenshot of the Restart Explorer confirmation and the Presets in use.
+- Covering x64-emulated apps with the experimental dark-dialog hook on ARM64 (needs a helper process).
 - More per-app recipes in the default config, still opt-in.
 
 ## 👤 Credits
