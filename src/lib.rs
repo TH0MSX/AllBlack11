@@ -5,18 +5,26 @@ mod arch;
 mod caption;
 mod config;
 mod inject;
+mod legacy_policy;
 mod policy;
 mod presets;
 mod shell;
 mod snapshot;
+mod target;
 mod timefmt;
 mod version;
 
 pub use arch::{classify, machine_name, ArchStatus, BUILD_MACHINE};
 pub use config::{
     base_style, bundled_default_json, parse_config, set_enabled_flag, Backdrop, Color, Config,
-    Corners, PartialStyle, Rule, Style, FALLBACK_ACCENT_BGR,
+    Corners, LegacySettings, PartialStyle, Rule, Style, FALLBACK_ACCENT_BGR,
 };
+pub use inject::{inject_allowed, InjectTarget};
+pub use legacy_policy::{
+    capability, contrast_ratio, host_kind, palette, window_verdict, Capability, HostKind, Level, Palette,
+    SharedState, Tech, Verdict, PALETTES,
+};
+pub use target::{classify_target, pe_machine, route, Route, TargetArch};
 pub use policy::{
     decide, is_borderless_fullscreen, rect_covers_monitor, Decision, WindowFacts, WS_CHILD,
     WS_DLGFRAME, WS_EX_LAYERED, WS_EX_NOREDIRECTIONBITMAP, WS_EX_TOOLWINDOW, WS_EX_TRANSPARENT,

@@ -524,7 +524,7 @@ fn run() -> Result<(), String> {
     }
     app.apply_startup();
     if app.config.experimental_dark_legacy && !app.high_contrast {
-        if let Err(err) = legacy::set_active(true) {
+        if let Err(err) = legacy::set_active(true, &legacy_options(&app.config)) {
             log_line("error", &err);
         } else {
             app.scan_legacy();
@@ -597,6 +597,13 @@ fn load_snapshots() -> HashMap<i64, StoredSnapshot> {
             log_line("error", &format!("snapshot file ignored: {err}"));
             HashMap::new()
         }
+    }
+}
+
+fn legacy_options(config: &crate::Config) -> legacy::LegacyOptions {
+    legacy::LegacyOptions {
+        palette: config.legacy.palette.clone(),
+        emulated_x64: config.legacy.emulated_x64,
     }
 }
 
@@ -783,13 +790,13 @@ fn on_setting_change(lparam: LPARAM) {
         app.high_contrast = contrast;
         if contrast && contrast_changed {
             app.restore_visuals();
-            let _ = legacy::set_active(false);
+            let _ = legacy::set_active(false, &legacy::LegacyOptions::default());
             app.balloon("AllBlack11", "Paused while high contrast is on.", false);
         } else if accent_changed || contrast_changed {
             app.hold.clear();
             app.last_apply.clear();
             app.apply_startup();
-            if !contrast && app.config.experimental_dark_legacy && legacy::set_active(true).is_ok()
+            if !contrast && app.config.experimental_dark_legacy && legacy::set_active(true, &legacy_options(&app.config)).is_ok()
             {
                 app.scan_legacy();
             }
@@ -1394,9 +1401,9 @@ impl App {
         let want_hook = self.config.experimental_dark_legacy && !self.high_contrast;
         let had_hook = old.experimental_dark_legacy && !self.high_contrast;
         if want_hook != had_hook || (want_hook && old.exclude != self.config.exclude) {
-            let _ = legacy::set_active(false);
+            let _ = legacy::set_active(false, &legacy::LegacyOptions::default());
             if want_hook {
-                if let Err(err) = legacy::set_active(true) {
+                if let Err(err) = legacy::set_active(true, &legacy_options(&self.config)) {
                     self.balloon("AllBlack11", &err, true);
                     self.config.experimental_dark_legacy = false;
                 }
@@ -1658,9 +1665,6 @@ impl App {
                 }
             }
             self.last_apply.insert(item.hwnd, now);
-            if self.config.experimental_dark_legacy {
-                legacy::nudge(hwnd);
-            }
         }
         if self.dirty {
             self.write_snapshots();

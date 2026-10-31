@@ -362,6 +362,26 @@ impl Default for ShellSettings {
     }
 }
 
+/// Options for the optional legacy-window layer. The switch itself is
+/// `experimentalDarkLegacy`; these only matter while it is on.
+#[derive(Debug, Clone, PartialEq, Eq, Deserialize, Serialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields, default)]
+pub struct LegacySettings {
+    /// `graphite` (default) or `black`.
+    pub palette: String,
+    /// ARM64 only: let the packaged x64 helper treat emulated x64 dialogs. Experimental.
+    pub emulated_x64: bool,
+}
+
+impl Default for LegacySettings {
+    fn default() -> Self {
+        Self {
+            palette: "graphite".into(),
+            emulated_x64: false,
+        }
+    }
+}
+
 #[derive(Debug, Clone, Deserialize, Serialize)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub struct Rule {
@@ -398,6 +418,8 @@ pub struct Config {
     /// Opt-in in-process recolor of classic dialogs. Off unless the user turns it on.
     #[serde(default)]
     pub experimental_dark_legacy: bool,
+    #[serde(default)]
+    pub legacy: LegacySettings,
 }
 
 fn default_true() -> bool {

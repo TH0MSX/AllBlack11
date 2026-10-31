@@ -12,6 +12,7 @@ mod app;
 mod cfgio;
 mod composition;
 mod dwm;
+mod helper;
 mod icon;
 mod legacy;
 mod menu;

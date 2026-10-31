@@ -1,4 +1,5 @@
 use crate::config::{exe_matches, resolve_style, Style};
+use crate::legacy_policy::ALWAYS_SKIP_PROCESSES;
 use crate::Config;
 
 pub const WS_POPUP: u32 = 0x8000_0000;
@@ -8,45 +9,6 @@ pub const WS_EX_TOOLWINDOW: u32 = 0x0000_0080;
 pub const WS_EX_TRANSPARENT: u32 = 0x0000_0020;
 pub const WS_EX_LAYERED: u32 = 0x0008_0000;
 pub const WS_EX_NOREDIRECTIONBITMAP: u32 = 0x0020_0000;
-
-/// Processes that host the shell, the lock screen, or services. Not removable from config.
-const ALWAYS_SKIP_PROCESSES: &[&str] = &[
-    "allblack11.exe",
-    "pepatheme.exe",
-    "dwm.exe",
-    "csrss.exe",
-    "winlogon.exe",
-    "wininit.exe",
-    "lsass.exe",
-    "lsaiso.exe",
-    "services.exe",
-    "smss.exe",
-    "fontdrvhost.exe",
-    "sihost.exe",
-    "ctfmon.exe",
-    "lockapp.exe",
-    "logonui.exe",
-    "userinit.exe",
-    "startmenuexperiencehost.exe",
-    "searchhost.exe",
-    "searchapp.exe",
-    "shellexperiencehost.exe",
-    "shellhost.exe",
-    "textinputhost.exe",
-    "widgetboard.exe",
-    "widgets.exe",
-    "widgetservice.exe",
-    "gamebar.exe",
-    "gamebarftserver.exe",
-    "gamebarpresencewriter.exe",
-    "runtimebroker.exe",
-    "taskhostw.exe",
-    "systemsettingsbroker.exe",
-    "securityhealthsystray.exe",
-    "securityhealthservice.exe",
-    "mousocoreworker.exe",
-    "compattelrunner.exe",
-];
 
 /// Window classes that belong to the shell, menus, or input UI.
 const ALWAYS_SKIP_CLASSES: &[&str] = &[
@@ -208,9 +170,6 @@ fn exe_listed(exe: &str, list: &[impl AsRef<str>]) -> bool {
 }
 
 /// Shell hosts, services, and our own process. The experimental hook uses the same list.
-pub fn process_always_skipped(exe: &str) -> bool {
-    exe_listed(exe, ALWAYS_SKIP_PROCESSES)
-}
 
 #[cfg(test)]
 pub fn normal_notepad() -> WindowFacts {
