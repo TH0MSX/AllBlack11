@@ -41,7 +41,11 @@ use windows_sys::Win32::UI::WindowsAndMessaging::{
     WS_EX_TRANSPARENT, WS_POPUP,
 };
 
+use windows_sys::Win32::System::Power::{GetSystemPowerStatus, SYSTEM_POWER_STATUS};
 use windows_sys::Win32::System::Registry::{RegCloseKey, HKEY};
+use windows_sys::Win32::UI::WindowsAndMessaging::{
+    GetForegroundWindow, GetSystemMetrics, SM_REMOTESESSION, WM_DISPLAYCHANGE, WM_POWERBROADCAST,
+};
 
 use crate::config::{
     acrylic_gradient, bundled_default_json, file_name, hex_rgb, normalize_caption_height,
@@ -56,6 +60,7 @@ use crate::{
 };
 
 use super::cfgio;
+use super::cmdq::{self, AppCommand, WM_APP_COMMAND};
 use super::composition;
 use super::dwm;
 use super::icon;
@@ -101,6 +106,13 @@ const CMD_PRESET_BASE: u32 = 20;
 const WM_EXPLORER_DONE: u32 = WM_APP + 7;
 const TIMER_ACCENT: usize = 3;
 const TIMER_CLICK: usize = 4;
+const TIMER_TRIAL: usize = 5;
+/// How long a trial look runs before it reverts by itself.
+const TRIAL_MS: u64 = 15_000;
+const TRY_WINDOW_MS: u64 = 20_000;
+
+/// Tick-count deadline of the running trial, or 0. Read by Settings for its countdown.
+pub static TRIAL_DEADLINE: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0);
 
 static SUPPRESS_MENU: AtomicBool = AtomicBool::new(false);
 
@@ -121,6 +133,21 @@ enum Kind {
 struct Due {
     hwnd: i64,
     at: u64,
+}
+
+/// What the last pass did to one window, for the inspector.
+struct OpRecord {
+    pid: u32,
+    create: u64,
+    attempts: Vec<dwm::Failure>,
+    style: Style,
+    backdrop: i32,
+    note: Option<&'static str>,
+}
+
+struct Trial {
+    previous: crate::Config,
+    deadline: u64,
 }
 
 struct PendingApply {
@@ -162,6 +189,14 @@ struct App {
     instance_mutex: HANDLE,
     logged_startup: bool,
     swca_failed: HashSet<u32>,
+    /// The window that currently has focus (a themable one), for Focus Look.
+    fg_key: i64,
+    /// Why effects are reduced right now, if they are.
+    reduce: Option<&'static str>,
+    last_ops: HashMap<i64, OpRecord>,
+    trial: Option<Trial>,
+    /// Windows given a temporary look from the inspector, with their revert time.
+    try_windows: HashMap<i64, u64>,
 }
 
 /// `--quiet` keeps the recovery commands from popping a message box when they have no
@@ -488,6 +523,11 @@ fn run() -> Result<(), String> {
         instance_mutex,
         logged_startup: false,
         swca_failed: HashSet::new(),
+        fg_key: 0,
+        reduce: None,
+        last_ops: HashMap::new(),
+        trial: None,
+        try_windows: HashMap::new(),
         config_file: config_path(),
         config,
     };
@@ -525,6 +565,8 @@ fn run() -> Result<(), String> {
             ),
         );
     }
+    app.refresh_reduce();
+    app.fg_key = unsafe { GetAncestor(GetForegroundWindow(), GA_ROOT) } as isize as i64;
     app.apply_startup();
     if app.config.experimental_dark_legacy && !app.high_contrast {
         if let Err(err) = legacy::set_active(true, &legacy_options(&app.config)) {
@@ -553,43 +595,29 @@ fn load_config() -> (crate::Config, Option<String>) {
         let _ = std::fs::create_dir_all(parent);
     }
     migrate_legacy_config();
-    let bundled = || parse_config(bundled_default_json()).expect("bundled config");
     if !path.exists() {
         if wide::write_atomic(&path, bundled_default_json()).is_err() {
             log_line("error", "could not write the default config");
         }
-        return (bundled(), None);
+        return (crate::pick_config(None, None).config, None);
     }
-    match std::fs::read_to_string(&path) {
-        Ok(text) => match parse_config(&text) {
-            Ok(config) => (config, None),
-            Err(err) => {
-                log_line("error", &format!("config ignored, running disabled: {err}"));
-                let mut config = bundled();
-                config.enabled = false;
-                (
-                    config,
-                    Some(format!(
-                        "config.json was not applied, so theming is off. {err}"
-                    )),
-                )
-            }
-        },
+    let primary = match std::fs::read_to_string(&path) {
+        Ok(text) => text,
         Err(err) => {
-            log_line(
-                "error",
-                &format!("config unreadable, running disabled: {err}"),
-            );
-            let mut config = bundled();
-            config.enabled = false;
-            (
-                config,
-                Some(format!(
-                    "Could not read config.json, so theming is off. {err}"
-                )),
-            )
+            log_line("error", &format!("config unreadable: {err}"));
+            String::new()
+        }
+    };
+    let picked = crate::pick_config(Some(&primary), cfgio::load_lkg().as_deref());
+    match picked.source {
+        crate::ConfigSource::Primary => cfgio::save_lkg(&primary),
+        _ => {
+            if let Some(warning) = &picked.warning {
+                log_line("error", warning);
+            }
         }
     }
+    (picked.config, picked.warning)
 }
 
 fn load_snapshots() -> HashMap<i64, StoredSnapshot> {
@@ -686,6 +714,33 @@ unsafe extern "system" fn wndproc(hwnd: HWND, msg: u32, wparam: WPARAM, lparam: 
             }
             return 0;
         }
+        WM_APP_COMMAND => {
+            // Run queued Settings requests, then broadcast outside the lock if needed.
+            if with_app(|app| app.run_commands()).unwrap_or(false) {
+                shellwin::broadcast_immersive_color();
+            }
+            return 0;
+        }
+        WM_POWERBROADCAST => {
+            // PBT_APMPOWERSTATUSCHANGED: AC/battery or battery saver may have flipped.
+            if wparam == 0x000A {
+                with_app(|app| {
+                    if app.refresh_reduce() {
+                        app.restyle_all();
+                    }
+                });
+            }
+            return TRUE as LRESULT;
+        }
+        WM_DISPLAYCHANGE => {
+            // Connecting or leaving a remote session changes the display.
+            with_app(|app| {
+                if app.refresh_reduce() {
+                    app.restyle_all();
+                }
+            });
+            return 0;
+        }
         settings::WM_RUN_COMMAND => {
             on_command(hwnd, wparam as u32);
             return 0;
@@ -717,6 +772,8 @@ unsafe extern "system" fn wndproc(hwnd: HWND, msg: u32, wparam: WPARAM, lparam: 
                 show_menu(hwnd);
             } else if wparam == TIMER_SECOND {
                 with_app(|app| app.fire_due());
+            } else if wparam == TIMER_TRIAL {
+                with_app(|app| app.expire_trials());
             } else if wparam == TIMER_ACCENT {
                 let wrote = with_app(|app| app.reapply_black_palette()).unwrap_or(false);
                 if wrote {
@@ -803,6 +860,9 @@ fn on_setting_change(lparam: LPARAM) {
             {
                 app.scan_legacy();
             }
+        }
+        if app.refresh_reduce() {
+            app.restyle_all();
         }
         uxtheme::allow_dark_menus(!contrast);
         app.update_tray();
@@ -1197,7 +1257,10 @@ impl App {
         } else if !self.config.enabled {
             "AllBlack11: off".into()
         } else {
-            format!("AllBlack11: {} windows", self.themed_count())
+            match self.reduce {
+                Some(_) => format!("AllBlack11: {} windows (reduced effects)", self.themed_count()),
+                None => format!("AllBlack11: {} windows", self.themed_count()),
+            }
         }
     }
 
@@ -1387,7 +1450,9 @@ impl App {
                 return false;
             }
         };
+        cfgio::save_lkg(&text);
         self.config = new;
+        self.refresh_reduce();
         self.config.caption_height = normalize_caption_height(self.config.caption_height);
         let shell_changed = self.reconcile_shell(&old);
         if normalize_caption_height(old.caption_height) != self.config.caption_height {
@@ -1469,7 +1534,11 @@ impl App {
             return;
         }
         let mut kinds: HashMap<i64, Kind> = HashMap::new();
+        let mut new_fg = None;
         for (key, event) in batch {
+            if event == EVENT_SYSTEM_FOREGROUND {
+                new_fg = Some(key);
+            }
             let kind = kind_from_event(event);
             kinds
                 .entry(key)
@@ -1480,11 +1549,27 @@ impl App {
                 })
                 .or_insert(kind);
         }
+        // Focus Look: the window that just lost focus gets its calmer look, and the one that
+        // gained it gets the active look. Only on foreground events, never on a timer.
+        let mut left_focus = None;
+        if let Some(key) = new_fg {
+            if self.fg_key != key {
+                left_focus = Some(self.fg_key).filter(|prev| *prev != 0);
+                self.fg_key = key;
+            }
+        }
         let mut pending = Vec::new();
-        for (key, kind) in kinds {
+        for (key, kind) in kinds.clone() {
             self.note_legacy(key);
             if let Some(item) = self.plan(key, kind) {
                 pending.push(item);
+            }
+        }
+        if self.config.focus.enabled {
+            if let Some(prev) = left_focus.filter(|prev| !kinds.contains_key(prev)) {
+                if let Some(item) = self.plan(prev, Kind::Second) {
+                    pending.push(item);
+                }
             }
         }
         self.commit(pending);
@@ -1546,6 +1631,9 @@ impl App {
         if self.high_contrast || !self.config.enabled {
             return None;
         }
+        if self.try_windows.contains_key(&key) {
+            return None;
+        }
         let needs_path = self
             .config
             .rules
@@ -1582,6 +1670,7 @@ impl App {
                 None
             }
             Decision::Apply(style) => {
+                let style = self.effective_style(&facts, key, style);
                 if kind == Kind::MoveStart
                     && (style.backdrop != Backdrop::TintedAcrylic
                         || !style.tinted_acrylic_on_move_fallback)
@@ -1612,7 +1701,10 @@ impl App {
         match kind {
             Kind::Startup | Kind::Second | Kind::MoveStart | Kind::MoveSize => true,
             Kind::Show => now.saturating_sub(last) > 80,
-            Kind::Foreground => self.config.reapply_on_foreground && now.saturating_sub(last) > 800,
+            Kind::Foreground => {
+                self.config.focus.enabled
+                    || (self.config.reapply_on_foreground && now.saturating_sub(last) > 800)
+            }
         }
     }
 
@@ -1683,7 +1775,33 @@ impl App {
                     self.mark_accent(item.hwnd, false);
                 }
             }
-            for failure in dwm::apply(hwnd, &item.style, self.accent_bgr, self.build, backdrop) {
+            let attempts = dwm::apply(hwnd, &item.style, self.accent_bgr, self.build, backdrop);
+            if self.last_ops.len() > 512 {
+                self.last_ops.clear();
+            }
+            let note = if item.style.backdrop == Backdrop::TintedAcrylic
+                && backdrop == Backdrop::Acrylic.dwm_value()
+            {
+                Some("tinted acrylic was refused by Windows, so plain Acrylic was used")
+            } else {
+                None
+            };
+            self.last_ops.insert(
+                item.hwnd,
+                OpRecord {
+                    pid: item.pid,
+                    create: self
+                        .exe_cache
+                        .get(&item.hwnd)
+                        .map(|entry| entry.1)
+                        .unwrap_or(0),
+                    attempts: attempts.clone(),
+                    style: item.style,
+                    backdrop,
+                    note,
+                },
+            );
+            for failure in attempts.iter().filter(|attempt| attempt.hr < 0) {
                 if self.seen_failures.insert(failure.attribute) {
                     log_line(
                         "warn",
@@ -1947,6 +2065,372 @@ impl App {
         }
     }
 
+
+    // ---- effective look: Focus Look and reduced effects -----------------------------------
+
+    fn effective_style(&self, facts: &WindowFacts, key: i64, style: Style) -> Style {
+        let mut out = style;
+        if self.config.focus.enabled && !self.high_contrast {
+            let identity = crate::WindowIdentity {
+                exe: &facts.exe,
+                class: &facts.class_name,
+                path: &facts.path,
+                package: &facts.package,
+                title: facts.title.as_deref(),
+            };
+            let resolved = crate::resolve(&self.config, &identity, self.accent_bgr);
+            let from_rule = |name: &str| {
+                resolved
+                    .sources
+                    .iter()
+                    .any(|(field, source)| *field == name && matches!(source, crate::Source::Rule(_)))
+            };
+            let explicit = crate::Explicit {
+                caption: from_rule("title bar color"),
+                border: from_rule("border color"),
+                text: from_rule("text color"),
+            };
+            out = crate::focus_style(
+                &out,
+                &self.config.focus,
+                &explicit,
+                key == self.fg_key,
+                self.accent_bgr,
+            );
+        }
+        crate::reduced(&out, self.reduce)
+    }
+
+    /// Re-read the system signals. True when the reason for reduced effects changed.
+    fn refresh_reduce(&mut self) -> bool {
+        let reason = crate::reduce_reason(&self.config.reduce_effects, &system_state());
+        let changed = reason != self.reduce;
+        self.reduce = reason;
+        changed
+    }
+
+    /// Re-style every window from scratch under the current config.
+    fn restyle_all(&mut self) {
+        self.hold.clear();
+        self.last_apply.clear();
+        self.exe_cache.clear();
+        self.path_cache.clear();
+        if self.config.enabled && !self.high_contrast {
+            self.apply_startup();
+        } else {
+            self.restore_visuals();
+        }
+        self.update_tray();
+    }
+
+    // ---- commands from Settings --------------------------------------------------------------
+
+    /// Returns true when Windows should be told about a shell change (do that outside the lock).
+    fn run_commands(&mut self) -> bool {
+        let mut broadcast = false;
+        for command in cmdq::drain() {
+            match command {
+                AppCommand::TryOnWindow {
+                    key,
+                    pid,
+                    create,
+                    style,
+                } => self.try_window(key, pid, create, style),
+                AppCommand::RestoreWindow { key, pid, create } => self.restore_window(key, pid, create),
+                AppCommand::TrialStart(config) => self.trial_start(*config),
+                AppCommand::TrialKeep => self.trial_end(true),
+                AppCommand::TrialRevert => self.trial_end(false),
+                AppCommand::RestoreLastKnownGood => broadcast |= self.restore_lkg(),
+            }
+        }
+        broadcast
+    }
+
+    /// The HWND still belongs to the process the caller looked at (HWNDs are reused).
+    fn same_window(&mut self, key: i64, pid: u32, create: u64) -> bool {
+        let hwnd = key_to_hwnd(key);
+        if unsafe { IsWindow(hwnd) } == 0 {
+            return false;
+        }
+        self.identity(hwnd)
+            .is_some_and(|(live_pid, live_create, _)| live_pid == pid && live_create == create)
+    }
+
+    fn try_window(&mut self, key: i64, pid: u32, create: u64, style: Style) {
+        if !self.same_window(key, pid, create) {
+            self.balloon("AllBlack11", "That window has closed or been replaced.", false);
+            return;
+        }
+        let hwnd = key_to_hwnd(key);
+        self.ensure_original(key, hwnd, pid, create);
+        let now = unsafe { GetTickCount64() };
+        self.try_windows.insert(key, now + TRY_WINDOW_MS);
+        let exe = self
+            .exe_cache
+            .get(&key)
+            .map(|entry| entry.2.clone())
+            .unwrap_or_default();
+        let style = crate::reduced(&style, self.reduce);
+        self.commit(vec![PendingApply {
+            hwnd: key,
+            pid,
+            exe,
+            style,
+            move_blur: false,
+        }]);
+        unsafe { SetTimer(self.hwnd, TIMER_TRIAL, 1000, None) };
+    }
+
+    fn restore_window(&mut self, key: i64, pid: u32, create: u64) {
+        if !self.same_window(key, pid, create) {
+            self.balloon("AllBlack11", "That window has closed or been replaced.", false);
+            return;
+        }
+        self.try_windows.remove(&key);
+        self.restore_one(key, false);
+        // Leave it alone until Enabled is toggled or the config is reloaded.
+        self.hold.insert(key);
+        self.update_tray();
+    }
+
+    /// Timer tick shared by temporary window looks and the config trial.
+    fn expire_trials(&mut self) {
+        let now = unsafe { GetTickCount64() };
+        let due: Vec<i64> = self
+            .try_windows
+            .iter()
+            .filter(|(_, deadline)| **deadline <= now)
+            .map(|(key, _)| *key)
+            .collect();
+        let mut pending = Vec::new();
+        for key in due {
+            self.try_windows.remove(&key);
+            self.restore_one(key, false);
+            // The normal pass decides what this window should look like.
+            if let Some(item) = self.plan(key, Kind::Second) {
+                pending.push(item);
+            }
+        }
+        self.commit(pending);
+        if self.trial.as_ref().is_some_and(|trial| now >= trial.deadline) {
+            self.trial_end(false);
+        }
+        if self.try_windows.is_empty() && self.trial.is_none() {
+            unsafe { KillTimer(self.hwnd, TIMER_TRIAL) };
+        }
+        self.update_tray();
+    }
+
+    /// Run a whole config in memory. The shell, startup, legacy switch and logging keep their
+    /// current values: a trial never changes the registry or loads a hook.
+    fn trial_start(&mut self, mut next: crate::Config) {
+        let now = unsafe { GetTickCount64() };
+        let deadline = now + TRIAL_MS;
+        match self.trial.as_mut() {
+            Some(trial) => trial.deadline = deadline,
+            None => {
+                self.trial = Some(Trial {
+                    previous: self.config.clone(),
+                    deadline,
+                })
+            }
+        }
+        next.shell = self.config.shell.clone();
+        next.experimental_dark_legacy = self.config.experimental_dark_legacy;
+        next.legacy = self.config.legacy.clone();
+        next.logging = self.config.logging;
+        self.config = next;
+        self.refresh_reduce();
+        self.restyle_all();
+        TRIAL_DEADLINE.store(deadline, Ordering::Relaxed);
+        unsafe { SetTimer(self.hwnd, TIMER_TRIAL, 1000, None) };
+    }
+
+    fn trial_end(&mut self, keep: bool) {
+        let Some(trial) = self.trial.take() else {
+            return;
+        };
+        TRIAL_DEADLINE.store(0, Ordering::Relaxed);
+        if keep {
+            match cfgio::store(&self.config) {
+                Ok(()) => {
+                    if let Ok(text) = serde_json::to_string_pretty(&self.config) {
+                        cfgio::save_lkg(&format!("{text}\n"));
+                    }
+                }
+                Err(err) => {
+                    self.balloon("AllBlack11", &format!("Could not save the look: {err}"), true);
+                    self.config = trial.previous;
+                    self.refresh_reduce();
+                    self.restyle_all();
+                }
+            }
+        } else {
+            self.config = trial.previous;
+            self.refresh_reduce();
+            self.restyle_all();
+        }
+        if self.try_windows.is_empty() {
+            unsafe { KillTimer(self.hwnd, TIMER_TRIAL) };
+        }
+        settings::notify_external_change();
+    }
+
+    /// Put the last known good config back. The broken file is kept next to it.
+    fn restore_lkg(&mut self) -> bool {
+        let Some(good) = cfgio::load_lkg() else {
+            self.balloon("AllBlack11", "There is no last known good config yet.", true);
+            return false;
+        };
+        if parse_config(&good).is_err() {
+            self.balloon("AllBlack11", "The saved last known good config is not usable.", true);
+            return false;
+        }
+        if let Ok(current) = std::fs::read_to_string(&self.config_file) {
+            let _ = wide::write_atomic(&self.config_file.with_extension("broken.json"), &current);
+        }
+        if wide::write_atomic(&self.config_file, &good).is_err() {
+            self.balloon("AllBlack11", "Could not write config.json.", true);
+            return false;
+        }
+        self.balloon("AllBlack11", "Restored the last known good config.", false);
+        self.apply_external_config()
+    }
+
+    // ---- the inspector's report -----------------------------------------------------------------
+
+    fn build_report(&mut self, key: i64) -> Option<crate::Report> {
+        let hwnd = key_to_hwnd(key);
+        if unsafe { IsWindow(hwnd) } == 0 {
+            return None;
+        }
+        let (pid, _create, exe) = self.identity(hwnd)?;
+        let (path, package) = super::procinfo::path_and_package(pid, true);
+        let title = super::procinfo::window_title(hwnd);
+        let mut facts = collect_facts(hwnd, &exe, pid);
+        facts.path = path.clone();
+        facts.package = package.clone();
+        // A title only takes part in matching if some rule asks for one.
+        facts.title = self
+            .config
+            .rules
+            .iter()
+            .any(|rule| rule.title.is_some())
+            .then(|| title.clone());
+        let mut explanation = crate::explain(&facts, &self.config, self.accent_bgr, self.build);
+        if let Some(reason) = self.reduce {
+            explanation.notes.push(format!(
+                "Effects are reduced right now because of {reason}, so no backdrop material is applied."
+            ));
+        }
+        let options = legacy_options(&self.config);
+        let assessment = legacy::assess(hwnd, &self.config.exclude, &options);
+        let (arch_key, arch_text, legacy_view) = match &assessment {
+            Some(found) => {
+                let verdict = match &found.verdict {
+                    crate::Verdict::Full => "this dialog can be fully treated".to_string(),
+                    crate::Verdict::Partial(_) => "this dialog can be partly treated".to_string(),
+                    crate::Verdict::Skip(reason) => crate::reason_text(reason).to_string(),
+                };
+                let gate = match &found.gate {
+                    Ok(crate::Route::Native) => "allowed: native hook".to_string(),
+                    Ok(crate::Route::X64Helper) => "allowed: x64 helper".to_string(),
+                    Ok(crate::Route::Unsupported(reason)) | Err(reason) => {
+                        crate::reason_text(reason).to_string()
+                    }
+                };
+                let partial = match &found.verdict {
+                    crate::Verdict::Partial(list) => list.clone(),
+                    _ => Vec::new(),
+                };
+                (
+                    found.arch.key(),
+                    found.arch.key().to_string(),
+                    Some(crate::LegacyView {
+                        verdict,
+                        gate,
+                        partial,
+                    }),
+                )
+            }
+            None => ("unknown", "unknown".to_string(), None),
+        };
+        let attempts = match self.last_ops.get(&key).filter(|rec| rec.pid == pid) {
+            Some(record) => {
+                let read = dwm::readback(hwnd, &record.style, self.accent_bgr, self.build, record.backdrop);
+                let mut list: Vec<crate::Attempt> = record
+                    .attempts
+                    .iter()
+                    .map(|attempt| crate::Attempt {
+                        name: attempt.name,
+                        attribute: attempt.attribute,
+                        confirm: if attempt.hr < 0 {
+                            crate::Confirm::Rejected(attempt.hr)
+                        } else if read.iter().any(|(id, ok)| *id == attempt.attribute && *ok) {
+                            crate::Confirm::ReadbackMatches
+                        } else {
+                            crate::Confirm::AcceptedUnverified
+                        },
+                    })
+                    .collect();
+                if let Some(note) = record.note {
+                    explanation.notes.push(note.to_string());
+                }
+                list.truncate(12);
+                list
+            }
+            None => Vec::new(),
+        };
+        // Which rules compete, and why the winner won.
+        let identity = crate::WindowIdentity {
+            exe: &exe,
+            class: &facts.class_name,
+            path: &path,
+            package: &package,
+            title: facts.title.as_deref(),
+        };
+        let ranked = crate::rank(&self.config.rules, &identity);
+        let mut rule_lines = Vec::new();
+        if let Some((winner, rest)) = ranked.split_first() {
+            for other in rest {
+                rule_lines.push(format!(
+                    "Rule {} also matched and lost: {}.",
+                    other.index + 1,
+                    crate::why_it_won(winner, other)
+                ));
+            }
+            for conflict in crate::find_conflicts(&self.config.rules)
+                .iter()
+                .filter(|c| c.first == winner.index || c.second == winner.index)
+            {
+                rule_lines.push(crate::describe_conflict(&self.config.rules, conflict));
+            }
+        }
+        let book = cfgio::load_notebook();
+        let compat_key = if package.is_empty() { exe.to_ascii_lowercase() } else { package.clone() };
+        let entry = book.get(&compat_key, self.build, &arch_text).cloned();
+        Some(crate::Report {
+            exe,
+            class: facts.class_name.clone(),
+            pid,
+            path,
+            package,
+            title,
+            arch: arch_key.to_string(),
+            build: self.build,
+            explanation,
+            attempts,
+            legacy: legacy_view,
+            compat: entry.as_ref().map(|e| e.status).unwrap_or(crate::CompatStatus::Untested),
+            compat_note: entry.map(|e| e.note).unwrap_or_default(),
+            rule_lines,
+            support: crate::attribute_support(self.build)
+                .into_iter()
+                .map(|a| (a.name, a.support))
+                .collect(),
+        })
+    }
+
     fn identity(&mut self, hwnd: HWND) -> Option<(u32, u64, String)> {
         let mut pid = 0u32;
         let thread = unsafe { GetWindowThreadProcessId(hwnd, &mut pid) };
@@ -1966,6 +2450,28 @@ impl App {
         self.exe_cache.insert(key, (pid, create, exe.clone()));
         Some((pid, create, exe))
     }
+}
+
+/// The signals Reduce Effects looks at, straight from Windows.
+fn system_state() -> crate::SystemState {
+    let mut power: SYSTEM_POWER_STATUS = unsafe { std::mem::zeroed() };
+    let have_power = unsafe { GetSystemPowerStatus(&mut power) } != 0;
+    crate::SystemState {
+        // SystemStatusFlag is 1 while battery saver is on.
+        battery_saver: have_power && power.SystemStatusFlag == 1,
+        remote_session: unsafe { GetSystemMetrics(SM_REMOTESESSION) } != 0,
+        transparency_enabled: registry::transparency_enabled(),
+    }
+}
+
+/// The inspector's report for one window, or `None` if it has gone.
+pub fn report_for(key: i64) -> Option<crate::Report> {
+    with_app(|app| app.build_report(key)).flatten()
+}
+
+/// Text for the Settings page: why effects are currently reduced, if they are.
+pub fn reduce_reason_now() -> Option<&'static str> {
+    with_app(|app| app.reduce).flatten()
 }
 
 fn kind_from_event(event: u32) -> Kind {

@@ -56,6 +56,16 @@ pub fn accent_bgr() -> u32 {
         .unwrap_or(FALLBACK_ACCENT_BGR)
 }
 
+/// Windows' "Transparency effects" switch. Missing means on.
+pub fn transparency_enabled() -> bool {
+    reg_dword(
+        "Software\\Microsoft\\Windows\\CurrentVersion\\Themes\\Personalize",
+        "EnableTransparency",
+    )
+    .map(|value| value != 0)
+    .unwrap_or(true)
+}
+
 /// `Some(true)` when apps are in dark mode (`AppsUseLightTheme == 0`).
 pub fn apps_prefer_dark() -> Option<bool> {
     reg_dword(

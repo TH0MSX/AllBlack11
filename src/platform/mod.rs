@@ -10,6 +10,7 @@
 
 mod app;
 mod cfgio;
+mod cmdq;
 mod composition;
 mod dwm;
 mod helper;

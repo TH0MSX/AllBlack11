@@ -98,6 +98,8 @@ pub fn capture(hwnd: HWND) -> Captured {
     }
 }
 
+/// One DWM call and what Windows answered. `hr >= 0` means accepted, not visible.
+#[derive(Debug, Clone)]
 pub struct Failure {
     pub attribute: u32,
     pub name: &'static str,
@@ -194,13 +196,11 @@ pub fn supports_theme(build: u32) -> bool {
 }
 
 fn push_fail(failed: &mut Vec<Failure>, attribute: u32, name: &'static str, hr: i32) {
-    if hr < 0 {
-        failed.push(Failure {
-            attribute,
-            name,
-            hr,
-        });
-    }
+    failed.push(Failure {
+        attribute,
+        name,
+        hr,
+    });
 }
 
 fn set_u32(hwnd: HWND, attribute: u32, value: u32) -> i32 {
@@ -257,4 +257,26 @@ fn get_i32(hwnd: HWND, attribute: u32) -> Option<i32> {
     } else {
         None
     }
+}
+
+/// Read the six attributes back and compare with what `apply` would have written. A match
+/// means the value is stored on the window. It is not evidence about what is drawn.
+pub fn readback(
+    hwnd: HWND,
+    style: &Style,
+    accent_bgr: u32,
+    build: u32,
+    backdrop: i32,
+) -> Vec<(u32, bool)> {
+    let mut out = vec![
+        (ATTR_DARK, get_i32(hwnd, ATTR_DARK) == Some(i32::from(style.dark_mode))),
+        (ATTR_CORNERS, get_u32(hwnd, ATTR_CORNERS) == Some(style.corners.dwm_value())),
+        (ATTR_CAPTION, get_u32(hwnd, ATTR_CAPTION) == Some(style.caption.to_colorref(accent_bgr))),
+        (ATTR_BORDER, get_u32(hwnd, ATTR_BORDER) == Some(style.border.to_colorref(accent_bgr))),
+        (ATTR_TEXT, get_u32(hwnd, ATTR_TEXT) == Some(style.text.to_colorref(accent_bgr))),
+    ];
+    if build >= BUILD_BACKDROP {
+        out.push((ATTR_BACKDROP, get_i32(hwnd, ATTR_BACKDROP) == Some(backdrop)));
+    }
+    out
 }

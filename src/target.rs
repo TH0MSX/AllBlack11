@@ -47,6 +47,20 @@ pub fn classify_target(host: u16, process_machine: u16, image_machine: Option<u1
     }
 }
 
+impl TargetArch {
+    /// Stable key used by the compatibility notebook: the *process*, not the PC.
+    pub fn key(self) -> &'static str {
+        match self {
+            TargetArch::Arm64Native => "arm64",
+            TargetArch::X64Emulated => "x64-emulated",
+            TargetArch::X64Native => "x64",
+            TargetArch::Arm64Ec => "arm64ec",
+            TargetArch::X86Emulated | TargetArch::X86OnX64 => "x86",
+            TargetArch::Unknown => "unknown",
+        }
+    }
+}
+
 /// Which binary should treat a target.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum Route {
@@ -123,6 +137,13 @@ mod tests {
         assert_eq!(route(MACHINE_AMD64, TargetArch::X64Emulated), Route::Native);
         assert_eq!(route(MACHINE_AMD64, TargetArch::Arm64Native), Route::Unsupported("needs-arm64-build"));
         assert_eq!(route(MACHINE_AMD64, TargetArch::Arm64Ec), Route::Unsupported("arm64ec"));
+    }
+
+    #[test]
+    fn arch_keys_are_stable_for_the_notebook() {
+        assert_eq!(TargetArch::X64Emulated.key(), "x64-emulated");
+        assert_eq!(TargetArch::Arm64Native.key(), "arm64");
+        assert_eq!(TargetArch::Arm64Ec.key(), "arm64ec");
     }
 
     #[test]

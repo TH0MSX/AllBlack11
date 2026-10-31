@@ -119,6 +119,18 @@ pub fn write_atomic(path: &std::path::Path, text: &str) -> Result<(), String> {
     })
 }
 
+pub fn lkg_path() -> PathBuf {
+    config_dir().join("config.lkg.json")
+}
+
+pub fn notebook_path() -> PathBuf {
+    config_dir().join("compat.json")
+}
+
+pub fn recipes_dir() -> PathBuf {
+    config_dir().join("recipes")
+}
+
 pub fn log_path() -> PathBuf {
     config_dir().join("allblack11.log")
 }

@@ -5,12 +5,15 @@ mod arch;
 mod caption;
 mod compat;
 mod config;
+mod effects;
 mod explain;
 mod inject;
+mod lkg;
 mod legacy_policy;
 mod policy;
 mod presets;
 mod recipes;
+mod report;
 mod rules;
 mod shell;
 mod snapshot;
@@ -21,7 +24,7 @@ mod version;
 pub use arch::{classify, machine_name, ArchStatus, BUILD_MACHINE};
 pub use config::{
     base_style, bundled_default_json, parse_config, set_enabled_flag, Backdrop, Color, Config,
-    Corners, LegacySettings, PartialStyle, Rule, Style, FALLBACK_ACCENT_BGR,
+    Corners, FocusSettings, LegacySettings, ReduceEffects, PartialStyle, Rule, Style, FALLBACK_ACCENT_BGR,
 };
 pub use inject::{inject_allowed, InjectTarget};
 pub use legacy_policy::{
@@ -35,6 +38,7 @@ pub use policy::{
     WS_POPUP,
 };
 pub use compat::{Entry as CompatEntry, Notebook, Status as CompatStatus};
+pub use effects::{focus_style, reduce_reason, reduced, Explicit, SystemState};
 pub use explain::{
     attribute_support, explain, framework_hint, reason_text, AttributeSupport, Confirm, Explanation,
     Framework, FrameworkHint, Support, TitleBar,
@@ -43,10 +47,12 @@ pub use recipes::{
     apply as apply_recipe, bundled as bundled_recipes, export_current as export_recipe, parse_recipe,
     preview as preview_recipe, Change, Recipe, Trust,
 };
+pub use report::{redact, render as render_report, source_text, Attempt, LegacyView, Report};
 pub use rules::{
     describe_conflict, find_conflicts, glob_match, rank, resolve, why_it_won, Conflict, ConflictKind,
     Criterion, Resolved, RuleMatch, Source, WindowIdentity,
 };
+pub use lkg::{pick as pick_config, Picked, Source as ConfigSource};
 pub use presets::{apply as apply_preset, Preset, PRESETS};
 pub use shell::{blacken_shell_slots, ShellBackup, SHELL_SLOT_BYTES};
 pub use snapshot::{format_snapshots, parse_snapshots, same_process, SnapshotFile, StoredSnapshot};
