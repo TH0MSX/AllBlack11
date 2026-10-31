@@ -230,6 +230,7 @@ impl Ui {
         b.push(Row::Toggle(Toggle::Blur));
         b.push(Row::Action(Button::PreferAppDefaults));
         b.push(Row::Action(Button::DemoMaterials));
+        b.push(Row::Action(Button::DemoCompare));
         b.push(Row::Header("Focus Look"));
         b.push(Row::Toggle(Toggle::FocusLook));
         b.push(Row::Toggle(Toggle::Reapply));
@@ -457,6 +458,7 @@ impl Ui {
             "Try runs the look for 15 seconds. Nothing is saved until you press Keep. Type a name to save, rename or label a look.",
         ));
         b.push(Row::AddField(Button::SaveLook));
+        b.push(Row::Action(Button::DemoCompare));
         b.push(Row::Header("Palette from a picture"));
         b.push(Row::Note(
             "Pick a picture on this PC. AllBlack11 reads up to 64 x 64 sample points with Windows' own picture support, builds a frame look that keeps text readable, and adds it to the list above as a scene. The picture is not stored, copied or uploaded.",
@@ -1954,6 +1956,22 @@ impl Ui {
                 self.config.shell.black_shell = false;
                 self.status = "Shell changes are being undone from the saved originals.".into();
                 self.commit();
+            }
+            Button::DemoCompare => {
+                // The selected scene or look if there is one; otherwise the look being edited.
+                let (style, name) = match self
+                    .ext
+                    .look_sel
+                    .and_then(|i| self.look_at(i).map(|item| (i, item)))
+                {
+                    Some((index, item)) => (
+                        item.recipe().look.merge_onto(crate::base_style()),
+                        self.look_name(index),
+                    ),
+                    None => (self.current_style(), "your current look".to_string()),
+                };
+                super::super::demo::open_pair(style, self.accent_bgr_for_demo(), self.build, &name);
+                self.status = "Opened two windows to compare. The left one is untouched.".into();
             }
             Button::DemoMaterials => {
                 super::super::demo::open(

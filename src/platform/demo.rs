@@ -25,9 +25,10 @@ use windows_sys::Win32::UI::Controls::{
 };
 use windows_sys::Win32::UI::HiDpi::GetDpiForWindow;
 use windows_sys::Win32::UI::WindowsAndMessaging::{
-    CreateWindowExW, DefWindowProcW, DestroyWindow, GetClientRect, LoadCursorW, RegisterClassExW,
-    SetForegroundWindow, ShowWindow, CS_HREDRAW, CS_VREDRAW, IDC_ARROW, SW_SHOW, WM_CLOSE,
-    WM_DESTROY, WM_ERASEBKGND, WM_KEYDOWN, WM_PAINT, WNDCLASSEXW, WS_OVERLAPPEDWINDOW, WS_VISIBLE,
+    CreateWindowExW, DefWindowProcW, DestroyWindow, GetClientRect, GetWindowTextW, LoadCursorW,
+    RegisterClassExW, SetForegroundWindow, ShowWindow, CS_HREDRAW, CS_VREDRAW, IDC_ARROW, SW_SHOW,
+    WM_CLOSE, WM_DESTROY, WM_ERASEBKGND, WM_KEYDOWN, WM_PAINT, WNDCLASSEXW, WS_OVERLAPPEDWINDOW,
+    WS_VISIBLE,
 };
 
 use crate::config::{acrylic_gradient, Backdrop, Style};
@@ -37,40 +38,148 @@ use super::dwm;
 use super::wide::{pcw, to_wide};
 
 static DEMO: AtomicIsize = AtomicIsize::new(0);
+/// The untouched half of a Before / After pair.
+static BEFORE: AtomicIsize = AtomicIsize::new(0);
 
 const DTT_TEXTCOLOR: u32 = 0x1;
 const DTT_GLOWSIZE: u32 = 0x800;
 const DTT_COMPOSITED: u32 = 0x2000;
 
-pub fn open(style: Style, accent_bgr: u32, build: u32) {
-    let existing = DEMO.load(Ordering::Acquire);
-    if existing != 0 {
-        unsafe { DestroyWindow(existing as HWND) };
+fn close_existing() {
+    for slot in [&DEMO, &BEFORE] {
+        let existing = slot.load(Ordering::Acquire);
+        if existing != 0 {
+            unsafe { DestroyWindow(existing as HWND) };
+        }
     }
+}
+
+fn create(title: &str, x: i32, y: i32, w: i32, h: i32) -> HWND {
     unsafe {
         let instance = GetModuleHandleW(std::ptr::null());
         register(instance);
         let class = to_wide("AllBlack11.Demo");
-        let title = to_wide("Materials demonstration");
-        let hwnd = CreateWindowExW(
+        let title = to_wide(title);
+        CreateWindowExW(
             0,
             pcw(&class),
             pcw(&title),
             WS_OVERLAPPEDWINDOW | WS_VISIBLE,
-            200,
-            160,
-            760,
-            420,
+            x,
+            y,
+            w,
+            h,
             std::ptr::null_mut(),
             std::ptr::null_mut(),
             instance,
             std::ptr::null(),
-        );
+        )
+    }
+}
+
+/// Let the material reach the whole client area; `paint` then draws only what should hide it.
+fn extend_frame(hwnd: HWND) {
+    let margins = MARGINS {
+        cxLeftWidth: -1,
+        cxRightWidth: -1,
+        cyTopHeight: -1,
+        cyBottomHeight: -1,
+    };
+    unsafe {
+        DwmExtendFrameIntoClientArea(hwnd, &margins);
+        ShowWindow(hwnd, SW_SHOW);
+        InvalidateRect(hwnd, std::ptr::null(), 0);
+    }
+}
+
+fn local_time_text() -> String {
+    let mut now: windows_sys::Win32::Foundation::SYSTEMTIME = unsafe { std::mem::zeroed() };
+    unsafe { windows_sys::Win32::System::SystemInformation::GetLocalTime(&mut now) };
+    format!("{:02}:{:02}:{:02}", now.wHour, now.wMinute, now.wSecond)
+}
+
+/// Two windows AllBlack11 owns, with identical sample content: the left is left exactly as
+/// Windows would draw it, the right gets the current look through the normal pipeline.
+/// Nothing here is a capture of, or a claim about, any other app: it shows what the frame
+/// styling does on a window we control. The time is when the pair was made, so a screenshot
+/// taken of it can be told apart later.
+pub fn open_pair(style: Style, accent_bgr: u32, build: u32, look_name: &str) {
+    close_existing();
+    let stamp = local_time_text();
+    let (x, y, w, h) = pair_geometry();
+    let before = create(
+        &format!("Before: untouched by AllBlack11 ({stamp})"),
+        x,
+        y,
+        w,
+        h,
+    );
+    if before.is_null() {
+        return;
+    }
+    BEFORE.store(before as isize, Ordering::Release);
+    extend_frame(before);
+    let after = create(&format!("After: {look_name} ({stamp})"), x + w + 8, y, w, h);
+    if after.is_null() {
+        return;
+    }
+    DEMO.store(after as isize, Ordering::Release);
+    unsafe { apply_look(after, &style, accent_bgr, build) };
+    extend_frame(after);
+    unsafe { SetForegroundWindow(after) };
+}
+
+/// Two windows side by side, centered on the monitor under the cursor, scaled to its DPI.
+fn pair_geometry() -> (i32, i32, i32, i32) {
+    use windows_sys::Win32::Graphics::Gdi::{
+        GetMonitorInfoW, MonitorFromPoint, MONITORINFO, MONITOR_DEFAULTTONEAREST,
+    };
+    use windows_sys::Win32::UI::HiDpi::{GetDpiForMonitor, MDT_EFFECTIVE_DPI};
+    unsafe {
+        let mut cursor = windows_sys::Win32::Foundation::POINT { x: 0, y: 0 };
+        windows_sys::Win32::UI::WindowsAndMessaging::GetCursorPos(&mut cursor);
+        let monitor = MonitorFromPoint(cursor, MONITOR_DEFAULTTONEAREST);
+        let mut info: MONITORINFO = std::mem::zeroed();
+        info.cbSize = std::mem::size_of::<MONITORINFO>() as u32;
+        if GetMonitorInfoW(monitor, &mut info) == 0 {
+            return (100, 100, 520, 380);
+        }
+        let (mut dx, mut dy) = (0u32, 0u32);
+        let dpi = if GetDpiForMonitor(monitor, MDT_EFFECTIVE_DPI, &mut dx, &mut dy) == 0 && dx != 0
+        {
+            dx as i32
+        } else {
+            96
+        };
+        let work = info.rcWork;
+        let avail_w = work.right - work.left;
+        let avail_h = work.bottom - work.top;
+        let w = (520 * dpi / 96).min((avail_w - 40) / 2);
+        let h = (380 * dpi / 96).min(avail_h - 60);
+        let x = work.left + (avail_w - (2 * w + 8)) / 2;
+        let y = work.top + (avail_h - h) / 2;
+        (x, y, w, h)
+    }
+}
+
+pub fn open(style: Style, accent_bgr: u32, build: u32) {
+    close_existing();
+    unsafe {
+        let hwnd = create("Materials demonstration", 200, 160, 760, 420);
         if hwnd.is_null() {
             return;
         }
         DEMO.store(hwnd as isize, Ordering::Release);
-        // The same pipeline every other window goes through.
+        apply_look(hwnd, &style, accent_bgr, build);
+        extend_frame(hwnd);
+        SetForegroundWindow(hwnd);
+    }
+}
+
+/// The same pipeline every other window goes through.
+unsafe fn apply_look(hwnd: HWND, style: &Style, accent_bgr: u32, build: u32) {
+    let style = *style;
+    {
         let mut backdrop = style.backdrop.dwm_value();
         if style.backdrop == Backdrop::TintedAcrylic {
             let gradient = acrylic_gradient(style.acrylic_tint, style.acrylic_opacity, accent_bgr);
@@ -82,17 +191,6 @@ pub fn open(style: Style, accent_bgr: u32, build: u32) {
             }
         }
         dwm::apply(hwnd, &style, accent_bgr, build, backdrop);
-        // Let the material reach the whole client area, then draw only what should hide it.
-        let margins = MARGINS {
-            cxLeftWidth: -1,
-            cxRightWidth: -1,
-            cyTopHeight: -1,
-            cyBottomHeight: -1,
-        };
-        DwmExtendFrameIntoClientArea(hwnd, &margins);
-        ShowWindow(hwnd, SW_SHOW);
-        SetForegroundWindow(hwnd);
-        InvalidateRect(hwnd, std::ptr::null(), 0);
     }
 }
 
@@ -127,7 +225,11 @@ unsafe extern "system" fn proc(hwnd: HWND, msg: u32, wparam: WPARAM, lparam: LPA
             0
         }
         WM_DESTROY => {
-            DEMO.store(0, Ordering::Release);
+            for slot in [&DEMO, &BEFORE] {
+                if slot.load(Ordering::Acquire) == hwnd as isize {
+                    slot.store(0, Ordering::Release);
+                }
+            }
             0
         }
         _ => DefWindowProcW(hwnd, msg, wparam, lparam),
@@ -229,9 +331,14 @@ unsafe fn paint(hwnd: HWND) {
                 &options,
             );
         };
+        let mut title = [0u16; 160];
+        let length = GetWindowTextW(hwnd, title.as_mut_ptr(), title.len() as i32).max(0) as usize;
+        let heading = String::from_utf16_lossy(&title[..length]);
         draw(
-            "Demonstration only. Your look, applied to this window. Another app can look different: it decides what its own client area draws.",
-            RECT { left: margin, top: px(8), right: w - margin, bottom: top - px(6) },
+            &format!(
+                "{heading}\nDemonstration only: sample content drawn by AllBlack11 on a window it owns. Another app can look different: it decides what its own client area draws."
+            ),
+            RECT { left: margin, top: px(6), right: w - margin, bottom: top - px(4) },
             dc,
         );
         let caption = |left: i32| RECT {

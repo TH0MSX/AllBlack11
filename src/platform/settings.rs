@@ -271,6 +271,7 @@ enum Button {
     OpenHarness,
     DemoMaterials,
     OpenPalette,
+    DemoCompare,
     NextAccent,
     ClearAccent,
     PaletteFromImage,
@@ -509,6 +510,11 @@ fn button_meta(id: Button) -> (&'static str, &'static str, &'static str) {
             "Materials demonstration",
             "Opens a window that applies this look to itself, with a transparent, an opaque and a half-transparent panel. It shows how Windows materials behave. It does not show how another app will look.",
             "Open demonstration",
+        ),
+        Button::DemoCompare => (
+            "Before / after",
+            "Opens two windows AllBlack11 owns with the same sample content: one left as Windows draws it, one with the look selected above (or your current look). It compares frame styling on windows we control. It does not capture or predict any other app.",
+            "Compare",
         ),
         Button::OpenPalette => (
             "Command palette",
