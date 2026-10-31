@@ -502,6 +502,55 @@ pub struct Config {
     pub focus: FocusSettings,
     #[serde(default)]
     pub reduce_effects: ReduceEffects,
+    /// Optional extras, each independently switchable and off by default. Written to the file
+    /// only once something differs from the defaults, so an untouched config stays readable by
+    /// 3.5.
+    #[serde(default, skip_serializing_if = "Features::is_default")]
+    pub features: Features,
+}
+
+/// Optional automation. Everything here is off until the user turns it on, and each switch
+/// is independent of the others.
+#[derive(Debug, Clone, PartialEq, Eq, Default, Deserialize, Serialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields, default)]
+pub struct Features {
+    /// A stable border color per app, for telling windows apart at a glance.
+    pub identity_accents: bool,
+    /// Ctrl+Alt+Space opens the command palette from anywhere. The tray item always works.
+    pub palette_hotkey: bool,
+    pub day_night: DayNight,
+}
+
+impl Features {
+    pub fn is_default(&self) -> bool {
+        *self == Features::default()
+    }
+}
+
+/// Switch scenes by local time of day. Evaluated when the clock crosses a boundary, when the
+/// PC resumes, and when the time or time zone changes. It does not poll and cannot wake the PC.
+#[derive(Debug, Clone, PartialEq, Eq, Deserialize, Serialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields, default)]
+pub struct DayNight {
+    pub enabled: bool,
+    /// A scene id (such as `graphite`) or the id of a look in the Look Book.
+    pub day_scene: String,
+    pub night_scene: String,
+    /// Local time, `HH:MM`, 24-hour.
+    pub day_starts: String,
+    pub night_starts: String,
+}
+
+impl Default for DayNight {
+    fn default() -> Self {
+        Self {
+            enabled: false,
+            day_scene: "graphite".into(),
+            night_scene: "oled-black".into(),
+            day_starts: "07:00".into(),
+            night_starts: "20:00".into(),
+        }
+    }
 }
 
 fn default_true() -> bool {
@@ -586,6 +635,11 @@ pub fn parse_config(text: &str) -> Result<Config, String> {
             ));
         }
     }
+    crate::schedule::parse_times(
+        &config.features.day_night.day_starts,
+        &config.features.day_night.night_starts,
+    )
+    .map_err(|err| format!("features.dayNight: {err}"))?;
     // Older files (schemaVersion missing or 1) load unchanged. The new version is written
     // the next time the app saves, so downgrading before a save loses nothing.
     if config.schema_version > SCHEMA_VERSION {

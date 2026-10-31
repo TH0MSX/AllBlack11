@@ -112,6 +112,8 @@ const WM_EXPLORER_DONE: u32 = WM_APP + 7;
 const TIMER_ACCENT: usize = 3;
 const TIMER_CLICK: usize = 4;
 const TIMER_TRIAL: usize = 5;
+/// One-shot timer for the next Day/Night boundary. Re-armed after every evaluation.
+const TIMER_SCHEDULE: usize = 6;
 const TRY_WINDOW_MS: u64 = 20_000;
 
 /// Tick-count deadline of the running trial, or 0. Read by Settings for its countdown.
@@ -199,6 +201,10 @@ struct App {
     paused: bool,
     /// `config.json` as it was before the last tray scene switch, for one-step undo.
     scene_undo: Option<String>,
+    /// Optional identity accents (see `crate::accents`), loaded from accents.json.
+    accents: crate::Accents,
+    /// Day/Night scene scheduler state (see `crate::schedule`).
+    scheduler: crate::Scheduler,
     /// Safe mode for this run: experimental features stay off. Never written to config.json.
     safe: crate::StartupMode,
     session: crate::StartupMarker,
@@ -523,6 +529,9 @@ fn run() -> Result<(), String> {
     if startup_mode.is_safe() {
         config.experimental_dark_legacy = false;
         config.legacy.emulated_x64 = false;
+        config.features.identity_accents = false;
+        config.features.palette_hotkey = false;
+        config.features.day_night.enabled = false;
     }
     let tray_icon = icon::load_tray_icon(instance);
     let reg_event = shellwin::create_notify_event();
@@ -557,6 +566,8 @@ fn run() -> Result<(), String> {
         trial: crate::TrialMachine::default(),
         paused: false,
         scene_undo: None,
+        accents: cfgio::load_accents(),
+        scheduler: crate::Scheduler::default(),
         safe: startup_mode,
         session: startup_marker,
         try_windows: HashMap::new(),
@@ -617,7 +628,8 @@ fn run() -> Result<(), String> {
             app.scan_legacy();
         }
     }
-    let shell_broadcast = app.apply_saved_shell();
+    let schedule_broadcast = app.schedule_tick();
+    let shell_broadcast = app.apply_saved_shell() | schedule_broadcast;
     {
         let mut guard = STATE.lock().unwrap_or_else(|err| err.into_inner());
         *guard = Some(app);
@@ -803,6 +815,13 @@ unsafe extern "system" fn wndproc(hwnd: HWND, msg: u32, wparam: WPARAM, lparam: 
             return 0;
         }
         WM_POWERBROADCAST => {
+            // PBT_APMRESUMEAUTOMATIC / PBT_APMRESUMESUSPEND: the clock may have moved past a
+            // Day/Night boundary while the PC slept. Compare phases; never act on elapsed time.
+            if wparam == 0x0012 || wparam == 0x0007 {
+                if with_app(|app| app.schedule_tick()).unwrap_or(false) {
+                    shellwin::broadcast_immersive_color();
+                }
+            }
             // PBT_APMPOWERSTATUSCHANGED: AC/battery or battery saver may have flipped.
             if wparam == 0x000A {
                 with_app(|app| {
@@ -855,6 +874,10 @@ unsafe extern "system" fn wndproc(hwnd: HWND, msg: u32, wparam: WPARAM, lparam: 
                 with_app(|app| app.fire_due());
             } else if wparam == TIMER_TRIAL {
                 with_app(|app| app.expire_trials());
+            } else if wparam == TIMER_SCHEDULE {
+                if with_app(|app| app.schedule_tick()).unwrap_or(false) {
+                    shellwin::broadcast_immersive_color();
+                }
             } else if wparam == TIMER_ACCENT {
                 let wrote = with_app(|app| app.reapply_black_palette()).unwrap_or(false);
                 if wrote {
@@ -878,6 +901,13 @@ unsafe extern "system" fn wndproc(hwnd: HWND, msg: u32, wparam: WPARAM, lparam: 
         WM_QUERYENDSESSION => return TRUE as LRESULT,
         WM_SETTINGCHANGE => {
             on_setting_change(lparam);
+            return 0;
+        }
+        // WM_TIMECHANGE: the clock or the time zone changed (including daylight saving).
+        0x001E => {
+            if with_app(|app| app.schedule_tick()).unwrap_or(false) {
+                shellwin::broadcast_immersive_color();
+            }
             return 0;
         }
         WM_ALREADY => {
@@ -1637,6 +1667,10 @@ impl App {
         self.enforce_safe_mode();
         self.refresh_reduce();
         self.config.caption_height = normalize_caption_height(self.config.caption_height);
+        if old.features.day_night != self.config.features.day_night {
+            // Settings changed the schedule: act on the current phase straight away.
+            self.scheduler.reset();
+        }
         let shell_changed = self.reconcile_shell(&old);
         if normalize_caption_height(old.caption_height) != self.config.caption_height {
             if let Err(err) = metrics::apply_caption_height(self.config.caption_height) {
@@ -1679,7 +1713,10 @@ impl App {
         }
         self.update_tray();
         uxtheme::allow_dark_menus(!self.high_contrast);
-        shell_changed
+        // A changed Day/Night setting (or a new config) takes effect now, not at the next
+        // boundary. The scheduler remembers the phase it acted on, so this cannot loop.
+        let scheduled = self.schedule_tick();
+        shell_changed | scheduled
     }
 
     /// Apply a preset from the tray: write the config, then take the same path as Settings.
@@ -2278,9 +2315,10 @@ impl App {
 
     // ---- effective look: Focus Look and reduced effects -----------------------------------
 
-    fn effective_style(&self, facts: &WindowFacts, key: i64, style: Style) -> Style {
+    fn effective_style(&mut self, facts: &WindowFacts, key: i64, style: Style) -> Style {
         let mut out = style;
-        if self.config.focus.enabled && !self.high_contrast {
+        let wants_accent = self.config.features.identity_accents;
+        if (self.config.focus.enabled || wants_accent) && !self.high_contrast {
             let identity = crate::WindowIdentity {
                 exe: &facts.exe,
                 class: &facts.class_name,
@@ -2299,6 +2337,21 @@ impl App {
                 border: from_rule("border color"),
                 text: from_rule("text color"),
             };
+            // Identity accent: the border only, and only where no rule sets it. Focus Look,
+            // when it is on, still decides the border afterwards.
+            if wants_accent && !explicit.border {
+                if let Some((color, recorded)) = self.accents.color_for(&facts.exe) {
+                    out.border = color;
+                    if recorded {
+                        if let Err(err) = cfgio::save_accents(&self.accents) {
+                            log_line("warn", &format!("could not save accents.json: {err}"));
+                        }
+                    }
+                }
+            }
+            if !self.config.focus.enabled {
+                return crate::reduced(&out, self.reduce);
+            }
             out = crate::focus_style(
                 &out,
                 &self.config.focus,
@@ -2351,6 +2404,10 @@ impl App {
                 AppCommand::TrialKeep => self.trial_end(true),
                 AppCommand::TrialRevert => self.trial_end(false),
                 AppCommand::RestoreLastKnownGood => broadcast |= self.restore_lkg(),
+                AppCommand::ReloadAccents => {
+                    self.accents = cfgio::load_accents();
+                    self.restyle_all();
+                }
                 AppCommand::Pause => self.pause(),
                 AppCommand::Resume => self.resume(),
                 AppCommand::LeaveSafeMode => broadcast |= self.leave_safe_mode(),
@@ -2467,6 +2524,12 @@ impl App {
         } else {
             book.looks[index - scenes.len()].name.clone()
         };
+        self.apply_look(item, &name)
+    }
+
+    /// Apply a scene or saved look to the permanent config and run it. Keeps the previous
+    /// file for one undo.
+    fn apply_look(&mut self, item: &dyn crate::SceneLike, name: &str) -> bool {
         let before = std::fs::read_to_string(&self.config_file).ok();
         let mut config = cfgio::load();
         crate::apply_scene(&mut config, item);
@@ -2478,6 +2541,57 @@ impl App {
         let changed = self.apply_external_config();
         self.balloon("AllBlack11", &format!("Scene: {name}."), false);
         changed
+    }
+
+    /// Apply a scene by id (a bundled scene, or a look in the Look Book).
+    fn apply_scene_id(&mut self, id: &str) -> bool {
+        self.end_trial_for_external_change();
+        let scenes = crate::scene_catalog();
+        if let Some(scene) = scenes.iter().find(|scene| scene.id == id) {
+            return self.apply_look(scene, &scene.name.clone());
+        }
+        let book = cfgio::load_lookbook();
+        match book.get(id) {
+            Some(look) => self.apply_look(look, &look.name.clone()),
+            None => {
+                log_line("warn", &format!("Day/Night: no scene or look named {id}"));
+                false
+            }
+        }
+    }
+
+    /// Day/Night: evaluate the clock, switch scene if the phase changed, and arm one timer for
+    /// the next boundary. Returns true when a shell broadcast is needed.
+    fn schedule_tick(&mut self) -> bool {
+        unsafe { KillTimer(self.hwnd, TIMER_SCHEDULE) };
+        let setting = self.config.features.day_night.clone();
+        if !setting.enabled || self.paused || self.safe.is_safe() || self.shut_down {
+            self.scheduler.reset();
+            return false;
+        }
+        let times = match crate::parse_schedule_times(&setting.day_starts, &setting.night_starts) {
+            Ok(times) => times,
+            Err(err) => {
+                log_line("warn", &format!("Day/Night is off: {err}"));
+                return false;
+            }
+        };
+        let mut now: windows_sys::Win32::Foundation::SYSTEMTIME = unsafe { std::mem::zeroed() };
+        unsafe { windows_sys::Win32::System::SystemInformation::GetLocalTime(&mut now) };
+        let minute = now.wHour * 60 + now.wMinute;
+        let mut broadcast = false;
+        if let Some(phase) = self.scheduler.evaluate(minute, &times) {
+            let id = match phase {
+                crate::DayPhase::Day => setting.day_scene.clone(),
+                crate::DayPhase::Night => setting.night_scene.clone(),
+            };
+            log_line("info", &format!("Day/Night: switching to {id}"));
+            broadcast = self.apply_scene_id(&id);
+        }
+        // Applying a scene re-read the config; arm from the clock again.
+        let wait = crate::millis_until_change(minute, now.wSecond, &times).clamp(1_000, 86_400_000);
+        unsafe { SetTimer(self.hwnd, TIMER_SCHEDULE, wait as u32, None) };
+        broadcast
     }
 
     fn undo_scene(&mut self) -> bool {
@@ -2529,6 +2643,10 @@ impl App {
         if self.safe.is_safe() {
             self.config.experimental_dark_legacy = false;
             self.config.legacy.emulated_x64 = false;
+            // Automatic extras stay off too: nothing changes a look by itself in safe mode.
+            self.config.features.identity_accents = false;
+            self.config.features.palette_hotkey = false;
+            self.config.features.day_night.enabled = false;
         }
     }
 
@@ -2675,6 +2793,30 @@ impl App {
             explanation.notes.push(format!(
                 "Effects are reduced right now because of {reason}, so no backdrop material is applied."
             ));
+        }
+        // Identity accents set the border where no rule does; say so, so the receipt matches
+        // what was actually requested. (A copy of the store is used: reading a report never
+        // records a new assignment.)
+        if self.config.features.identity_accents && explanation.applied {
+            if let Some(resolved) = explanation.resolved.as_mut() {
+                let from_rule = resolved.sources.iter().any(|(field, source)| {
+                    *field == "border color" && matches!(source, crate::Source::Rule(_))
+                });
+                if !from_rule {
+                    if let Some((color, _)) = self.accents.clone().color_for(&exe) {
+                        resolved.style.border = color;
+                        for entry in resolved.sources.iter_mut() {
+                            if entry.0 == "border color" {
+                                entry.1 = crate::Source::Accent;
+                            }
+                        }
+                        explanation.notes.push(
+                            "Identity accent sets the border (optional feature). Change or reset it in the Identity accent section above."
+                                .to_string(),
+                        );
+                    }
+                }
+            }
         }
         let options = legacy_options(&self.config);
         let assessment = legacy::assess(hwnd, &self.config.exclude, &options);

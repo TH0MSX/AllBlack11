@@ -198,6 +198,8 @@ enum Toggle {
     ReduceTransparency,
     EmulatedX64,
     ShowTitles,
+    IdentityAccents,
+    DayNight,
 }
 
 #[derive(Clone, Copy, PartialEq, Eq)]
@@ -206,6 +208,10 @@ enum Choice {
     Corners,
     Palette,
     RuleScope,
+    DayScene,
+    NightScene,
+    DayStarts,
+    NightStarts,
 }
 
 #[derive(Clone, Copy, PartialEq, Eq)]
@@ -242,6 +248,9 @@ enum Button {
     UndoShell,
     OpenHarness,
     DemoMaterials,
+    NextAccent,
+    ClearAccent,
+    PaletteFromImage,
     TryScene,
     SaveLook,
     RenameLook,
@@ -329,6 +338,14 @@ fn toggle_meta(id: Toggle) -> (&'static str, &'static str) {
             "Cover emulated x64 apps (experimental)",
             "ARM64 only. Uses a separate x64 helper to reach x64 programs running under emulation. Off by default; the helper starts only when needed and stops when you turn this off.",
         ),
+        Toggle::IdentityAccents => (
+            "Identity accents (optional)",
+            "Gives each app its own thin border color so windows are easy to tell apart. Only the border changes, and only where no rule sets one. Off by default.",
+        ),
+        Toggle::DayNight => (
+            "Day / Night scenes (optional)",
+            "Switches scene at set local times. It checks the clock only when a boundary passes, after sleep and when the time or time zone changes. It never wakes the PC. Off by default.",
+        ),
         Toggle::ShowTitles => (
             "Show window titles in this page",
             "Titles can contain document names. They are shown here only if you turn this on, and are never saved. Copied reports leave them out unless this is on.",
@@ -357,6 +374,10 @@ fn choice_desc(ui: &Ui, id: Choice) -> &'static str {
             2 => "A new rule matches the package (Store apps). Falls back to the executable.",
             _ => "A new rule matches only the window class, across every app that uses it.",
         },
+        Choice::DayScene => "Used during the day. Click to step through the scenes and your saved looks.",
+        Choice::NightScene => "Used at night. Click to step through the scenes and your saved looks.",
+        Choice::DayStarts => "Local time the day scene begins. Click to move it by 30 minutes.",
+        Choice::NightStarts => "Local time the night scene begins. Click to move it by 30 minutes.",
         Choice::Corners => match style.corners {
             Corners::Default => "Windows decides, which is rounded on Windows 11.",
             Corners::Round => "Standard rounded corners.",
@@ -372,6 +393,10 @@ fn choice_title(id: Choice) -> &'static str {
         Choice::Corners => "Corners",
         Choice::Palette => "Dialog palette",
         Choice::RuleScope => "New rule matches",
+        Choice::DayScene => "Day scene",
+        Choice::NightScene => "Night scene",
+        Choice::DayStarts => "Day starts",
+        Choice::NightStarts => "Night starts",
     }
 }
 
@@ -457,6 +482,13 @@ fn button_meta(id: Button) -> (&'static str, &'static str, &'static str) {
             "Materials demonstration",
             "Opens a window that applies this look to itself, with a transparent, an opaque and a half-transparent panel. It shows how Windows materials behave. It does not show how another app will look.",
             "Open demonstration",
+        ),
+        Button::NextAccent => ("", "", "Change accent"),
+        Button::ClearAccent => ("", "", "Automatic"),
+        Button::PaletteFromImage => (
+            "Build a look from a picture",
+            "Reads a few sample points from a picture you choose, on this PC only, and builds a dark frame look whose text stays readable. Nothing is applied until you Try it.",
+            "Choose picture…",
         ),
         Button::TryScene => ("", "", "Try (15 s)"),
         Button::SaveLook => ("", "", "Save look"),
@@ -1179,6 +1211,8 @@ impl Ui {
             | Toggle::ReduceRemote
             | Toggle::ReduceTransparency
             | Toggle::EmulatedX64
+            | Toggle::IdentityAccents
+            | Toggle::DayNight
             | Toggle::ShowTitles => {
                 self.toggle_ext(id);
                 return;
@@ -1197,7 +1231,15 @@ impl Ui {
     }
 
     fn cycle(&mut self, id: Choice) {
-        if matches!(id, Choice::Palette | Choice::RuleScope) {
+        if matches!(
+            id,
+            Choice::Palette
+                | Choice::RuleScope
+                | Choice::DayScene
+                | Choice::NightScene
+                | Choice::DayStarts
+                | Choice::NightStarts
+        ) {
             self.cycle_ext(id);
             return;
         }
@@ -1821,7 +1863,7 @@ fn paint_row(c: &Canvas, ui: &Ui, row: &Laid, top: i32, lw: i32) {
                 mid - 16,
                 right - 30,
                 mid + 16,
-                choice_text(ui, *id),
+                &choice_text(ui, *id),
                 TEXT,
                 fonts.body,
                 DT_LEFT | DT_VCENTER | DT_SINGLELINE,
@@ -2064,27 +2106,34 @@ fn toggle_on(ui: &Ui, id: Toggle) -> bool {
         Toggle::ReduceTransparency => ui.config.reduce_effects.on_transparency_off,
         Toggle::EmulatedX64 => ui.config.legacy.emulated_x64,
         Toggle::ShowTitles => ui.ext.show_titles,
+        Toggle::IdentityAccents => ui.config.features.identity_accents,
+        Toggle::DayNight => ui.config.features.day_night.enabled,
     }
 }
 
-fn choice_text(ui: &Ui, id: Choice) -> &'static str {
+fn choice_text(ui: &Ui, id: Choice) -> String {
     let style = ui.current_style();
+    let day_night = &ui.config.features.day_night;
     match id {
-        Choice::Backdrop => backdrop_label(style.backdrop),
-        Choice::Corners => corners_label(style.corners),
-        Choice::Palette => {
-            if ui.config.legacy.palette == "black" {
-                "True black"
-            } else {
-                "Graphite"
-            }
+        Choice::Backdrop => backdrop_label(style.backdrop).to_string(),
+        Choice::Corners => corners_label(style.corners).to_string(),
+        Choice::Palette => if ui.config.legacy.palette == "black" {
+            "True black"
+        } else {
+            "Graphite"
         }
+        .to_string(),
         Choice::RuleScope => match ui.ext.rule_scope {
             0 => "Executable",
             1 => "Executable + class",
             2 => "Package",
             _ => "Window class",
-        },
+        }
+        .to_string(),
+        Choice::DayScene => ui.scene_name_for(&day_night.day_scene),
+        Choice::NightScene => ui.scene_name_for(&day_night.night_scene),
+        Choice::DayStarts => day_night.day_starts.clone(),
+        Choice::NightStarts => day_night.night_starts.clone(),
     }
 }
 

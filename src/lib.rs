@@ -1,6 +1,7 @@
 //! AllBlack11 core: config, window policy, and the snapshot file used to undo changes.
 //! The Win32 tray loop lives in `platform` and is compiled only for Windows.
 
+mod accents;
 mod arch;
 mod caption;
 mod compat;
@@ -14,12 +15,14 @@ mod inject;
 mod legacy_policy;
 mod lkg;
 mod menu_model;
+mod palette;
 mod policy;
 mod presets;
 mod recipes;
 mod report;
 mod rules;
 mod scenes;
+mod schedule;
 mod shell;
 mod snapshot;
 mod startup;
@@ -28,12 +31,13 @@ mod timefmt;
 mod trial;
 mod version;
 
+pub use accents::{key_for as accent_key, Accents, PALETTE as ACCENT_PALETTE};
 pub use arch::{classify, machine_name, ArchStatus, BUILD_MACHINE};
 pub use compat::{Entry as CompatEntry, Notebook, Status as CompatStatus};
 pub use config::{
     base_style, bundled_default_json, parse_config, set_enabled_flag, Backdrop, Color, Config,
-    Corners, FocusSettings, LegacySettings, PartialStyle, ReduceEffects, Rule, Style,
-    FALLBACK_ACCENT_BGR,
+    Corners, DayNight, Features, FocusSettings, LegacySettings, PartialStyle, ReduceEffects, Rule,
+    Style, FALLBACK_ACCENT_BGR,
 };
 pub use effects::{focus_style, reduce_reason, reduced, Explicit, SystemState};
 pub use explain::{
@@ -58,6 +62,10 @@ pub use lkg::{is_pre_schema_2, pick as pick_config, Picked, Source as ConfigSour
 pub use menu_model::{
     flatten as flatten_menu, Drawn as MenuDrawn, Item as MenuItem, ItemKind as MenuItemKind,
 };
+pub use palette::{
+    check_image, derive as derive_palette, sample_points, to_scene as palette_scene,
+    Palette as ImagePalette, GRID as PALETTE_GRID, MAX_FILE_BYTES as IMAGE_MAX_BYTES,
+};
 pub use policy::{
     decide, is_borderless_fullscreen, rect_covers_monitor, Decision, WindowFacts, WS_CHILD,
     WS_DLGFRAME, WS_EX_LAYERED, WS_EX_NOREDIRECTIONBITMAP, WS_EX_TOOLWINDOW, WS_EX_TRANSPARENT,
@@ -78,6 +86,10 @@ pub use scenes::{
     compare as compare_looks, preview as preview_scene, swatch as scene_swatch,
     Applicable as SceneLike, Look, LookBook, Scene, Swatch, MAX_LOOKS, MAX_NAME as MAX_LOOK_NAME,
     SCENE_COUNT,
+};
+pub use schedule::{
+    millis_until_change, parse_times as parse_schedule_times, phase_at, Phase as DayPhase,
+    Scheduler, Times as ScheduleTimes,
 };
 pub use shell::{blacken_shell_slots, ShellBackup, SHELL_SLOT_BYTES};
 pub use snapshot::{format_snapshots, parse_snapshots, same_process, SnapshotFile, StoredSnapshot};

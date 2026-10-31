@@ -221,6 +221,8 @@ pub enum Source {
     Rule(usize),
     /// Computed from other settings (text color picked for contrast).
     Derived,
+    /// The app's identity accent (an optional feature), used where no rule sets the border.
+    Accent,
 }
 
 #[derive(Debug, Clone)]

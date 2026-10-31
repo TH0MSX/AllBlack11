@@ -32,6 +32,20 @@ pub fn save_notebook(book: &crate::Notebook) -> Result<(), String> {
     )
 }
 
+pub fn load_accents() -> crate::Accents {
+    std::fs::read_to_string(super::wide::accents_path())
+        .ok()
+        .and_then(|text| crate::Accents::parse(&text).ok())
+        .unwrap_or_default()
+}
+
+pub fn save_accents(accents: &crate::Accents) -> Result<(), String> {
+    write_atomic(
+        &super::wide::accents_path(),
+        &format!("{}\n", accents.to_json()),
+    )
+}
+
 pub fn load_lookbook() -> crate::LookBook {
     std::fs::read_to_string(super::wide::lookbook_path())
         .ok()

@@ -32,6 +32,8 @@ pub enum AppCommand {
     /// Emergency pause: put every window back and style nothing until `Resume`.
     Pause,
     Resume,
+    /// The accents file changed (Settings edited an app's accent): read it and restyle.
+    ReloadAccents,
     /// End this run's safe mode and apply the saved settings, experimental parts included.
     LeaveSafeMode,
 }

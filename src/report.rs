@@ -80,6 +80,7 @@ pub fn source_text(source: Source, rules: &[String]) -> String {
         Source::BuiltIn => "built-in".to_string(),
         Source::Default => "default look".to_string(),
         Source::Derived => "derived for contrast".to_string(),
+        Source::Accent => "identity accent (optional feature)".to_string(),
         Source::Rule(index) => format!(
             "rule {}{}",
             index + 1,

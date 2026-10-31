@@ -16,6 +16,7 @@ mod demo;
 mod dwm;
 mod helper;
 mod icon;
+mod image;
 mod inspect;
 mod legacy;
 mod menu;

@@ -49,6 +49,11 @@ pub struct Ext {
     /// Item marked with "Compare…" to diff the next selection against.
     pub look_mark: Option<usize>,
     pub look_diff: Vec<String>,
+    /// The scene built from a picture, kept until replaced. Not saved anywhere.
+    pub image_scene: Option<crate::Scene>,
+    /// What the selected app's identity accent is, read once per selection (no disk reads
+    /// while laying out rows).
+    pub accent_line: String,
 }
 
 impl Page {
@@ -291,6 +296,11 @@ impl Ui {
                 b.push(Row::Header("Limits"));
                 b.push(Row::Lines(plan.limits.clone()));
             }
+            if self.config.features.identity_accents {
+                b.push(Row::Header("Identity accent"));
+                b.push(Row::Lines(vec![self.ext.accent_line.clone()]));
+                b.push(Row::Buttons(vec![Button::NextAccent, Button::ClearAccent]));
+            }
             b.push(Row::Header("Style receipt"));
             b.push(Row::Lines(self.ext.receipt.clone()));
             b.push(Row::Buttons(vec![Button::CopyReport]));
@@ -444,6 +454,27 @@ impl Ui {
             "Try runs the look for 15 seconds. Nothing is saved until you press Keep. Type a name to save, rename or label a look.",
         ));
         b.push(Row::AddField(Button::SaveLook));
+        b.push(Row::Header("Palette from a picture"));
+        b.push(Row::Note(
+            "Pick a picture on this PC. AllBlack11 reads up to 64 x 64 sample points with Windows' own picture support, builds a frame look that keeps text readable, and adds it to the list above as a scene. The picture is not stored, copied or uploaded.",
+        ));
+        b.push(Row::Action(Button::PaletteFromImage));
+        b.push(Row::Header("Day / Night (optional)"));
+        b.push(Row::Toggle(Toggle::DayNight));
+        if self.config.features.day_night.enabled {
+            b.push(Row::Choice(Choice::DayScene));
+            b.push(Row::Choice(Choice::DayStarts));
+            b.push(Row::Choice(Choice::NightScene));
+            b.push(Row::Choice(Choice::NightStarts));
+            b.push(Row::Note(
+                "Picking a scene by hand stays in place until the next boundary, then the schedule takes over again.",
+            ));
+        }
+        b.push(Row::Header("Identity accents (optional)"));
+        b.push(Row::Toggle(Toggle::IdentityAccents));
+        b.push(Row::Note(
+            "Pick an app on the Apps page to change its accent. Colors are chosen once per app, saved on this PC (app names only, never window titles), and stay the same.",
+        ));
         b.push(Row::Header("Recipes"));
         b.push(Row::Note(
             "A recipe is a small data file describing a look. It cannot run anything or change the shell. Built-in recipes are trusted; imported ones are checked and shown to you before they are tried.",
@@ -930,6 +961,16 @@ impl Ui {
                     helper_installed: super::super::legacy::helper_installed(),
                     touched: super::super::app::window_touched(selected.key),
                 };
+                self.ext.accent_line = {
+                    let accents = super::super::cfgio::load_accents();
+                    match accents.describe(&report.exe) {
+                        Some(text) => format!("{}: {text}", report.exe),
+                        None => format!(
+                            "{}: not assigned yet. A color is chosen the first time this app is styled.",
+                            report.exe
+                        ),
+                    }
+                };
                 self.ext.fix = Some(crate::fix_plan(&report, &context));
                 self.ext.receipt = crate::receipt_lines(&report);
                 self.ext.report = Some(report);
@@ -1132,6 +1173,9 @@ impl Ui {
 impl Ui {
     pub fn refresh_looks(&mut self) {
         self.ext.scenes = crate::scene_catalog();
+        if let Some(scene) = &self.ext.image_scene {
+            self.ext.scenes.push(scene.clone());
+        }
         self.ext.book = super::super::cfgio::load_lookbook();
         if self.ext.look_sel.is_some_and(|i| i >= self.look_count()) {
             self.ext.look_sel = None;
@@ -1260,6 +1304,74 @@ impl Ui {
             None => return,
         }
         self.begin_trial(&name, next);
+    }
+
+    fn change_accent(&mut self, id: Button) {
+        let Some(exe) = self.ext.selected.as_ref().map(|s| s.exe.clone()) else {
+            self.status = "Pick an app first.".into();
+            return;
+        };
+        let mut accents = super::super::cfgio::load_accents();
+        let outcome = if id == Button::NextAccent {
+            accents
+                .next_override(&exe)
+                .map(|color| format!("{exe} now uses {color}."))
+        } else if accents.clear_override(&exe) {
+            Ok(format!("{exe} goes back to its automatic accent."))
+        } else {
+            Ok(format!("{exe} already uses its automatic accent."))
+        };
+        match outcome {
+            Ok(message) => match super::super::cfgio::save_accents(&accents) {
+                Ok(()) => {
+                    self.status = message;
+                    cmdq::push(AppCommand::ReloadAccents);
+                    self.post_command();
+                    self.schedule_report_refresh();
+                }
+                Err(err) => self.status = format!("Could not save the accents: {err}"),
+            },
+            Err(err) => self.status = err,
+        }
+    }
+
+    fn palette_from_image(&mut self) {
+        let Some(path) = file_dialog_filtered(
+            self.hwnd,
+            false,
+            "Choose a picture",
+            "",
+            "Pictures (*.png;*.jpg;*.jpeg;*.bmp;*.gif)\0*.png;*.jpg;*.jpeg;*.bmp;*.gif\0All files\0*.*\0\0",
+        ) else {
+            return;
+        };
+        let stem = std::path::Path::new(&path)
+            .file_stem()
+            .map(|s| s.to_string_lossy().chars().take(24).collect::<String>())
+            .unwrap_or_default();
+        let result = super::super::image::sample(&path)
+            .and_then(|samples| crate::derive_palette(&samples))
+            .and_then(|palette| {
+                let name = if stem.is_empty() {
+                    "From a picture".to_string()
+                } else {
+                    format!("From {stem}")
+                };
+                crate::palette_scene(&palette, &name).map(|scene| (scene, palette.note))
+            });
+        match result {
+            Ok((scene, note)) => {
+                self.status = match note {
+                    Some(note) => format!("Built “{}”. {note}", scene.name),
+                    None => format!("Built “{}”. Try it to see it on your windows.", scene.name),
+                };
+                self.ext.image_scene = Some(scene);
+                self.refresh_looks();
+                self.ext.look_sel = Some(self.ext.scenes.len() - 1);
+                self.update_look_diff();
+            }
+            Err(err) => self.status = err,
+        }
     }
 
     fn save_look(&mut self) {
@@ -1609,6 +1721,23 @@ impl Ui {
     pub fn toggle_ext(&mut self, id: Toggle) {
         match id {
             Toggle::FocusLook => self.config.focus.enabled = !self.config.focus.enabled,
+            Toggle::IdentityAccents => {
+                self.config.features.identity_accents = !self.config.features.identity_accents;
+                self.status = if self.config.features.identity_accents {
+                    "Identity accents are on. Each app gets its own border color unless a rule sets one. Focus Look, if on, decides the border instead.".into()
+                } else {
+                    "Identity accents are off.".into()
+                };
+            }
+            Toggle::DayNight => {
+                self.config.features.day_night.enabled = !self.config.features.day_night.enabled;
+                self.status = if self.config.features.day_night.enabled {
+                    "Day / Night is on. The scene for the current time is applied now and saved."
+                        .into()
+                } else {
+                    "Day / Night is off. The current look stays as it is.".into()
+                };
+            }
             Toggle::ReduceBattery => {
                 self.config.reduce_effects.on_battery_saver =
                     !self.config.reduce_effects.on_battery_saver
@@ -1654,8 +1783,73 @@ impl Ui {
             Choice::RuleScope => {
                 self.ext.rule_scope = (self.ext.rule_scope + 1) % 4;
             }
+            Choice::DayScene | Choice::NightScene => {
+                let ids = self.scene_ids();
+                let current = if id == Choice::DayScene {
+                    self.config.features.day_night.day_scene.clone()
+                } else {
+                    self.config.features.day_night.night_scene.clone()
+                };
+                let next = match ids.iter().position(|candidate| *candidate == current) {
+                    Some(index) => ids[(index + 1) % ids.len()].clone(),
+                    None => ids.first().cloned().unwrap_or(current),
+                };
+                if id == Choice::DayScene {
+                    self.config.features.day_night.day_scene = next;
+                } else {
+                    self.config.features.day_night.night_scene = next;
+                }
+                self.commit();
+            }
+            Choice::DayStarts | Choice::NightStarts => {
+                let setting = &mut self.config.features.day_night;
+                let field = if id == Choice::DayStarts {
+                    &mut setting.day_starts
+                } else {
+                    &mut setting.night_starts
+                };
+                let minutes = crate::parse_schedule_times(field, "00:00")
+                    .map(|t| t.day_starts)
+                    .unwrap_or(0);
+                let next = (minutes + 30) % 1440;
+                *field = format!("{:02}:{:02}", next / 60, next % 60);
+                // Equal start times are not allowed; nudge the one just changed.
+                if setting.day_starts == setting.night_starts {
+                    let bump = (next + 30) % 1440;
+                    let text = format!("{:02}:{:02}", bump / 60, bump % 60);
+                    if id == Choice::DayStarts {
+                        setting.day_starts = text;
+                    } else {
+                        setting.night_starts = text;
+                    }
+                }
+                self.commit();
+            }
             _ => {}
         }
+    }
+
+    /// Ids a Day/Night choice can cycle through: the five scenes, then saved looks.
+    fn scene_ids(&self) -> Vec<String> {
+        let mut ids: Vec<String> = crate::scene_catalog().into_iter().map(|s| s.id).collect();
+        ids.extend(
+            super::super::cfgio::load_lookbook()
+                .looks
+                .into_iter()
+                .map(|l| l.id),
+        );
+        ids
+    }
+
+    /// Display name for a Day/Night scene id.
+    pub fn scene_name_for(&self, id: &str) -> String {
+        if let Some(scene) = crate::scene_catalog().into_iter().find(|s| s.id == id) {
+            return scene.name;
+        }
+        if let Some(look) = self.ext.book.get(id) {
+            return look.name.clone();
+        }
+        format!("{id} (missing)")
     }
 
     /// Returns true when the action was handled here.
@@ -1686,6 +1880,8 @@ impl Ui {
                 }
             }
             Button::CopyReport => self.copy_report(),
+            Button::NextAccent | Button::ClearAccent => self.change_accent(id),
+            Button::PaletteFromImage => self.palette_from_image(),
             Button::TryScene => self.try_scene(),
             Button::SaveLook => self.save_look(),
             Button::RenameLook => self.rename_look(),
@@ -2099,6 +2295,22 @@ fn set_clipboard_text(hwnd: HWND, text: &str) -> bool {
 
 /// A standard Open or Save dialog. Returns the chosen path.
 fn file_dialog(owner: HWND, save: bool, title: &str, default_name: &str) -> Option<String> {
+    file_dialog_filtered(
+        owner,
+        save,
+        title,
+        default_name,
+        "AllBlack11 recipe (*.json)\0*.json\0All files\0*.*\0\0",
+    )
+}
+
+fn file_dialog_filtered(
+    owner: HWND,
+    save: bool,
+    title: &str,
+    default_name: &str,
+    filter: &str,
+) -> Option<String> {
     use windows_sys::Win32::UI::Controls::Dialogs::{
         GetOpenFileNameW, GetSaveFileNameW, OFN_FILEMUSTEXIST, OFN_OVERWRITEPROMPT,
         OFN_PATHMUSTEXIST, OPENFILENAMEW,
@@ -2107,9 +2319,7 @@ fn file_dialog(owner: HWND, save: bool, title: &str, default_name: &str) -> Opti
     for (index, unit) in default_name.encode_utf16().take(500).enumerate() {
         file[index] = unit;
     }
-    let filter: Vec<u16> = "AllBlack11 recipe (*.json)\0*.json\0All files\0*.*\0\0"
-        .encode_utf16()
-        .collect();
+    let filter: Vec<u16> = filter.encode_utf16().collect();
     let title = to_wide(title);
     let mut dialog: OPENFILENAMEW = unsafe { std::mem::zeroed() };
     dialog.lStructSize = std::mem::size_of::<OPENFILENAMEW>() as u32;
