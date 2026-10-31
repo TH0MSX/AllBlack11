@@ -7,6 +7,7 @@ mod compat;
 mod config;
 mod effects;
 mod explain;
+mod fixapp;
 mod helper_protocol;
 mod identity;
 mod inject;
@@ -36,6 +37,10 @@ pub use effects::{focus_style, reduce_reason, reduced, Explicit, SystemState};
 pub use explain::{
     attribute_support, explain, framework_hint, reason_text, AttributeSupport, Confirm,
     Explanation, Framework, FrameworkHint, Support, TitleBar,
+};
+pub use fixapp::{
+    plan as fix_plan, receipt_lines, Action as FixAction, Context as FixContext, Level as FixLevel,
+    Plan as FixPlan, Surface as FixSurface,
 };
 pub use helper_protocol::{
     may_use_helper, parse_command as parse_helper_command, Backoff as HelperBackoff,

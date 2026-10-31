@@ -36,6 +36,12 @@ pub struct Ext {
     pub focus_sub: usize,
     pub trial_name: String,
     pub loaded: bool,
+    /// The guided "Fix this app" plan for the selected window, and its style receipt.
+    pub fix: Option<crate::FixPlan>,
+    pub receipt: Vec<String>,
+    /// The host handles window commands a moment after Settings queues them; re-read the
+    /// report once it has had time to.
+    pub refresh_pending: bool,
 }
 
 impl Page {
@@ -224,7 +230,54 @@ impl Ui {
         let shown = self.visible_windows().len();
         b.push_h(Row::WindowList, list_height(shown.min(40)));
         b.push(Row::Toggle(Toggle::ShowTitles));
-        b.push(Row::Header("What AllBlack11 does with it"));
+        if let (Some(plan), Some(_)) = (&self.ext.fix, &self.ext.selected) {
+            // The guided path: what this is, what can change, then the safe actions.
+            b.push(Row::Header("Fix this app"));
+            b.push(Row::Lines(plan.identity.clone()));
+            b.push(Row::Header("What can change here"));
+            b.push(Row::Lines(
+                plan.surfaces
+                    .iter()
+                    .map(|row| {
+                        format!(
+                            "{}: {}. {}",
+                            row.surface.label(),
+                            row.level.label(),
+                            row.why
+                        )
+                    })
+                    .collect(),
+            ));
+            b.push(Row::Note(
+                "Each line is about one surface. Choosing an app never means every control inside it can be themed.",
+            ));
+            if !plan.actions.is_empty() {
+                b.push(Row::Header("Safe actions"));
+                b.push(Row::Note(
+                    "Preview shows the look from the Effects page on this one window for 20 seconds, then puts it back. Nothing is saved until you press Save as rule.",
+                ));
+                b.push(Row::Choice(Choice::RuleScope));
+                let buttons = plan
+                    .actions
+                    .iter()
+                    .map(|action| match action {
+                        crate::FixAction::Preview => Button::TryLook,
+                        crate::FixAction::SaveRule => Button::CreateRule,
+                        crate::FixAction::Exclude => Button::ExcludeApp,
+                        crate::FixAction::Restore => Button::RestoreWindow,
+                    })
+                    .collect();
+                b.push(Row::Buttons(buttons));
+            }
+            if !plan.limits.is_empty() {
+                b.push(Row::Header("Limits"));
+                b.push(Row::Lines(plan.limits.clone()));
+            }
+            b.push(Row::Header("Style receipt"));
+            b.push(Row::Lines(self.ext.receipt.clone()));
+            b.push(Row::Buttons(vec![Button::CopyReport]));
+        }
+        b.push(Row::Header("Full inspector report"));
         let lines = if self.ext.report_lines.is_empty() {
             vec!["Pick a window to see what AllBlack11 does with it, and why.".to_string()]
         } else {
@@ -232,13 +285,6 @@ impl Ui {
         };
         b.push(Row::Lines(lines));
         if self.ext.selected.is_some() {
-            b.push(Row::Choice(Choice::RuleScope));
-            b.push(Row::Buttons(vec![
-                Button::CreateRule,
-                Button::TryLook,
-                Button::ExcludeApp,
-                Button::RestoreWindow,
-            ]));
             b.push(Row::Header("Your note for this app on this Windows build"));
             b.push(Row::Buttons(vec![
                 Button::MarkWorks,
@@ -246,7 +292,6 @@ impl Ui {
                 Button::MarkFails,
                 Button::MarkReset,
             ]));
-            b.push(Row::Buttons(vec![Button::CopyReport]));
         }
         b.push(Row::Header("Per-app rules"));
         b.push(Row::Note(
@@ -686,6 +731,10 @@ impl Ui {
     }
 
     pub fn on_timer(&mut self, hwnd: HWND) {
+        if self.ext.refresh_pending {
+            self.ext.refresh_pending = false;
+            self.refresh_report();
+        }
         if !self.trial_active() {
             unsafe { windows_sys::Win32::UI::WindowsAndMessaging::KillTimer(hwnd, TIMER_UI) };
         }
@@ -754,9 +803,20 @@ impl Ui {
                 let (user, profile) = user_strings();
                 self.ext.report_lines =
                     crate::render_report(&report, &labels, self.ext.show_titles, &user, &profile);
+                let context = crate::FixContext {
+                    reduced: super::super::app::reduce_reason_now(),
+                    legacy_enabled: self.config.experimental_dark_legacy,
+                    helper_enabled: self.config.legacy.emulated_x64,
+                    helper_installed: super::super::legacy::helper_installed(),
+                    touched: super::super::app::window_touched(selected.key),
+                };
+                self.ext.fix = Some(crate::fix_plan(&report, &context));
+                self.ext.receipt = crate::receipt_lines(&report);
                 self.ext.report = Some(report);
             }
             None => {
+                self.ext.fix = None;
+                self.ext.receipt.clear();
                 self.ext.report = None;
                 self.ext.report_lines = vec!["That window has closed. Pick another.".to_string()];
                 self.ext.selected = None;
@@ -1217,6 +1277,7 @@ impl Ui {
                         fingerprint: selected.fingerprint.clone(),
                     });
                     self.post_command();
+                    self.schedule_report_refresh();
                     self.status =
                         "Restoring that window. It stays as Windows draws it until you reload."
                             .into();
@@ -1335,7 +1396,16 @@ impl Ui {
             style: self.current_style(),
         });
         self.post_command();
+        self.schedule_report_refresh();
         self.status = "Trying the look from the Effects page on that window for 20 seconds. Nothing is saved.".into();
+    }
+
+    /// Re-read the selected window's report shortly, once the host has acted.
+    fn schedule_report_refresh(&mut self) {
+        self.ext.refresh_pending = true;
+        unsafe {
+            windows_sys::Win32::UI::WindowsAndMessaging::SetTimer(self.hwnd, TIMER_UI, 400, None)
+        };
     }
 
     fn exclude_selected_app(&mut self) {
@@ -1362,8 +1432,16 @@ impl Ui {
         };
         let labels: Vec<String> = self.config.rules.iter().map(|r| r.label()).collect();
         let (user, profile) = user_strings();
-        let text = crate::render_report(&report, &labels, self.ext.show_titles, &user, &profile)
-            .join("\r\n");
+        let mut lines =
+            crate::render_report(&report, &labels, self.ext.show_titles, &user, &profile);
+        lines.push(String::new());
+        lines.push("Style receipt".to_string());
+        lines.extend(crate::receipt_lines(&report));
+        let mut text = lines.join("\r\n");
+        if !self.ext.show_titles {
+            // One more pass over everything, receipt included: no user name, no profile path.
+            text = crate::redact(&text, &user, &profile);
+        }
         self.status = if set_clipboard_text(self.hwnd, &text) {
             if self.ext.show_titles {
                 "Copied, including the window title.".into()

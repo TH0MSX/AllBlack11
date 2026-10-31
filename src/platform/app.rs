@@ -2579,6 +2579,11 @@ pub fn report_for(key: i64) -> Option<crate::Report> {
     with_app(|app| app.build_report(key)).flatten()
 }
 
+/// AllBlack11 has changed this window and holds its original look (so a restore is meaningful).
+pub fn window_touched(key: i64) -> bool {
+    with_app(|app| app.originals.contains_key(&key)).unwrap_or(false)
+}
+
 /// Text for the Settings page: why effects are currently reduced, if they are.
 pub fn reduce_reason_now() -> Option<&'static str> {
     with_app(|app| app.reduce).flatten()
