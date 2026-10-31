@@ -7,7 +7,7 @@ use std::sync::Mutex;
 use windows_sys::Win32::UI::WindowsAndMessaging::WM_APP;
 
 use crate::config::Style;
-use crate::Config;
+use crate::{Config, Fingerprint};
 
 pub const WM_APP_COMMAND: u32 = WM_APP + 9;
 
@@ -15,15 +15,13 @@ pub enum AppCommand {
     /// Apply `style` to one window for a short time, without touching the config.
     TryOnWindow {
         key: i64,
-        pid: u32,
-        create: u64,
+        fingerprint: Fingerprint,
         style: Style,
     },
     /// Put one window back as it was.
     RestoreWindow {
         key: i64,
-        pid: u32,
-        create: u64,
+        fingerprint: Fingerprint,
     },
     /// Run this whole config in memory for a few seconds. Nothing is saved until `TrialKeep`.
     TrialStart(Box<Config>),

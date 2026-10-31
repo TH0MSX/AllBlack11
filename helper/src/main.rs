@@ -10,6 +10,8 @@
 //!
 //!   HOOK <thread id>    PRUNE    STOPALL    QUIT
 //!
+//! (parsed by `helper_protocol`, which the controller compiles too)
+//!
 //! There is no command to load another file, run a program, or hook a thread that does not
 //! own a classic dialog in an eligible x64 process. Built with `panic = "abort"`; every
 //! fallible step returns early.
@@ -28,6 +30,10 @@ fn main() {
 #[path = "../../src/arch.rs"]
 #[allow(dead_code)]
 mod arch;
+#[cfg(windows)]
+#[path = "../../src/helper_protocol.rs"]
+#[allow(dead_code)]
+mod protocol;
 #[cfg(windows)]
 #[path = "../../src/legacy_policy.rs"]
 #[allow(dead_code)]
@@ -48,7 +54,7 @@ mod win {
     use std::ptr::{null, null_mut};
 
     use windows_sys::Win32::Foundation::{
-        CloseHandle, LocalFree, BOOL, FALSE, HANDLE, HMODULE, HWND, INVALID_HANDLE_VALUE, LPARAM,
+        CloseHandle, LocalFree, BOOL, FALSE, FILETIME, HANDLE, HMODULE, HWND, INVALID_HANDLE_VALUE, LPARAM,
     };
     use windows_sys::Win32::Security::Authorization::{
         ConvertStringSecurityDescriptorToSecurityDescriptorW, SDDL_REVISION_1,
@@ -65,7 +71,7 @@ mod win {
         PIPE_REJECT_REMOTE_CLIENTS, PIPE_TYPE_BYTE, PIPE_WAIT,
     };
     use windows_sys::Win32::System::Threading::{
-        ExitProcess, GetProcessIdOfThread, IsWow64Process2, OpenProcess, OpenProcessToken,
+        ExitProcess, GetProcessIdOfThread, GetProcessTimes, IsWow64Process2, OpenProcess, OpenProcessToken,
         OpenThread, QueryFullProcessImageNameW, WaitForSingleObject, INFINITE, PROCESS_NAME_WIN32,
         PROCESS_QUERY_LIMITED_INFORMATION, PROCESS_SYNCHRONIZE, THREAD_QUERY_LIMITED_INFORMATION,
     };
@@ -77,6 +83,7 @@ mod win {
 
     use crate::arch::MACHINE_AMD64;
     use crate::policy::{host_kind, HostKind};
+    use crate::protocol::{parse_command, Command, LineBuffer, Reply};
     use crate::target::{classify_target, pe_machine, route, Route};
 
     const FILE_FLAG_FIRST_PIPE_INSTANCE: u32 = 0x0008_0000;
@@ -93,9 +100,10 @@ mod win {
                 .and_then(|index| args.get(index + 1))
                 .cloned()
         };
-        let (Some(parent), Some(pipe)) = (
+        let (Some(parent), Some(pipe), Some(parent_created)) = (
             value("--parent").and_then(|text| text.parse::<u32>().ok()),
             value("--pipe"),
+            value("--parent-created").and_then(|text| text.parse::<u64>().ok()),
         ) else {
             return 2;
         };
@@ -111,6 +119,10 @@ mod win {
             );
             if parent_handle.is_null() {
                 return 3;
+            }
+            // The id alone could name a different process by now. Its start time cannot.
+            if creation_time(parent_handle) != Some(parent_created) {
+                return 7;
             }
             // Die with the parent. A blocking wait, so it costs nothing while idle.
             let watch = parent_handle as isize;
@@ -135,6 +147,17 @@ mod win {
             CloseHandle(server);
         }
         0
+    }
+
+    unsafe fn creation_time(process: HANDLE) -> Option<u64> {
+        let mut created: FILETIME = std::mem::zeroed();
+        let mut exited: FILETIME = std::mem::zeroed();
+        let mut kernel: FILETIME = std::mem::zeroed();
+        let mut user: FILETIME = std::mem::zeroed();
+        if GetProcessTimes(process, &mut created, &mut exited, &mut kernel, &mut user) == 0 {
+            return None;
+        }
+        Some((u64::from(created.dwHighDateTime) << 32) | u64::from(created.dwLowDateTime))
     }
 
     /// First instance only, this user only, local clients only.
@@ -178,71 +201,51 @@ mod win {
     unsafe fn serve(pipe: HANDLE) {
         let mut hooks: HashMap<u32, HHOOK> = HashMap::new();
         let mut module: Option<HMODULE> = None;
-        let mut pending = Vec::<u8>::new();
-        let mut buffer = [0u8; 256];
+        let mut lines = LineBuffer::default();
+        let mut buffer = [0u8; 128];
         loop {
             let mut read = 0u32;
-            if ReadFile(
-                pipe,
-                buffer.as_mut_ptr(),
-                buffer.len() as u32,
-                &mut read,
-                null_mut(),
-            ) == 0
-                || read == 0
-            {
+            if ReadFile(pipe, buffer.as_mut_ptr(), buffer.len() as u32, &mut read, null_mut()) == 0 || read == 0 {
                 break; // The controller went away.
             }
-            pending.extend_from_slice(&buffer[..read as usize]);
-            if pending.len() > 4096 {
-                break; // Not a protocol we speak.
-            }
-            while let Some(end) = pending.iter().position(|byte| *byte == b'\n') {
-                let line: Vec<u8> = pending.drain(..=end).collect();
-                let text = String::from_utf8_lossy(&line).trim().to_string();
-                let (reply, quit) = handle(&text, &mut hooks, &mut module);
-                let mut out = reply.into_bytes();
+            let Ok(batch) = lines.push(&buffer[..read as usize]) else {
+                break; // Not a protocol we speak: drop the connection.
+            };
+            for line in batch {
+                let (reply, quit) = handle(&line, &mut hooks, &mut module);
+                let mut out = reply.to_line().into_bytes();
                 out.push(b'\n');
                 let mut written = 0u32;
-                WriteFile(
-                    pipe,
-                    out.as_ptr(),
-                    out.len() as u32,
-                    &mut written,
-                    null_mut(),
-                );
+                WriteFile(pipe, out.as_ptr(), out.len() as u32, &mut written, null_mut());
                 if quit {
                     return;
                 }
             }
         }
-        remove_all(&mut hooks);
+        // Disconnected or hostile: leave nothing hooked behind.
+        stop_all(&mut hooks);
     }
 
     unsafe fn handle(
-        text: &str,
+        line: &str,
         hooks: &mut HashMap<u32, HHOOK>,
         module: &mut Option<HMODULE>,
-    ) -> (String, bool) {
-        let mut parts = text.split(' ');
-        match (parts.next(), parts.next(), parts.next()) {
-            (Some("HOOK"), Some(id), None) => match id.parse::<u32>() {
-                Ok(thread) => (hook(thread, hooks, module), false),
-                Err(_) => ("ERR bad-thread".into(), false),
-            },
-            (Some("PRUNE"), None, None) => {
+    ) -> (Reply, bool) {
+        match parse_command(line) {
+            Ok(Command::Hook(thread)) => (hook(thread, hooks, module), false),
+            Ok(Command::Prune) => {
                 prune(hooks);
-                (format!("HOOKS {}", hooks.len()), false)
+                (Reply::Hooks(hooks.len()), false)
             }
-            (Some("STOPALL"), None, None) => {
+            Ok(Command::StopAll) => {
                 stop_all(hooks);
-                ("OK".into(), false)
+                (Reply::Ok, false)
             }
-            (Some("QUIT"), None, None) => {
+            Ok(Command::Quit) => {
                 stop_all(hooks);
-                ("OK".into(), true)
+                (Reply::Ok, true)
             }
-            _ => ("ERR unknown-command".into(), false),
+            Err(reason) => (Reply::Err(reason.to_string()), false),
         }
     }
 
@@ -250,32 +253,32 @@ mod win {
         thread: u32,
         hooks: &mut HashMap<u32, HHOOK>,
         module: &mut Option<HMODULE>,
-    ) -> String {
+    ) -> Reply {
         if hooks.contains_key(&thread) {
-            return "OK".into();
+            return Reply::Ok;
         }
         if hooks.len() >= 32 {
-            return "ERR too-many".into();
+            return Reply::Err("too-many".into());
         }
         if let Err(reason) = validate(thread) {
-            return format!("ERR {reason}");
+            return Reply::Err(reason.to_string());
         }
         let library = match *module {
             Some(existing) => existing,
             None => {
                 let Some(path) = hook_path() else {
-                    return "ERR no-hook-dll".into();
+                    return Reply::Err("no-hook-dll".into());
                 };
                 let loaded = LoadLibraryW(wide(&path).as_ptr());
                 if loaded.is_null() {
-                    return "ERR hook-load".into();
+                    return Reply::Err("hook-load".into());
                 }
                 *module = Some(loaded);
                 loaded
             }
         };
         let Some(proc) = GetProcAddress(library, b"AllBlack11HookProcRet\0".as_ptr()) else {
-            return "ERR hook-export".into();
+            return Reply::Err("hook-export".into());
         };
         let handle = SetWindowsHookExW(
             WH_CALLWNDPROCRET,
@@ -287,10 +290,10 @@ mod win {
             thread,
         );
         if handle.is_null() {
-            return "ERR hook-failed".into();
+            return Reply::Err("hook-failed".into());
         }
         hooks.insert(thread, handle);
-        "OK".into()
+        Reply::Ok
     }
 
     /// The hook DLL is always the x64 copy next to this exe. Never a path from the pipe.

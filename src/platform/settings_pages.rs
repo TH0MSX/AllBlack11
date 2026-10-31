@@ -652,14 +652,27 @@ impl Ui {
         };
     }
 
+    /// Keep is the only moment a trial reaches the disk. The file is written first; only if
+    /// that succeeds is the host told the trial is kept. If the write fails the trial is
+    /// reverted, so what is running never differs from what is saved.
     pub fn trial_keep(&mut self) {
-        cmdq::push(AppCommand::TrialKeep);
-        self.post_command();
-        // The host ends the trial when it handles the command above. Mark it ended here too,
-        // so the save below is allowed. It also applies any shell part the trial skipped.
-        TRIAL_DEADLINE.store(0, Ordering::Relaxed);
-        self.status = "Kept.".into();
-        self.commit();
+        match cfgio::store(&self.config) {
+            Ok(()) => {
+                cmdq::push(AppCommand::TrialKeep);
+                self.post_command();
+                // The host ends the trial when it handles the command above. Mark it ended
+                // here too, so later clicks are not blocked. Posting "applied" makes the host
+                // read the file back, which also applies any shell part the trial skipped.
+                TRIAL_DEADLINE.store(0, Ordering::Relaxed);
+                self.status = "Kept.".into();
+                unsafe { PostMessageW(self.owner, WM_SETTINGS_APPLIED, 0, 0) };
+            }
+            Err(err) => {
+                cmdq::push(AppCommand::TrialRevert);
+                self.post_command();
+                self.status = format!("Could not save, so the trial was reverted: {err}");
+            }
+        }
     }
 
     pub fn trial_revert(&mut self) {
@@ -1201,8 +1214,7 @@ impl Ui {
                 if let Some(selected) = &self.ext.selected {
                     cmdq::push(AppCommand::RestoreWindow {
                         key: selected.key,
-                        pid: selected.pid,
-                        create: selected.create,
+                        fingerprint: selected.fingerprint.clone(),
                     });
                     self.post_command();
                     self.status =
@@ -1319,8 +1331,7 @@ impl Ui {
         };
         cmdq::push(AppCommand::TryOnWindow {
             key: selected.key,
-            pid: selected.pid,
-            create: selected.create,
+            fingerprint: selected.fingerprint.clone(),
             style: self.current_style(),
         });
         self.post_command();

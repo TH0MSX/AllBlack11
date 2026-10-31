@@ -7,6 +7,8 @@ mod compat;
 mod config;
 mod effects;
 mod explain;
+mod helper_protocol;
+mod identity;
 mod inject;
 mod legacy_policy;
 mod lkg;
@@ -20,6 +22,7 @@ mod shell;
 mod snapshot;
 mod target;
 mod timefmt;
+mod trial;
 mod version;
 
 pub use arch::{classify, machine_name, ArchStatus, BUILD_MACHINE};
@@ -34,6 +37,11 @@ pub use explain::{
     attribute_support, explain, framework_hint, reason_text, AttributeSupport, Confirm,
     Explanation, Framework, FrameworkHint, Support, TitleBar,
 };
+pub use helper_protocol::{
+    may_use_helper, parse_command as parse_helper_command, Backoff as HelperBackoff,
+    Command as HelperCommand, LineBuffer, Reply as HelperReply,
+};
+pub use identity::{check as check_identity, Fingerprint, Identity};
 pub use inject::{inject_allowed, InjectTarget};
 pub use legacy_policy::{
     capability, contrast_ratio, host_kind, palette, window_verdict, Capability, HostKind, Level,
@@ -62,6 +70,7 @@ pub use shell::{blacken_shell_slots, ShellBackup, SHELL_SLOT_BYTES};
 pub use snapshot::{format_snapshots, parse_snapshots, same_process, SnapshotFile, StoredSnapshot};
 pub use target::{classify_target, pe_machine, route, Route, TargetArch};
 pub use timefmt::format_unix_utc;
+pub use trial::{constrain as constrain_trial, TrialMachine, TRIAL_MS};
 pub use version::display_version;
 
 #[cfg(windows)]

@@ -8,23 +8,28 @@ use windows_sys::Win32::Foundation::{BOOL, HWND, LPARAM, POINT, RECT};
 use windows_sys::Win32::Graphics::Dwm::DwmGetWindowAttribute;
 use windows_sys::Win32::System::Threading::GetCurrentProcessId;
 use windows_sys::Win32::UI::WindowsAndMessaging::{
-    EnumWindows, GetAncestor, GetCursorPos, GetWindowLongPtrW, GetWindowRect,
-    GetWindowThreadProcessId, IsWindowVisible, WindowFromPoint, GA_ROOT, GWL_EXSTYLE,
+    EnumWindows, GetAncestor, GetCursorPos, GetWindow, GetWindowLongPtrW, GetWindowRect,
+    GetWindowThreadProcessId, IsWindowVisible, WindowFromPoint, GA_ROOT, GWLP_HINSTANCE,
+    GWL_EXSTYLE, GW_OWNER,
 };
 
 use super::legacy::class_name;
 use super::procinfo::window_title;
+use crate::Fingerprint;
 
 const WS_EX_TOOLWINDOW: u32 = 0x80;
+const WS_EX_NOREDIRECTIONBITMAP: u32 = 0x0020_0000;
 const DWMWA_CLOAKED: u32 = 14;
 
 #[derive(Clone, Debug)]
 pub struct WindowEntry {
     pub key: i64,
     pub pid: u32,
-    pub create: u64,
     pub exe: String,
     pub class: String,
+    /// What was true of this window when the list was built. Anything that later acts on the
+    /// entry must re-check it against the live window first (an HWND can be reused).
+    pub fingerprint: Fingerprint,
     /// Kept only in memory for the list. Never written to disk or to a report by default.
     pub title: String,
 }
@@ -42,21 +47,40 @@ fn is_cloaked(hwnd: HWND) -> bool {
     hr >= 0 && cloaked != 0
 }
 
-pub fn entry_for(hwnd: HWND) -> Option<WindowEntry> {
+/// Facts about a window that do not change over its life. See `crate::identity`.
+pub fn fingerprint_of(hwnd: HWND) -> Option<Fingerprint> {
     if hwnd.is_null() {
         return None;
     }
     let mut pid = 0u32;
-    if unsafe { GetWindowThreadProcessId(hwnd, &mut pid) } == 0 || pid == 0 {
+    let thread = unsafe { GetWindowThreadProcessId(hwnd, &mut pid) };
+    if thread == 0 || pid == 0 {
         return None;
     }
-    let (create, exe) = super::app::process_basic(pid)?;
-    Some(WindowEntry {
-        key: hwnd as isize as i64,
+    let (create, _) = super::app::process_basic(pid)?;
+    let ex_style = unsafe { GetWindowLongPtrW(hwnd, GWL_EXSTYLE) } as u32;
+    Some(Fingerprint {
         pid,
         create,
-        exe,
+        thread,
         class: class_name(hwnd),
+        instance: unsafe { GetWindowLongPtrW(hwnd, GWLP_HINSTANCE) } as u64,
+        owner: unsafe { GetWindow(hwnd, GW_OWNER) } as isize as i64,
+        top_level: unsafe { GetAncestor(hwnd, GA_ROOT) } == hwnd,
+        tool_window: ex_style & WS_EX_TOOLWINDOW != 0,
+        no_redirection: ex_style & WS_EX_NOREDIRECTIONBITMAP != 0,
+    })
+}
+
+pub fn entry_for(hwnd: HWND) -> Option<WindowEntry> {
+    let fingerprint = fingerprint_of(hwnd)?;
+    let (_, exe) = super::app::process_basic(fingerprint.pid)?;
+    Some(WindowEntry {
+        key: hwnd as isize as i64,
+        pid: fingerprint.pid,
+        exe,
+        class: fingerprint.class.clone(),
+        fingerprint,
         title: window_title(hwnd),
     })
 }

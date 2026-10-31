@@ -107,8 +107,6 @@ const WM_EXPLORER_DONE: u32 = WM_APP + 7;
 const TIMER_ACCENT: usize = 3;
 const TIMER_CLICK: usize = 4;
 const TIMER_TRIAL: usize = 5;
-/// How long a trial look runs before it reverts by itself.
-const TRIAL_MS: u64 = 15_000;
 const TRY_WINDOW_MS: u64 = 20_000;
 
 /// Tick-count deadline of the running trial, or 0. Read by Settings for its countdown.
@@ -143,11 +141,6 @@ struct OpRecord {
     style: Style,
     backdrop: i32,
     note: Option<&'static str>,
-}
-
-struct Trial {
-    previous: crate::Config,
-    deadline: u64,
 }
 
 struct PendingApply {
@@ -194,7 +187,8 @@ struct App {
     /// Why effects are reduced right now, if they are.
     reduce: Option<&'static str>,
     last_ops: HashMap<i64, OpRecord>,
-    trial: Option<Trial>,
+    /// All trial decisions live in `crate::trial`, which has the tests.
+    trial: crate::TrialMachine,
     /// Windows given a temporary look from the inspector, with their revert time.
     try_windows: HashMap<i64, u64>,
 }
@@ -542,7 +536,7 @@ fn run() -> Result<(), String> {
         fg_key: 0,
         reduce: None,
         last_ops: HashMap::new(),
-        trial: None,
+        trial: crate::TrialMachine::default(),
         try_windows: HashMap::new(),
         config_file: config_path(),
         config,
@@ -1314,6 +1308,7 @@ impl App {
     }
 
     fn toggle_enabled(&mut self) {
+        self.end_trial_for_external_change();
         let turning_on = !self.config.enabled;
         if turning_on {
             self.ensure_config_file();
@@ -1355,6 +1350,7 @@ impl App {
     }
 
     fn reload(&mut self) {
+        self.end_trial_for_external_change();
         let text = match std::fs::read_to_string(&self.config_file) {
             Ok(text) => text,
             Err(err) => {
@@ -1465,6 +1461,7 @@ impl App {
 
     /// Returns true when a shell value changed and Windows should be told.
     fn apply_external_config(&mut self) -> bool {
+        self.end_trial_for_external_change();
         let old = self.config.clone();
         let text = match std::fs::read_to_string(&self.config_file) {
             Ok(text) => text,
@@ -1531,6 +1528,7 @@ impl App {
 
     /// Apply a preset from the tray: write the config, then take the same path as Settings.
     fn apply_preset(&mut self, index: usize) -> bool {
+        self.end_trial_for_external_change();
         let mut config = cfgio::load();
         if !crate::apply_preset(&mut config, index) {
             return false;
@@ -1745,10 +1743,16 @@ impl App {
     }
 
     fn ensure_original(&mut self, key: i64, hwnd: HWND, pid: u32, create: u64) {
+        let live = super::inspect::fingerprint_of(hwnd);
         if let Some(existing) = self.originals.get(&key) {
-            if same_process(existing, pid, create) {
+            if snapshot_is_for(existing, pid, create, live.as_ref()) {
                 return;
             }
+            // Same number, different window. The old snapshot describes something else.
+            log_line(
+                "info",
+                "a recorded original was dropped: the window handle was reused",
+            );
         }
         let captured = dwm::capture(hwnd);
         self.originals.insert(
@@ -1764,6 +1768,7 @@ impl App {
                 text: captured.text,
                 corners: captured.corners,
                 accent_policy: false,
+                fingerprint: live,
             },
         );
         self.dirty = true;
@@ -1898,11 +1903,22 @@ impl App {
             return;
         };
         let hwnd = key_to_hwnd(key);
-        if unsafe { IsWindow(hwnd) } != 0 {
+        // Re-check right before writing: writing old values onto a window that is not the
+        // original would damage it. When unsure, leave the window alone and drop the record.
+        let still_it = unsafe { IsWindow(hwnd) } != 0
+            && snapshot_matches_live(&snap, super::inspect::fingerprint_of(hwnd).as_ref());
+        if still_it {
             dwm::restore(hwnd, &snap, self.apps_dark, self.build);
             if snap.accent_policy {
                 let _ = composition::clear_accent(hwnd);
             }
+        } else if unsafe { IsWindow(hwnd) } != 0 {
+            log_line(
+                "info",
+                "a restore was skipped: the window is not the one that was recorded",
+            );
+            self.originals.remove(&key);
+            self.dirty = true;
         }
         self.last_apply.remove(&key);
         if forget {
@@ -1931,10 +1947,11 @@ impl App {
                 continue;
             }
             if let Some((pid, create, _)) = self.identity(hwnd) {
+                let live = super::inspect::fingerprint_of(hwnd);
                 if self
                     .originals
                     .get(&key)
-                    .is_some_and(|snap| !same_process(snap, pid, create))
+                    .is_some_and(|snap| !snapshot_is_for(snap, pid, create, live.as_ref()))
                 {
                     self.originals.remove(&key);
                     self.hold.remove(&key);
@@ -2001,6 +2018,7 @@ impl App {
     }
 
     fn set_oled(&mut self, enable: bool) -> bool {
+        self.end_trial_for_external_change();
         self.ensure_config_file();
         if self.config.shell.oled_taskbar == enable {
             return false;
@@ -2029,6 +2047,7 @@ impl App {
     }
 
     fn set_black_shell(&mut self, enable: bool) -> bool {
+        self.end_trial_for_external_change();
         self.ensure_config_file();
         if self.config.shell.black_shell == enable {
             return false;
@@ -2166,12 +2185,11 @@ impl App {
             match command {
                 AppCommand::TryOnWindow {
                     key,
-                    pid,
-                    create,
+                    fingerprint,
                     style,
-                } => self.try_window(key, pid, create, style),
-                AppCommand::RestoreWindow { key, pid, create } => {
-                    self.restore_window(key, pid, create)
+                } => self.try_window(key, fingerprint, style),
+                AppCommand::RestoreWindow { key, fingerprint } => {
+                    self.restore_window(key, fingerprint)
                 }
                 AppCommand::TrialStart(config) => self.trial_start(*config),
                 AppCommand::TrialKeep => self.trial_end(true),
@@ -2182,25 +2200,29 @@ impl App {
         broadcast
     }
 
-    /// The HWND still belongs to the process the caller looked at (HWNDs are reused).
-    fn same_window(&mut self, key: i64, pid: u32, create: u64) -> bool {
+    /// The HWND is still the window the caller looked at. Process id and creation time are not
+    /// enough (a new dialog in the same process can get the same HWND), so the whole
+    /// fingerprint is compared and any doubt means "no".
+    fn same_window(&mut self, key: i64, recorded: &crate::Fingerprint) -> crate::Identity {
         let hwnd = key_to_hwnd(key);
         if unsafe { IsWindow(hwnd) } == 0 {
-            return false;
+            return crate::Identity::Different("the window is gone");
         }
-        self.identity(hwnd)
-            .is_some_and(|(live_pid, live_create, _)| live_pid == pid && live_create == create)
+        crate::check_identity(recorded, super::inspect::fingerprint_of(hwnd).as_ref())
     }
 
-    fn try_window(&mut self, key: i64, pid: u32, create: u64, style: Style) {
-        if !self.same_window(key, pid, create) {
+    fn try_window(&mut self, key: i64, fingerprint: crate::Fingerprint, style: Style) {
+        let identity = self.same_window(key, &fingerprint);
+        if !identity.allows_apply() {
+            log_line("info", &format!("preview refused: {}", identity.reason()));
             self.balloon(
                 "AllBlack11",
-                "That window has closed or been replaced.",
+                "That window has closed or been replaced, so nothing was changed.",
                 false,
             );
             return;
         }
+        let (pid, create) = (fingerprint.pid, fingerprint.create);
         let hwnd = key_to_hwnd(key);
         self.ensure_original(key, hwnd, pid, create);
         let now = unsafe { GetTickCount64() };
@@ -2221,11 +2243,13 @@ impl App {
         unsafe { SetTimer(self.hwnd, TIMER_TRIAL, 1000, None) };
     }
 
-    fn restore_window(&mut self, key: i64, pid: u32, create: u64) {
-        if !self.same_window(key, pid, create) {
+    fn restore_window(&mut self, key: i64, fingerprint: crate::Fingerprint) {
+        let identity = self.same_window(key, &fingerprint);
+        if !identity.allows_restore() {
+            log_line("info", &format!("restore refused: {}", identity.reason()));
             self.balloon(
                 "AllBlack11",
-                "That window has closed or been replaced.",
+                "That window has closed or been replaced, so nothing was changed.",
                 false,
             );
             return;
@@ -2256,38 +2280,43 @@ impl App {
             }
         }
         self.commit(pending);
-        if self
-            .trial
-            .as_ref()
-            .is_some_and(|trial| now >= trial.deadline)
-        {
+        if self.trial.expired(now) {
             self.trial_end(false);
         }
-        if self.try_windows.is_empty() && self.trial.is_none() {
+        if self.try_windows.is_empty() && !self.trial.is_active() {
             unsafe { KillTimer(self.hwnd, TIMER_TRIAL) };
         }
         self.update_tray();
     }
 
+    /// Anything that is about to change the permanent config (tray preset, reload, enable
+    /// toggle, shell toggles, last-known-good restore) calls this first. A running trial is
+    /// reverted to the config that was in effect, so the new change starts from a known state
+    /// and the trial timer can never "revert" over it later with a stale copy.
+    fn end_trial_for_external_change(&mut self) {
+        let Some(previous) = self.trial.cancel_for_external_change() else {
+            return;
+        };
+        TRIAL_DEADLINE.store(0, Ordering::Relaxed);
+        self.config = previous;
+        self.refresh_reduce();
+        if self.try_windows.is_empty() {
+            unsafe { KillTimer(self.hwnd, TIMER_TRIAL) };
+        }
+        log_line(
+            "info",
+            "a trial look was ended because the configuration changed",
+        );
+        settings::notify_external_change();
+    }
+
     /// Run a whole config in memory. The shell, startup, legacy switch and logging keep their
     /// current values: a trial never changes the registry or loads a hook.
-    fn trial_start(&mut self, mut next: crate::Config) {
+    fn trial_start(&mut self, next: crate::Config) {
         let now = unsafe { GetTickCount64() };
-        let deadline = now + TRIAL_MS;
-        match self.trial.as_mut() {
-            Some(trial) => trial.deadline = deadline,
-            None => {
-                self.trial = Some(Trial {
-                    previous: self.config.clone(),
-                    deadline,
-                })
-            }
-        }
-        next.shell = self.config.shell.clone();
-        next.experimental_dark_legacy = self.config.experimental_dark_legacy;
-        next.legacy = self.config.legacy.clone();
-        next.logging = self.config.logging;
-        self.config = next;
+        self.trial.start(now, crate::TRIAL_MS, &self.config);
+        let deadline = self.trial.deadline().unwrap_or(0);
+        self.config = crate::constrain_trial(next, &self.config);
         self.refresh_reduce();
         self.restyle_all();
         TRIAL_DEADLINE.store(deadline, Ordering::Relaxed);
@@ -2295,16 +2324,15 @@ impl App {
     }
 
     fn trial_end(&mut self, keep: bool) {
-        let Some(trial) = self.trial.take() else {
+        if !self.trial.is_active() {
             return;
-        };
+        }
         TRIAL_DEADLINE.store(0, Ordering::Relaxed);
-        if keep {
-            // Settings writes the file next (it also owns any shell flags a preset carries),
-            // and the normal apply path then records the last known good copy.
-            drop(trial);
-        } else {
-            self.config = trial.previous;
+        // Keep: Settings has already written the file (it owns any shell flags a preset
+        // carries); the normal apply path then records the last known good copy.
+        // Revert or timeout: the machine hands back exactly the config that was running.
+        if let Some(previous) = self.trial.finish(keep) {
+            self.config = previous;
             self.refresh_reduce();
             self.restyle_all();
         }
@@ -2316,6 +2344,7 @@ impl App {
 
     /// Put the last known good config back. The broken file is kept next to it.
     fn restore_lkg(&mut self) -> bool {
+        self.end_trial_for_external_change();
         let Some(good) = cfgio::load_lkg() else {
             self.balloon(
                 "AllBlack11",
@@ -2512,6 +2541,24 @@ impl App {
         }
         self.exe_cache.insert(key, (pid, create, exe.clone()));
         Some((pid, create, exe))
+    }
+}
+
+/// A recorded original belongs to this live window. Snapshots from older versions have no
+/// fingerprint and fall back to the process check alone.
+fn snapshot_is_for(
+    snap: &StoredSnapshot,
+    pid: u32,
+    create: u64,
+    live: Option<&crate::Fingerprint>,
+) -> bool {
+    same_process(snap, pid, create) && snapshot_matches_live(snap, live)
+}
+
+fn snapshot_matches_live(snap: &StoredSnapshot, live: Option<&crate::Fingerprint>) -> bool {
+    match &snap.fingerprint {
+        Some(recorded) => crate::check_identity(recorded, live).allows_restore(),
+        None => live.is_some_and(|live| same_process(snap, live.pid, live.create)),
     }
 }
 

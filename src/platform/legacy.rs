@@ -92,6 +92,9 @@ unsafe impl Send for Live {}
 static LIVE: Mutex<Option<Live>> = Mutex::new(None);
 
 pub fn set_active(active: bool, options: &LegacyOptions) -> Result<(), String> {
+    // The x64 helper follows the user's "cover emulated x64 apps" switch exactly: off means
+    // it is told to stop and quit now, and nothing new is sent to it.
+    super::helper::set_enabled(active && options.emulated_x64);
     if active {
         ensure_loaded(options)?;
         if let Some(live) = LIVE.lock().unwrap_or_else(|err| err.into_inner()).as_mut() {
@@ -309,7 +312,7 @@ fn stop() {
         return;
     };
     write_state(live, 0);
-    super::helper::stop_all();
+    super::helper::stop_and_quit();
     unsafe {
         // Each hooked thread removes its own subclasses and restores its own controls when
         // it handles this message, because those calls are only valid on the owning thread.
@@ -379,7 +382,7 @@ pub fn hook_dll_path(name: &str) -> Option<std::path::PathBuf> {
 
 /// Stop the x64 helper and the hooks it holds, without touching native hooks.
 pub fn stop_helper() {
-    super::helper::stop_all();
+    super::helper::stop_and_quit();
 }
 
 /// Whether the packaged x64 helper and x64 hook are installed next to the exe.
