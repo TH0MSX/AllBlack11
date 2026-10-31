@@ -1,5 +1,59 @@
 # Changelog
 
+## 3.5.0-preview.1
+
+A **pre-release**. 3.0 Preview stays the latest release until the smoke test in `docs/dev/SMOKE-TEST.md` has been run on real ARM64 and x64 hardware. **Nothing new in this version has been run on Windows by the author yet**: it is built and unit-tested (110 tests) and cross-compiled for ARM64 and x64, and `docs/dev/EVIDENCE.md` lists, feature by feature, what that does and does not prove.
+
+Layers, so claims stay honest:
+- **A. Frame styling** (DWM attributes, no code in other processes): colors, corners, Mica, Mica Alt, Acrylic, tinted Acrylic (undocumented, experimental).
+- **B. Legacy layer** (opt-in, per window): recolors *classic dialogs* from inside the process. Experimental.
+- **C. App integrations**: none ship in this version. Recipes can describe a per-app look, but nothing edits another app's settings.
+
+**Legacy dark controls (layer B)**
+- One shared policy (`legacy_policy`) now decides eligibility in the exe, the hook and the helper. Only classic dialogs are ever candidates. Explorer, Control Panel (never identified by its title), MMC main frames and any dialog that embeds an Explorer or web view are skipped whole rather than half-darkened.
+- Control families get a technique each: static text, edit boxes, combo and list boxes, push buttons, check boxes, radio buttons and group boxes, list views (with header), tree views. Tab strips, rich edit, date pickers, owner-drawn controls and tooltips are left as they are and reported as partial or unsupported. Settings > Legacy shows the table.
+- Disabled and read-only states stay readable; both palettes (graphite, true black) are tested for contrast.
+- Hook v2: observes after a control has handled its own creation (the old hook could poke a list view before it existed), records original state per window, restores only on the owning thread, never unlinks from under another subclass, and pins itself so turning styling off can never unload code a window procedure still points at. "Off" means styling stopped, not module unloaded.
+- `AllBlack11-Harness.exe` (and a `-Classic` build with no visual-style manifest) puts every control family and state in one dialog, with a self-hook mode and a 50× enable/disable leak check on GDI and USER objects.
+- ARM64EC processes are detected from the executable's PE header and refused: a plain ARM64 DLL cannot load into them.
+
+**Emulated x64 on ARM64 (experimental, off by default)**
+- An x64 helper (`AllBlack11Helper.x64.exe`, with `AllBlack11Hook.x64.dll`) ships inside the ARM64 package and starts only when an eligible emulated x64 dialog appears. It talks over a first-instance, owner-only, local-only pipe, accepts four commands, re-validates every target itself, and exits when idle, when the option is turned off, or when AllBlack11 exits. Binaries are packaged, never downloaded.
+- Never run on hardware yet. See the smoke test.
+
+**Effects Studio, picker and "why didn't this work?"**
+- Settings is now six pages: Overview, Effects, Apps, Legacy, Profiles, Diagnostics.
+- Window picker (crosshair drag or a searchable list) and a report that names the executable, class, process architecture, which rule won and why, where every setting came from, the exact HRESULT of each DWM call, and what is *not* known. "Accepted" is never reported as "confirmed".
+- Frame-framework hints (Chromium, WinUI, UWP, WPF, Qt, Java, Office, Terminal, classic dialog) and a note when an app likely draws its own title bar or an opaque client that hides a backdrop.
+- **Reduce effects** drops backdrop materials on battery saver, in a remote session, or when Windows transparency is off, each switchable, with the reason shown.
+- **Focus Look**: accent border on the active window, quieter inactive windows, only on focus changes. A color a rule sets itself always wins, and dimmed text is refused if it would be hard to read.
+- **Prefer app defaults** per target. Material tint opacity is labeled as that, not as window opacity (AllBlack11 does not change whole-window opacity).
+- A **materials demonstration** window applies your look to itself with transparent, opaque and half-transparent panels, labeled as a demonstration.
+
+**Rules**
+- Rules can match by executable, window class, path (glob), package family (glob) and, optionally, window title. Titles are optional and only read when a rule asks, because they change with the document and the display language.
+- Deterministic precedence (priority, then specificity, then file order), conflict detection, and a stated reason for every outcome.
+
+**Safety and recovery**
+- Presets and recipes run as a **15-second trial** with Keep and Revert; nothing is saved until Keep, and a crash cannot persist a trial.
+- **Last known good**: `config.lkg.json` is kept; a broken `config.json` falls back to it and is left untouched. One-time `config.pre-3.5.json` backup, because a 3.0 build cannot read what 3.5 saves.
+- **Compare-before-restore**: unchecking a shell option restores the saved original only if the registry still holds the value AllBlack11 wrote; anything you or Windows changed since is left alone and logged.
+- **Recipes**: small local JSON files with a closed schema (no field can run anything, change the shell, or reach outside the look), strict validation, a diff before use, export and import. Four are built in: Black frames, Graphite, Teal glass, Low distraction.
+- **Compatibility notebook**: your own notes per app, Windows build and process architecture. Local only; nothing is sent anywhere.
+- Sanitized reports leave out window titles, your user name and your profile path unless you opt in.
+
+**Fixed**
+
+- The tray menu item identity bug (title and separators) now has a regression test on the item model.
+- `build.sh` verifies the machine type of every binary, including that the x64 helper in the ARM64 package is x64 on purpose.
+
+**Added for measuring**
+- `scripts/measure.ps1` (idle CPU, private bytes vs working set, GDI/USER handles, enable/disable growth, event burst, helper) and `AllBlack11.exe --reload`. It prints numbers and invents none.
+
+**Known limits**
+- Custom-drawn Settings controls are not exposed to screen readers yet. Keyboard access works.
+- Windows Terminal, Chromium/Electron and WinUI apps keep their own opaque client areas; backdrops will not show through them and some ignore caption colors. The inspector says so.
+
 ## 3.0.0-preview.2
 
 The current release. It is built on 1.2.0 and rebuilds the Settings window, the tray menu, and the installer. "Preview" describes the feature set, which is still being refined; it is the version to use today and is published as the latest release.

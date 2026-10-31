@@ -17,7 +17,7 @@
 </div>
 
 > [!NOTE]
-> **3.0 Preview is the current release.** It adds a real Setup.exe, a rebuilt Settings window with a live preview, presets, and Restart Explorer. See [what changed](CHANGELOG.md). Made by [@TH0MSX](https://github.com/TH0MSX) with AI assistance (Cursor, and Claude for 3.0), tested daily on real ARM64 hardware.
+> **Latest release: 3.0 Preview.** A **3.5 Preview pre-release** is available for testing: much better legacy-dialog dark mode, a window picker that explains what AllBlack11 did and why, recipes, Focus Look, and a recoverable trial look. It has been built and unit-tested, but **not yet run on Windows hardware**, so it stays a pre-release. See [what is verified](docs/dev/EVIDENCE.md) and the [smoke test](docs/dev/SMOKE-TEST.md). Made by [@TH0MSX](https://github.com/TH0MSX) with AI assistance (Cursor, and Claude), tested daily on real ARM64 hardware.
 
 ## 🌙 Why
 
@@ -76,6 +76,27 @@ Windows 11 dark mode still paints gray title bars, a gray taskbar, and a tinted 
 - 🪶 **Quiet:** event-driven, no polling loop while the PC is idle.
 - 🔁 **Undo everywhere:** original frame attributes go back on Exit, Disable, or Reset. Shell tweaks are HKCU only, snapshotted, and undone from the same menu or the uninstaller.
 - 🧪 **Optional and off by default:** **Dark legacy windows**. A same-architecture hook DLL recolors classic dialogs such as Run. See [Safety](#️-safety-and-uninstall).
+
+## 🧪 3.5 Preview (pre-release)
+
+AllBlack11 works in three honest layers. Knowing which one a window is in explains most "why didn't it change?" questions.
+
+| Layer | What it does | Reaches into other apps? |
+| --- | --- | --- |
+| **A. Frame styling** | Title bar, text and border colors, corners, Mica, Mica Alt, Acrylic and experimental tinted Acrylic, set through Windows' own window-frame attributes. | No |
+| **B. Legacy layer** (opt-in) | Recolors the controls of *classic dialogs* (Run, old installers, property pages) from inside the app: labels, edit boxes, buttons, check boxes, combo and list boxes, list views, tree views. | Yes, per dialog, only same-CPU, non-elevated, never games or shell |
+| **C. App integrations** | None ship yet. | No |
+
+What 3.5 adds:
+
+- **Legacy dark mode that holds up.** Each control family has its own technique, states stay readable, controls that cannot be darkened safely are left alone and reported, and Explorer, Control Panel and dialogs with embedded web or Explorer views are never touched. A built-in **control harness** lets you check it without relying on another app.
+- **Window picker and inspector.** Drag a crosshair onto any window to see its executable, class, CPU type, which rule applied and why, where each setting came from, and what Windows answered. The report says "accepted by Windows; appearance not verified" and never claims more.
+- **Effects Studio.** Per-app looks, Focus Look, Reduce effects on battery saver or remote sessions, and a demonstration window that shows how materials behave.
+- **Rules that explain themselves.** Match by executable, class, path, package or (optionally) title, with clear precedence and conflict warnings.
+- **Safe to experiment.** Presets and recipes run as a 15-second trial; a broken config falls back to the last known good one; shell restores skip anything you changed yourself.
+- **Experimental on ARM64:** an on-demand x64 helper for emulated x64 dialogs. It has not been run on hardware yet.
+
+Honest limits: Chromium, Electron, WinUI and many modern apps draw their own opaque client area and often their own title bar, so a backdrop cannot show through them and caption colors may not apply. AllBlack11 does not change whole-window opacity, and no feature here is universal. Screen readers cannot yet read the custom-drawn Settings controls (keyboard access works).
 
 ## ⬇️ Download
 

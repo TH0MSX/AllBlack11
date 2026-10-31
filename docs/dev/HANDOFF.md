@@ -5,6 +5,7 @@ Keep this file current. It exists so the work survives a context reset.
 ## State
 
 - Baseline: `7b65598` (3.0.0-preview.2 plus two docs/banner merges). Tag `v3.0.0-preview.2`.
+- Crates: root exe, `hook/` (DLL, built for both CPUs), `setup/` (installer), `harness/` (test dialog, two manifests), `helper/` (x64-only helper shipped in the ARM64 package).
 - Branch: `claude/peaceful-archimedes-ppfhwb`. Target version: `3.5.0-preview.1` (prerelease only).
 - Toolchain: Rust stable, `cargo-xwin` for ARM64/x64 Windows cross-builds from Linux. `./build.sh [arm64|x64|all]`.
 - Nothing can be *run* in this environment. Every Windows behavior is "cross-compiled" at best.
@@ -34,7 +35,7 @@ See the task list in the PR description / `docs/dev/EVIDENCE.md`. Update the che
 
 ## Next steps (edit as you go)
 
-- M2: explain engine, window picker/inspector, Effects Studio pages in Settings.
-- M3: x64 helper (`helper/` crate), pipe IPC, packaging in the ARM64 zip.
-- M4: trial preview, last-known-good, recipes, compatibility notebook, focus look, ownership-aware restore.
-- M5: version bump, docs, smoke checklist, release as prerelease only.
+- All milestones are implemented and cross-compiled. Nothing 3.5 has run on Windows.
+- Run `docs/dev/SMOKE-TEST.md` on ARM64 (native and the x64 build under emulation) and native x64.
+- Fix what it finds, update `EVIDENCE.md`, then decide whether 3.5 can leave pre-release.
+- Known gaps: UI Automation for the custom-drawn Settings; whole-window opacity not offered.
