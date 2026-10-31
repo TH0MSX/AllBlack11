@@ -1,0 +1,34 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          components: rustfmt, clippy
+          targets: aarch64-pc-windows-msvc,x86_64-pc-windows-msvc
+      - name: Format
+        run: |
+          cargo fmt --check
+          (cd hook && cargo fmt --check)
+          (cd setup && cargo fmt --check)
+          (cd harness && cargo fmt --check)
+      - name: Unit tests (host)
+        run: cargo test --lib
+      - name: Type-check every Windows crate for both CPUs
+        run: |
+          for target in aarch64-pc-windows-msvc x86_64-pc-windows-msvc; do
+            cargo check --target $target
+            (cd hook && cargo check --target $target)
+            (cd harness && cargo check --target $target)
+            (cd harness && cargo check --target $target --features classic)
+          done
+      - name: Clippy (errors only)
+        run: cargo clippy --target aarch64-pc-windows-msvc -- -A warnings

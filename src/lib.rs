@@ -8,6 +8,7 @@ mod inject;
 mod legacy_policy;
 mod policy;
 mod presets;
+mod rules;
 mod shell;
 mod snapshot;
 mod target;
@@ -29,6 +30,10 @@ pub use policy::{
     decide, is_borderless_fullscreen, rect_covers_monitor, Decision, WindowFacts, WS_CHILD,
     WS_DLGFRAME, WS_EX_LAYERED, WS_EX_NOREDIRECTIONBITMAP, WS_EX_TOOLWINDOW, WS_EX_TRANSPARENT,
     WS_POPUP,
+};
+pub use rules::{
+    describe_conflict, find_conflicts, glob_match, rank, resolve, why_it_won, Conflict, ConflictKind,
+    Criterion, Resolved, RuleMatch, Source, WindowIdentity,
 };
 pub use presets::{apply as apply_preset, Preset, PRESETS};
 pub use shell::{blacken_shell_slots, ShellBackup, SHELL_SLOT_BYTES};

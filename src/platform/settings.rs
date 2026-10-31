@@ -1038,17 +1038,13 @@ impl Ui {
                     .config
                     .rules
                     .iter()
-                    .position(|rule| rule.process.eq_ignore_ascii_case(&name))
+                    .position(|rule| rule.process.eq_ignore_ascii_case(&name) && rule.class.is_none() && rule.path.is_none() && rule.package.is_none() && rule.title.is_none())
                 {
                     self.rule = Some(index);
                 } else {
-                    self.config.rules.push(Rule {
-                        process: name,
-                        style: PartialStyle {
-                            enabled: Some(true),
-                            ..PartialStyle::default()
-                        },
-                    });
+                    let mut rule = Rule::for_process(&name);
+                    rule.style.enabled = Some(true);
+                    self.config.rules.push(rule);
                     self.rule = Some(self.config.rules.len() - 1);
                 }
                 set_text(self.edits.rule, "");
@@ -1726,7 +1722,7 @@ fn paint_row(c: &Canvas, ui: &Ui, row: &Laid, top: i32, lw: i32) {
             top,
             row.h,
             lw,
-            ui.config.rules.iter().map(|rule| rule.process.as_str()),
+            ui.config.rules.iter().map(|rule| rule.label()),
             ui.rule,
             "No rules yet.",
         ),
@@ -1736,7 +1732,7 @@ fn paint_row(c: &Canvas, ui: &Ui, row: &Laid, top: i32, lw: i32) {
             top,
             row.h,
             lw,
-            ui.config.exclude.iter().map(|item| item.as_str()),
+            ui.config.exclude.iter().cloned(),
             ui.exclude_sel,
             "Nothing excluded.",
         ),
@@ -1914,13 +1910,13 @@ fn draw_swatch(c: &Canvas, x: i32, y: i32, color: Color, accent: u32) {
 }
 
 #[allow(clippy::too_many_arguments)]
-fn draw_list<'a>(
+fn draw_list(
     c: &Canvas,
     ui: &Ui,
     top: i32,
     height: i32,
     lw: i32,
-    items: impl Iterator<Item = &'a str>,
+    items: impl Iterator<Item = String>,
     selected: Option<usize>,
     empty: &str,
 ) {
@@ -1945,7 +1941,7 @@ fn draw_list<'a>(
             line_top,
             lw - MARGIN - PAD,
             line_top + LIST_LINE,
-            item,
+            &item,
             TEXT,
             ui.fonts.body,
             DT_LEFT | DT_VCENTER | DT_SINGLELINE | DT_END_ELLIPSIS,

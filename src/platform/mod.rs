@@ -17,6 +17,7 @@ mod icon;
 mod legacy;
 mod menu;
 mod metrics;
+mod procinfo;
 mod registry;
 mod settings;
 mod shellwin;

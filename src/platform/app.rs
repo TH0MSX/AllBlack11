@@ -148,6 +148,8 @@ struct App {
     originals: HashMap<i64, StoredSnapshot>,
     hold: HashSet<i64>,
     exe_cache: HashMap<i64, (u32, u64, String)>,
+    /// (pid, creation time) -> (path, package family). Filled only for rules that need them.
+    path_cache: HashMap<(u32, u64), (String, String)>,
     last_apply: HashMap<i64, u64>,
     due: Vec<Due>,
     seen_failures: HashSet<u32>,
@@ -473,6 +475,7 @@ fn run() -> Result<(), String> {
         originals: load_snapshots(),
         hold: HashSet::new(),
         exe_cache: HashMap::new(),
+        path_cache: HashMap::new(),
         last_apply: HashMap::new(),
         due: Vec::new(),
         seen_failures: HashSet::new(),
@@ -1543,7 +1546,34 @@ impl App {
         if self.high_contrast || !self.config.enabled {
             return None;
         }
-        let facts = collect_facts(hwnd, &exe, pid);
+        let needs_path = self
+            .config
+            .rules
+            .iter()
+            .any(|rule| rule.path.is_some() || rule.package.is_some());
+        let needs_package = self.config.rules.iter().any(|rule| rule.package.is_some());
+        let (path, package) = if needs_path {
+            let key = (pid, create);
+            if self.path_cache.len() > 512 {
+                self.path_cache.clear();
+            }
+            self.path_cache
+                .entry(key)
+                .or_insert_with(|| super::procinfo::path_and_package(pid, needs_package))
+                .clone()
+        } else {
+            (String::new(), String::new())
+        };
+        let title = self
+            .config
+            .rules
+            .iter()
+            .any(|rule| rule.title.is_some())
+            .then(|| super::procinfo::window_title(hwnd));
+        let mut facts = collect_facts(hwnd, &exe, pid);
+        facts.path = path;
+        facts.package = package;
+        facts.title = title;
         match decide(&facts, &self.config, self.accent_bgr) {
             Decision::Skip(_) => {
                 if self.originals.contains_key(&key) {
@@ -2061,6 +2091,9 @@ fn collect_facts(hwnd: HWND, exe: &str, pid: u32) -> WindowFacts {
             minimized: IsIconic(hwnd) != 0,
             covers_monitor: covers_monitor(hwnd, &rect),
             pid_known: true,
+            path: String::new(),
+            package: String::new(),
+            title: None,
         }
     }
 }

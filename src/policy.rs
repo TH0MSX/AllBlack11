@@ -81,6 +81,10 @@ pub struct WindowFacts {
     pub minimized: bool,
     pub covers_monitor: bool,
     pub pid_known: bool,
+    pub path: String,
+    pub package: String,
+    /// Only filled when some rule matches on titles.
+    pub title: Option<String>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -142,7 +146,14 @@ pub fn decide(facts: &WindowFacts, config: &Config, accent_bgr: u32) -> Decision
     if facts.exstyle & WS_EX_NOREDIRECTIONBITMAP != 0 && facts.style & WS_DLGFRAME == 0 {
         return Decision::Skip("borderless-composition");
     }
-    match resolve_style(config, &facts.exe, accent_bgr) {
+    let identity = crate::rules::WindowIdentity {
+        exe: &facts.exe,
+        class: &facts.class_name,
+        path: &facts.path,
+        package: &facts.package,
+        title: facts.title.as_deref(),
+    };
+    match resolve_style(config, &identity, accent_bgr) {
         Some(style) => Decision::Apply(style),
         None => Decision::Skip("rule"),
     }
@@ -185,6 +196,9 @@ pub fn normal_notepad() -> WindowFacts {
         minimized: false,
         covers_monitor: false,
         pid_known: true,
+        path: String::new(),
+        package: String::new(),
+        title: None,
     }
 }
 
@@ -320,13 +334,9 @@ mod tests {
     #[test]
     fn respects_rule_and_global_disable() {
         let mut config = cfg();
-        config.rules.push(crate::config::Rule {
-            process: "notepad.exe".into(),
-            style: crate::config::PartialStyle {
-                enabled: Some(false),
-                ..crate::config::PartialStyle::default()
-            },
-        });
+        let mut rule = crate::config::Rule::for_process("notepad.exe");
+        rule.style.enabled = Some(false);
+        config.rules.push(rule);
         assert!(matches!(
             decide(&normal_notepad(), &config, 0),
             Decision::Skip("rule")
