@@ -56,6 +56,22 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       - uses: dtolnay/rust-toolchain@stable
+      # The root crate's build script compiles the icon and manifest with llvm-rc and
+      # llvm-cvtres. The ARM64 runner image has them on PATH; the x64 image may not.
+      - name: LLVM resource tools on PATH
+        shell: pwsh
+        run: |
+          if (-not (Get-Command llvm-cvtres -ErrorAction SilentlyContinue)) {
+            "C:\Program Files\LLVM\bin" | Out-File -FilePath $env:GITHUB_PATH -Encoding utf8 -Append
+            $env:PATH += ";C:\Program Files\LLVM\bin"
+            if (-not (Get-Command llvm-cvtres -ErrorAction SilentlyContinue)) {
+              choco install llvm --no-progress -y --force
+              "C:\Program Files\LLVM\bin" | Out-File -FilePath $env:GITHUB_PATH -Encoding utf8 -Append
+              $env:PATH += ";C:\Program Files\LLVM\bin"
+            }
+          }
+          llvm-rc /? | Select-Object -First 1
+          llvm-cvtres --version | Select-Object -First 2
       - name: Unit tests (native Windows)
         run: cargo test --lib
       - name: Build every crate natively
