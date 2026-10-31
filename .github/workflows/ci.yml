@@ -38,50 +38,29 @@ jobs:
       - name: Clippy (errors only)
         run: cargo clippy --target aarch64-pc-windows-msvc -- -A warnings
 
-  # Real Windows runners. These are the only jobs that can compile and run the Windows-only
-  # code natively; the Linux job above only cross-compiles it. A pass here still does not
-  # exercise the tray, Settings window or hooks: nothing in CI does. That is the hardware
-  # smoke test's job.
-  windows:
-    strategy:
-      fail-fast: false
-      matrix:
-        include:
-          - runner: windows-latest
-            label: x64
-          - runner: windows-11-arm
-            label: arm64
-    name: windows-${{ matrix.label }}
-    runs-on: ${{ matrix.runner }}
+  # A real Windows runner. This is the only job that compiles and tests the Windows-only code
+  # natively; the Linux job above only cross-compiles it. A pass here still does not exercise
+  # the tray, Settings window, hooks or helper: nothing in CI does. That is the hardware smoke
+  # test's job.
+  #
+  # Only ARM64 runs natively. The build script needs llvm-rc and llvm-cvtres; the
+  # windows-11-arm image has them and windows-latest (x64) does not (LLVM from Chocolatey ships
+  # no llvm-cvtres), so x64 is covered by the cross-compile in the job above instead.
+  windows-arm64:
+    runs-on: windows-11-arm
     steps:
       - uses: actions/checkout@v4
       - uses: dtolnay/rust-toolchain@stable
-      # The root crate's build script compiles the icon and manifest with llvm-rc and
-      # llvm-cvtres. The ARM64 runner image has them on PATH; the x64 image may not.
-      - name: LLVM resource tools on PATH
+      - name: LLVM resource tools are present
         shell: pwsh
         run: |
-          if (-not (Get-Command llvm-cvtres -ErrorAction SilentlyContinue)) {
-            "C:\Program Files\LLVM\bin" | Out-File -FilePath $env:GITHUB_PATH -Encoding utf8 -Append
-            $env:PATH += ";C:\Program Files\LLVM\bin"
-            if (-not (Get-Command llvm-cvtres -ErrorAction SilentlyContinue)) {
-              choco install llvm --no-progress -y --force
-              "C:\Program Files\LLVM\bin" | Out-File -FilePath $env:GITHUB_PATH -Encoding utf8 -Append
-              $env:PATH += ";C:\Program Files\LLVM\bin"
-            }
-          }
-          llvm-rc /? | Select-Object -First 1
-          llvm-cvtres --version | Select-Object -First 2
-      - name: Unit tests (native Windows)
+          Get-Command llvm-rc, llvm-cvtres | Format-Table Name, Source
+      - name: Unit tests (native Windows ARM64)
         run: cargo test --lib
-      - name: Build every crate natively
-        shell: bash
+      - name: Build every ARM64 crate natively
         run: |
           cargo build
-          (cd hook && cargo build)
-          (cd harness && cargo build)
-      - name: Build the x64 helper (it ships x64-only)
-        if: matrix.label == 'x64'
-        run: cd helper && cargo build
-      - name: Windows-only unit tests compile
+          cd hook; cargo build; cd ..
+          cd harness; cargo build; cd ..
+      - name: Windows-only code compiles under test
         run: cargo test --no-run

@@ -15,9 +15,10 @@ What was actually done to each feature. Categories, strongest last:
 **No 3.5 or 3.6 feature has been run on Windows yet.** The environment this was written in has no
 Windows machine. "Runtime ARM64" below means only what the owner ran from the 3.0 Preview.
 Every row that says "not tested" needs the smoke test in `SMOKE-TEST.md`. CI also builds and
-unit-tests on `windows-latest` (x64) and `windows-11-arm` (ARM64) runners; that proves the
-Windows-only code compiles and the pure tests pass there, and nothing about tray, Settings,
-hooks or the helper at runtime.
+unit-tests on a native `windows-11-arm` (ARM64) runner; that proves the Windows-only code
+compiles and the pure tests pass there, and nothing about tray, Settings, hooks or the helper
+at runtime. x64 is only cross-compiled (the `windows-latest` image has no `llvm-cvtres`, which
+the build script needs).
 
 | Area | Unit-tested | Cross-compiled | Runtime ARM64 | Runtime x64-emu | Runtime x64 |
 | --- | --- | --- | --- | --- | --- |
