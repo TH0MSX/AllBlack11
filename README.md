@@ -25,6 +25,9 @@ Windows 11 dark mode still paints gray title bars, a gray taskbar and a tinted S
 
 > [!IMPORTANT]
 > **Use 3.8 Preview.** It replaces every older version and keeps your settings. It is a **pre-release**, and this is how far it has been checked: the ARM64 build runs on its author's Windows 11 ARM64 PC (the screenshots on this page are from it); the x64 build is built and unit-tested on a real Windows x64 runner but has **not been run on an x64 PC**; screen readers, the updater against real releases and wallpaper apply have not been tried on hardware. Details: [what is verified](docs/dev/EVIDENCE.md). The binaries are unsigned, so SmartScreen may warn.
+> [! ❤️ SUPPORT]
+> **AllBlack11 is free, MIT-licensed and has no locked features, no ads and no telemetry. If it saves you time and you want to say thanks, a tip is welcome through [PayPal](https://paypal.me/peplinski00). It is never required, and bug reports, screenshots and test results from your own PC help just as much.**
+
 
 ### Kept up to date, in the open
 
@@ -93,10 +96,6 @@ A new Settings shell with global search; an updater; compatibility packs (experi
 | Screen readers (Narrator, NVDA) | **Unverified.** Names and roles are in place and self-tested, not heard. |
 
 `docs/dev/EVIDENCE.md` says, feature by feature, what was run and what was only built; `docs/dev/SMOKE-TEST.md` is the checklist.
-
-## ❤️ Support
-
-AllBlack11 is free, MIT-licensed and has no locked features, no ads and no telemetry. If it saves you time and you want to say thanks, a tip is welcome through [PayPal](https://paypal.me/peplinski00). It is never required, and bug reports, screenshots and test results from your own PC help just as much.
 
 ## Install
 
