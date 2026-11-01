@@ -14,6 +14,12 @@ stock images or scraped art, and the output is deterministic: the same script gi
 | `dot-matrix` | Dot matrix | A fine dot grid fading from the lower left |
 | `ridges` | Ridges | Five black ridge lines with a thin moonlit rim |
 
+Regenerating on the author's machine reproduced `manifest.json` (every SHA-256) and the previews
+exactly. PNG bytes depend on the zlib in the Pillow build, so a different Pillow may give different
+bytes with the same pixels; the digests in `manifest.json` are what the app checks, so attach the
+files produced by `--check` on the machine that wrote the manifest, or regenerate the manifest
+there and commit it.
+
 ## Design rules (checked on every run)
 
 - A true-black foundation: at least 70% of pixels are exactly black (an OLED panel leaves them off).

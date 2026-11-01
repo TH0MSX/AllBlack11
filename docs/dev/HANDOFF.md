@@ -5,7 +5,7 @@ Keep this file current. It exists so the work survives a context reset.
 ## State (3.8)
 
 - **Branch `claude/next-3.8`**, from the released `v3.7.0-preview.1` (merged to main as PR #6 plus the release commits). Version **3.8.0-preview.1**. Not merged, not tagged, not published; no pull request.
-- What is in it: updater (A), compatibility packs (B), exclusion manager and edit-box labels (C4, C6), wallpaper gallery (D). Status per item: `docs/dev/INVENTORY-3.8.md`. Windows checklist: `SMOKE-TEST.md` section 3.8. Evidence: `EVIDENCE.md` "3.8.0-preview.1 additions".
+- What is in it: updater (A), compatibility packs (B), Recipe Remixer, exclusion manager and edit-box labels (C3, C4, C6), wallpaper gallery (D). CI (check, windows-arm64, windows-x64) was green at `a555e02`. Status per item: `docs/dev/INVENTORY-3.8.md`. Windows checklist: `SMOKE-TEST.md` section 3.8. Evidence: `EVIDENCE.md` "3.8.0-preview.1 additions".
 - Release steps for the owner (the tag push and workflow dispatch are blocked from the assistant's sandbox): see `RELEASE-POLICY.md`. Publish as a **pre-release**; attach the eight wallpaper PNGs from `python3 assets/wallpapers/generate.py` (`assets/wallpapers/README.md`) to the same release; also tick "Set as a pre-release" on `v3.7.0-preview.1`, which was published without the flag.
 - README still points at 3.7 (the recommended download) on purpose; change it when 3.8 is published.
 - Wine harness: `scripts/ui-drive.sh PAGE ...` where PAGE is the navigation index (0 Home, 1 Fix, 2 Appearance, 3 Scenes, 4 Rules, 5 Safety, 6 Diagnostics, 7 Wallpapers, 8 Help); `rootshot PATH` captures the whole screen (for the wallpaper preview window).

@@ -2,7 +2,7 @@
 
 ## 3.8.0-preview.1
 
-A **pre-release** on top of 3.7.0-preview.1: an in-app updater, two compatibility packs, an exclusion manager, labels for the Settings text boxes, and a wallpaper gallery. **None of the new Windows-facing behavior has been run on Windows yet** (the updater against real GitHub, the download and install handoff, the pack behavior on the Store and Calculator, the wallpaper service, screen-reader names). It is unit-tested on Linux (333 tests), cross-compiled for ARM64 and x64, and rendered under Wine for layout (Wine is not Windows). `docs/dev/INVENTORY-3.8.md` lists what exists and what was left undone; `docs/dev/SMOKE-TEST.md` section 3.8 is the hardware pass, in order.
+A **pre-release** on top of 3.7.0-preview.1: an in-app updater, two compatibility packs, an exclusion manager, labels for the Settings text boxes, and a wallpaper gallery. **None of the new Windows-facing behavior has been run on Windows yet** (the updater against real GitHub, the download and install handoff, the pack behavior on the Store and Calculator, the wallpaper service, screen-reader names). It is unit-tested on Linux (337 tests, also run natively on Windows ARM64 and x64 CI runners), cross-compiled for ARM64 and x64, and rendered under Wine for layout (Wine is not Windows). `docs/dev/INVENTORY-3.8.md` lists what exists and what was left undone; `docs/dev/SMOKE-TEST.md` section 3.8 is the hardware pass, in order.
 
 **Updater (Settings & help > Updates)**
 - Asks GitHub's releases API over HTTPS (this repository only) whether a newer release exists: on the button, or once a day if you turn that on (off by default). It never updates by itself and sends no information about you.
