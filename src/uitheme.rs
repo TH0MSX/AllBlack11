@@ -111,8 +111,8 @@ pub fn palette(mode: Mode, sys: &SysColors) -> Palette {
     }
 }
 
-// True black base (an OLED-first product choice; Windows' own dark base is #202020, recorded in
-// UI-GUIDELINES.md). Surfaces step up in lightness the more they matter, as Microsoft's color
+// True black base: an OLED-first product choice, recorded as a deviation in UI-GUIDELINES.md
+// (Windows' own dark surfaces are dark gray, not black). Surfaces step up in lightness the more they matter, as Microsoft's color
 // guidance says: "darker colors indicate background surfaces of less importance".
 const DARK: Palette = Palette {
     bg: rgb(0x00, 0x00, 0x00),
@@ -299,6 +299,7 @@ pub const TITLE: TextStyle = TextStyle {
     face: Face::Display,
 };
 
+#[cfg(test)]
 pub const RAMP: [TextStyle; 5] = [CAPTION, BODY, BODY_STRONG, SUBTITLE, TITLE];
 
 /// Font family names to try, best first. The platform picks the first one installed.
@@ -319,7 +320,8 @@ pub const ICON_FONTS: [&str; 2] = ["Segoe Fluent Icons", "Segoe MDL2 Assets"];
 // ---------------------------------------------------------------------------
 
 pub mod metrics {
-    /// Layout moves in 4 px steps (Microsoft: "Layout metrics and spacing").
+    /// Layout moves in 4 px steps (Microsoft, "Screen sizes and breakpoints": sizes, margins and
+    /// positions in multiples of 4 epx).
     pub const UNIT: i32 = 4;
     /// In-page controls and cards: 4 px. Overlays (dialogs, flyouts, teaching tips): 8 px.
     pub const CONTROL_RADIUS: i32 = 4;
@@ -334,8 +336,8 @@ pub mod metrics {
     pub const NAV_TEXT_ONLY: i32 = 168;
     /// Below this client width the navigation pane collapses to icons.
     pub const NAV_BREAKPOINT: i32 = 720;
-    /// A comfortable minimum target (Microsoft recommends 40 px for touch; mouse targets may be
-    /// smaller but never below 24).
+    /// AllBlack11's own targets: comfortable 40, never below 24 for a pointer. These are product
+    /// choices; the Microsoft pages read for this pass state no pixel minimum.
     pub const TARGET: i32 = 40;
     pub const MIN_TARGET: i32 = 24;
 }

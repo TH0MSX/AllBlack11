@@ -25,6 +25,8 @@ enum Do {
     Look(usize),
     Rule(usize),
     Exclude(usize),
+    TrialKeep,
+    TrialRevert,
 }
 
 struct Built {
@@ -431,6 +433,42 @@ impl Ui {
                 }
             }
         }
+        // The trial bar: what is being tried, and the two ways to answer it. Keep and Revert come
+        // after the page, matching the Tab order.
+        if self.trial_active() {
+            let (keep, revert) = pages::trial_pills(lw, self.status_top());
+            let message = self.trial_message();
+            b.push(
+                "trial:message",
+                Role::Text,
+                &message,
+                "",
+                b.screen(MARGIN, keep.1, lw - MARGIN - 200, keep.3),
+                false,
+                Do::Nothing,
+                None,
+            );
+            b.push(
+                "trial:keep",
+                Role::Button,
+                "Keep",
+                "Saves the look being tried.",
+                b.screen(keep.0, keep.1, keep.2, keep.3),
+                true,
+                Do::TrialKeep,
+                None,
+            );
+            b.push(
+                "trial:revert",
+                Role::Button,
+                "Revert",
+                "Puts back the look from before the trial.",
+                b.screen(revert.0, revert.1, revert.2, revert.3),
+                true,
+                Do::TrialRevert,
+                None,
+            );
+        }
         // The status message, so a screen reader can read what just happened.
         let status = if self.status.is_empty() {
             "Changes apply as you make them."
@@ -466,6 +504,13 @@ impl Ui {
 
     /// Position in `built` of the element holding keyboard focus, if any.
     fn uia_focused_index(&self, built: &[Built]) -> Option<usize> {
+        if let Some(button) = self.trial_focus() {
+            return built.iter().position(|b| match b.action {
+                Do::TrialKeep => button == 0,
+                Do::TrialRevert => button == 1,
+                _ => false,
+            });
+        }
         if self.ext.nav_focus {
             return built
                 .iter()
@@ -523,7 +568,7 @@ impl Ui {
         };
         let action = found.action;
         // While a trial runs, the same rule as a click: finish it first.
-        if self.trial_active() && !matches!(action, Do::Nothing) {
+        if self.trial_active() && !matches!(action, Do::Nothing | Do::TrialKeep | Do::TrialRevert) {
             self.status = "Keep or revert the trial look first.".into();
             return false;
         }
@@ -542,6 +587,8 @@ impl Ui {
             Do::Look(index) => self.click_look_list(index as i32),
             Do::Rule(index) => self.pick_rule(index as i32),
             Do::Exclude(index) => self.pick_exclude(index as i32),
+            Do::TrialKeep => self.trial_keep(),
+            Do::TrialRevert => self.trial_revert(),
         }
         self.relayout(hwnd);
         true
@@ -557,6 +604,11 @@ impl Ui {
                 self.ext.nav_focus = true;
                 self.ext.focus = None;
                 self.set_page(hwnd, page);
+            }
+            (Do::TrialKeep | Do::TrialRevert, _) => {
+                self.ext.nav_focus = false;
+                self.ext.focus = None;
+                self.ext.trial_focus = Some(u8::from(matches!(found.action, Do::TrialRevert)));
             }
             (_, Some((row_index, sub))) => {
                 let Some(ordinal) = self

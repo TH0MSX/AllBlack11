@@ -184,9 +184,7 @@ pub fn icon_font(effective_dpi: u32, size: i32) -> HFONT {
 pub mod glyph {
     pub const HOME: char = '\u{E80F}';
     pub const SETTINGS: char = '\u{E713}';
-    pub const PAUSE: char = '\u{E769}';
     pub const INFO: char = '\u{E946}';
-    pub const HELP: char = '\u{E897}';
     pub const COLOR: char = '\u{E790}';
     pub const SEARCH: char = '\u{E721}';
     pub const SHIELD: char = '\u{EA18}';

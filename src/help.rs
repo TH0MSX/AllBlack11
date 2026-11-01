@@ -13,8 +13,10 @@ pub const APPEARANCE: usize = 2;
 pub const SCENES: usize = 3;
 pub const RULES: usize = 4;
 pub const SAFETY: usize = 5;
+#[cfg(test)]
 pub const DIAGNOSTICS: usize = 6;
 pub const HELP: usize = 7;
+#[cfg(test)]
 pub const PAGE_COUNT: usize = 8;
 
 /// A control a step points at. The UI outlines it; it stays fully usable.

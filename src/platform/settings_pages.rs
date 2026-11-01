@@ -41,6 +41,12 @@ pub struct Ext {
     pub focus: Option<usize>,
     pub focus_sub: usize,
     pub trial_name: String,
+    /// Keyboard focus on the trial bar while a trial runs: 0 Keep, 1 Revert.
+    pub trial_focus: Option<u8>,
+    /// A screen reader was told that focus is on the trial bar.
+    pub trial_announced: bool,
+    /// Whether the last layout had the trial bar, so it can be redone when that changes.
+    pub trial_shown: bool,
     pub loaded: bool,
     /// The navigation pane holds keyboard focus (arrow keys move between destinations).
     pub nav_focus: bool,
@@ -78,7 +84,7 @@ impl Ext {
 
 impl Page {
     /// Navigation order. Settings and help sits last, apart from the others, as the footer
-    /// item (Microsoft: the settings destination goes at the bottom of a navigation pane).
+    /// item, as NavigationView does with its optional settings item.
     pub const ALL: [Page; 8] = [
         Page::Home,
         Page::Fix,
@@ -163,7 +169,7 @@ fn page_title(page: Page) -> Row {
     Row::PageTitle(title, description.to_string())
 }
 
-struct Builder {
+pub struct Builder {
     y: i32,
     out: Vec<Laid>,
 }
@@ -1031,30 +1037,28 @@ pub fn paint_nav(c: &Canvas, ui: &Ui) {
 
 pub fn paint_trial_bar(c: &Canvas, ui: &Ui, lw: i32) {
     let top = ui.status_top();
-    let now = unsafe { windows_sys::Win32::System::SystemInformation::GetTickCount64() };
-    let deadline = TRIAL_DEADLINE.load(Ordering::Relaxed);
-    let seconds = deadline.saturating_sub(now).div_ceil(1000);
     c.text(
         MARGIN,
         top,
         lw - MARGIN - 200,
         top + STATUS_H,
-        &format!(
-            "Trying “{}”. It reverts in {seconds} s unless you keep it.",
-            ui.ext.trial_name
-        ),
+        &ui.trial_message(),
         th().text,
         ui.fonts.small,
         DT_LEFT | DT_VCENTER | DT_SINGLELINE | DT_END_ELLIPSIS,
     );
     let (keep, revert) = trial_pills(lw, top);
+    let focus = ui.trial_focus();
     controls::draw_button(
         c,
         ui,
         keep,
         "Keep",
         controls::Emphasis::Primary,
-        controls::State::default(),
+        controls::State {
+            focused: focus == Some(0),
+            ..controls::State::default()
+        },
     );
     controls::draw_button(
         c,
@@ -1062,13 +1066,34 @@ pub fn paint_trial_bar(c: &Canvas, ui: &Ui, lw: i32) {
         revert,
         "Revert",
         controls::Emphasis::Standard,
-        controls::State::default(),
+        controls::State {
+            focused: focus == Some(1),
+            ..controls::State::default()
+        },
     );
 }
 
 impl Ui {
     pub fn trial_active(&self) -> bool {
         TRIAL_DEADLINE.load(Ordering::Relaxed) != 0
+    }
+
+    /// What the trial bar says, for painting and for screen readers.
+    pub fn trial_message(&self) -> String {
+        let now = unsafe { windows_sys::Win32::System::SystemInformation::GetTickCount64() };
+        let deadline = TRIAL_DEADLINE.load(Ordering::Relaxed);
+        let seconds = deadline.saturating_sub(now).div_ceil(1000);
+        format!(
+            "Trying “{}”. It reverts in {seconds} s unless you keep it.",
+            self.ext.trial_name
+        )
+    }
+
+    /// The trial bar button with keyboard focus (0 Keep, 1 Revert), only while a trial runs.
+    pub fn trial_focus(&self) -> Option<u8> {
+        self.trial_active()
+            .then_some(self.ext.trial_focus)
+            .flatten()
     }
 
     /// Clicks on the page tabs and the Keep/Revert buttons. True when the click was ours.
@@ -1130,9 +1155,16 @@ impl Ui {
         self.post_command();
         self.config = next;
         self.ext.trial_name = name.to_string();
+        // Someone using the keyboard lands on Keep, so the choice is one key press away.
+        if self.ext.focus.is_some() || self.ext.nav_focus {
+            self.ext.trial_focus = Some(0);
+            self.ext.focus = None;
+            self.ext.nav_focus = false;
+        }
+        self.ext.trial_announced = false;
         self.status = "Trying a new look. Nothing is saved until you press Keep.".into();
         unsafe {
-            windows_sys::Win32::UI::WindowsAndMessaging::SetTimer(self.hwnd, TIMER_UI, 500, None)
+            windows_sys::Win32::UI::WindowsAndMessaging::SetTimer(self.hwnd, TIMER_UI, 250, None)
         };
     }
 
@@ -1148,6 +1180,7 @@ impl Ui {
                 // here too, so later clicks are not blocked. Posting "applied" makes the host
                 // read the file back, which also applies any shell part the trial skipped.
                 TRIAL_DEADLINE.store(0, Ordering::Relaxed);
+                self.ext.trial_focus = None;
                 self.status = "Kept.".into();
                 unsafe { PostMessageW(self.owner, WM_SETTINGS_APPLIED, 0, 0) };
             }
@@ -1162,6 +1195,7 @@ impl Ui {
     pub fn trial_revert(&mut self) {
         cmdq::push(AppCommand::TrialRevert);
         self.post_command();
+        self.ext.trial_focus = None;
         self.status = "Reverted.".into();
     }
 
@@ -1170,12 +1204,22 @@ impl Ui {
     }
 
     pub fn on_timer(&mut self, hwnd: HWND) {
+        // The trial bar appears and disappears when the host starts and ends a trial, which
+        // moves the page; the native edit boxes have to follow it.
+        if self.trial_active() != self.ext.trial_shown {
+            self.ext.trial_shown = self.trial_active();
+            self.relayout(hwnd);
+        }
         if self.ext.refresh_pending {
             self.ext.refresh_pending = false;
             self.refresh_report();
         }
         if !self.trial_active() {
             unsafe { windows_sys::Win32::UI::WindowsAndMessaging::KillTimer(hwnd, TIMER_UI) };
+        } else if self.trial_focus().is_some() && !self.ext.trial_announced {
+            // The trial has started and focus is on Keep: tell a screen reader once.
+            self.ext.trial_announced = true;
+            self.uia_announce_focus(hwnd);
         }
         unsafe { InvalidateRect(hwnd, std::ptr::null(), 0) };
     }
@@ -1378,50 +1422,54 @@ impl Ui {
     }
 
     fn move_focus_inner(&mut self, hwnd: HWND, backwards: bool) {
+        #[derive(Clone, Copy, PartialEq)]
+        enum Stop {
+            Nav,
+            Content(usize),
+            Trial(u8),
+        }
         let list = self.interactive_rows();
-        let has_nav = self.nav_w > 0;
-        if self.ext.nav_focus {
-            self.ext.nav_focus = false;
-            if list.is_empty() {
-                self.ext.focus = None;
-            } else {
-                self.ext.focus = Some(if backwards { list.len() - 1 } else { 0 });
+        // One ring: the pane, the content's controls in reading order, then Keep and Revert
+        // while a trial runs, then back to the pane. Focus is never trapped and the trial's
+        // answer is always reachable (Microsoft: keyboard accessibility).
+        let mut ring: Vec<Stop> = Vec::new();
+        if self.nav_w > 0 {
+            ring.push(Stop::Nav);
+        }
+        ring.extend((0..list.len()).map(Stop::Content));
+        if self.trial_active() {
+            ring.push(Stop::Trial(0));
+            ring.push(Stop::Trial(1));
+        }
+        if ring.is_empty() {
+            return;
+        }
+        let here = if let Some(button) = self.trial_focus() {
+            Some(Stop::Trial(button))
+        } else if self.ext.nav_focus {
+            Some(Stop::Nav)
+        } else {
+            self.ext.focus.map(Stop::Content)
+        };
+        let at = here.and_then(|stop| ring.iter().position(|s| *s == stop));
+        let next = match (at, backwards) {
+            (None, false) => 0,
+            (None, true) => ring.len() - 1,
+            (Some(i), false) => (i + 1) % ring.len(),
+            (Some(i), true) => (i + ring.len() - 1) % ring.len(),
+        };
+        self.ext.nav_focus = false;
+        self.ext.focus = None;
+        self.ext.trial_focus = None;
+        match ring[next] {
+            Stop::Nav => self.ext.nav_focus = true,
+            Stop::Content(index) => {
+                self.ext.focus = Some(index);
                 self.ext.focus_sub = 0;
                 self.scroll_focus_into_view(hwnd);
             }
-            return;
+            Stop::Trial(button) => self.ext.trial_focus = Some(button),
         }
-        if has_nav {
-            let leaves_content = match (self.ext.focus, backwards) {
-                (None, false) => true,
-                (Some(index), false) => index + 1 >= list.len(),
-                (Some(0), true) | (None, true) => true,
-                _ => false,
-            };
-            if leaves_content || list.is_empty() {
-                self.ext.nav_focus = true;
-                self.ext.focus = None;
-                return;
-            }
-        }
-        if list.is_empty() {
-            return;
-        }
-        let current = self.ext.focus.unwrap_or(usize::MAX);
-        let next = if current == usize::MAX {
-            if backwards {
-                list.len() - 1
-            } else {
-                0
-            }
-        } else if backwards {
-            (current + list.len() - 1) % list.len()
-        } else {
-            (current + 1) % list.len()
-        };
-        self.ext.focus = Some(next);
-        self.ext.focus_sub = 0;
-        self.scroll_focus_into_view(hwnd);
     }
 
     /// Left/Right: change a focused slider by 5 percent, otherwise move within the focused
@@ -1489,8 +1537,23 @@ impl Ui {
 
     /// Space or Enter on the focused row.
     pub fn activate_focus(&mut self, hwnd: HWND) {
+        if let Some(button) = self.trial_focus() {
+            if button == 0 {
+                self.trial_keep();
+            } else {
+                self.trial_revert();
+            }
+            self.relayout(hwnd);
+            return;
+        }
         if self.trial_active() {
+            // Enter or Space during a trial: say what is possible and put focus on Keep, so the
+            // next key press answers it.
             self.status = "Keep or revert the trial look first.".into();
+            self.ext.nav_focus = false;
+            self.ext.trial_focus = Some(0);
+            self.uia_announce_focus(hwnd);
+            self.relayout(hwnd);
             return;
         }
         let list = self.interactive_rows();

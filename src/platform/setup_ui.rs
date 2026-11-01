@@ -13,7 +13,7 @@
 use super::*;
 use crate::{
     find_tutorial, tutorial_steps, OnboardingState, OnboardingStatus, TutorialCaps, TutorialStep,
-    TutorialTarget, HELP_TOPICS, SETUP_STEP_TITLES, TUTORIALS,
+    TutorialTarget, SETUP_STEP_TITLES, TUTORIALS,
 };
 
 /// The setup wizard's live state.

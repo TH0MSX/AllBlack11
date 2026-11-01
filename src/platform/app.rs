@@ -1085,7 +1085,13 @@ fn show_menu(hwnd: HWND) {
                 app.high_contrast,
                 app.config.shell.oled_taskbar,
                 app.config.shell.black_shell,
-                app.apps_dark.unwrap_or(true),
+                // The menu follows AllBlack11's own appearance choice (System, Light or Dark), the
+                // same one its Settings window uses, not only the Windows app theme.
+                crate::resolve_appearance(
+                    app.config.ui.appearance,
+                    app.apps_dark.unwrap_or(true),
+                    app.high_contrast,
+                ) == crate::UiMode::Dark,
                 app.paused,
                 app.scene_undo.is_some(),
             )

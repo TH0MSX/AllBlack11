@@ -1475,8 +1475,8 @@ impl Ui {
 
     fn relayout(&mut self, hwnd: HWND) {
         self.nav_w = self.pick_nav_w(hwnd);
-        // Long lines are hard to read (Microsoft: 50 to 60 characters), so content stops growing
-        // at MAX_CONTENT. Pages stay left-aligned beside the pane; the setup flow, which has no
+        // Long lines are hard to read, so content stops growing at MAX_CONTENT (a product choice;
+        // the Microsoft pages read for this pass give no line length). Pages stay left-aligned beside the pane; the setup flow, which has no
         // pane, is centered.
         let spare = (self.client_lw(hwnd) - self.nav_w - self.lw(hwnd)).max(0);
         self.content_x = self.nav_w + if self.nav_w == 0 { spare / 2 } else { 0 };
