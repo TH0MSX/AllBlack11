@@ -51,6 +51,12 @@ Setup installs for your account only (no administrator prompt) and updates an ol
 
 <sub>Screenshots are AllBlack11 3.8 Preview on a Snapdragon (ARM64) Windows 11 PC. The arrangement, rounding and lighting are mockup styling; the windows themselves are not altered. Source: [`docs/mockup-source`](docs/mockup-source).</sub>
 
+### Windows, in context
+
+<p align="center"><img src="docs/windows-gallery.png" alt="Three crops from a Windows 11 ARM64 PC: AllBlack11 Settings beside Control Panel and Run with dark frames, a black Start menu, and the notification center calendar" width="100%"></p>
+
+<sub>The desktop, the Start menu and the notification center on the author's PC, cropped to the windows only (the taskbar, notifications and anything personal are left out). The black Start menu and notification center are an optional shell setting that is off until you turn it on; Control Panel's and Run's own pages stay light, because only their frames are styled.</sub>
+
 ## What you get
 
 - **A Settings app that works like Windows Settings.** Six categories (Home, Appearance, Apps, Safety, Settings, Help & About), landscape layout, a Back link on every subpage, and a **search box** that finds settings, scenes, packs, wallpapers and help (Ctrl+K). A result opens the right page and marks the control; it never changes anything by itself.

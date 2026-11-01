@@ -266,6 +266,63 @@ def bento():
     canvas.convert("RGB").save(OUT / "bento.png", optimize=True)
 
 
+def gallery():
+    """A mini gallery of Windows itself with AllBlack11 on: three real screenshot crops side by side."""
+    items = [
+        ("win-desktop.png", "Black frames, in context",
+         "Settings beside Control Panel and Run. The frames go dark; the apps' own pages stay as they are.", {}),
+        ("win-start.png", "A black Start menu",
+         "A shell option (off until you turn it on) makes Start, the taskbar and the notification center black.", dict(bottom=90)),
+        ("win-calendar.png", "Notification center",
+         "The same black, down to the calendar.", {}),
+    ]
+    img_h, inset, gap, margin, head = 520, 28, 20, 50, 150
+    tiles = []
+    for name, title, line, edge in items:
+        im = shot(name)
+        w = round(im.width * img_h / im.height)
+        tiles.append((im.resize((w, img_h), Image.LANCZOS), title, line, edge, w + 2 * inset))
+    W = 2 * margin + sum(t[4] for t in tiles) + gap * (len(tiles) - 1)
+    H = 2 * margin + head + img_h + inset
+    canvas = stage((W, H), glow=(0.5, 0.5), seed=21)
+    x = margin
+    for im, title, line, edge, tw in tiles:
+        layer = Image.new("RGBA", (tw, H - 2 * margin), (7, 7, 8, 255))
+        sheen = np.linspace(0.07, 0.0, layer.height, dtype=np.float32)[:, None]
+        over = Image.new("RGBA", layer.size, (170, 195, 230, 0))
+        over.putalpha(Image.fromarray((np.repeat(sheen, layer.width, axis=1) * 255).astype(np.uint8)))
+        layer = Image.alpha_composite(layer, over)
+        d = ImageDraw.Draw(layer)
+        d.text((inset, 30), title, font=font("InterDisplay-SemiBold.otf", 30), fill=(244, 247, 252, 255))
+        sub = font("InterDisplay-Regular.otf", 19)
+        for i, text in enumerate(wrap_all(d, line, sub, tw - 2 * inset)):
+            d.text((inset, 78 + i * 26), text, font=sub, fill=(140, 148, 162, 255))
+        piece = rounded(im.convert("RGBA"), 16)
+        piece = rim(piece, 16, strength=0.4)
+        if edge:
+            piece = fade(piece, **edge)
+        layer.alpha_composite(piece, (inset, head))
+        layer = rounded(layer, 34)
+        layer = rim(layer, 34, strength=0.22)
+        canvas.alpha_composite(layer, (x, margin))
+        x += tw + gap
+    canvas.convert("RGB").save(OUT / "windows-gallery.png", optimize=True)
+
+
+def wrap_all(draw, text, fnt, width):
+    lines, line = [], ""
+    for word in text.split():
+        trial = (line + " " + word).strip()
+        if draw.textlength(trial, font=fnt) <= width or not line:
+            line = trial
+        else:
+            lines.append(line)
+            line = word
+    if line:
+        lines.append(line)
+    return lines
+
+
 def social():
     W, H = 1280, 640
     canvas = stage((W, H), glow=(0.72, 0.5), seed=3)
@@ -286,7 +343,7 @@ def social():
 
 
 if __name__ == "__main__":
-    which = sys.argv[1:] or ["hero", "bento", "social"]
+    which = sys.argv[1:] or ["hero", "bento", "gallery", "social"]
     for name in which:
-        {"hero": hero, "bento": bento, "social": social}[name]()
+        {"hero": hero, "bento": bento, "gallery": gallery, "social": social}[name]()
         print("wrote", name)
