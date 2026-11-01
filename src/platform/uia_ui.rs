@@ -23,6 +23,7 @@ enum Do {
     Window(usize),
     Recipe(usize),
     Look(usize),
+    Wall(usize),
     Rule(usize),
     Exclude(usize),
     TrialKeep,
@@ -406,6 +407,27 @@ impl Ui {
                         b.out[i].info.selected = Some(selected);
                     }
                 }
+                Row::WallGrid => {
+                    for (index, entry) in self.ext.walls.iter().enumerate() {
+                        let (l, t, r, bt) = pages::wall_rect_pub(lw, index);
+                        let status = crate::wallpaper::status_text(
+                            entry,
+                            crate::platform::gallery::downloaded(entry),
+                            &self.ext.wall_state,
+                        );
+                        let i = b.push(
+                            &format!("wallpaper:{}", entry.id),
+                            Role::ListItem,
+                            &format!("{}, {}", entry.name, status),
+                            &entry.description,
+                            b.screen(l, top + t, r, top + bt),
+                            true,
+                            Do::Wall(index),
+                            Some((row_index, index)),
+                        );
+                        b.out[i].info.selected = Some(self.ext.wall_sel == index);
+                    }
+                }
                 Row::RecipeList => {
                     for (index, (recipe, _)) in self.ext.recipes.iter().enumerate().take(40) {
                         let t = top + 8 + index as i32 * LIST_LINE;
@@ -625,6 +647,7 @@ impl Ui {
             Do::Window(index) => self.click_window_list(index as i32),
             Do::Recipe(index) => self.click_recipe_list(index as i32),
             Do::Look(index) => self.click_look_list(index as i32),
+            Do::Wall(index) => self.select_wall(index),
             Do::Rule(index) => self.pick_rule(index as i32),
             Do::Exclude(index) => self.pick_exclude(index as i32),
             Do::TrialKeep => self.trial_keep(),

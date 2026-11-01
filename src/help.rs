@@ -6,7 +6,7 @@
 //! an inline tip on the page itself; nothing blocks input and nothing is simulated.
 
 /// Pages by index into the navigation order (Home, Fix this app, Appearance, Scenes, Rules,
-/// Safety, Diagnostics, Settings and help).
+/// Safety, Diagnostics, Wallpapers, Settings and help).
 pub const HOME: usize = 0;
 pub const FIX: usize = 1;
 pub const APPEARANCE: usize = 2;
@@ -15,9 +15,11 @@ pub const RULES: usize = 4;
 pub const SAFETY: usize = 5;
 #[cfg(test)]
 pub const DIAGNOSTICS: usize = 6;
-pub const HELP: usize = 7;
 #[cfg(test)]
-pub const PAGE_COUNT: usize = 8;
+pub const GALLERY: usize = 7;
+pub const HELP: usize = 8;
+#[cfg(test)]
+pub const PAGE_COUNT: usize = 9;
 
 /// A control a step points at. The UI outlines it; it stays fully usable.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]

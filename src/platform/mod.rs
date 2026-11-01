@@ -15,6 +15,7 @@ mod cmdq;
 mod composition;
 mod demo;
 mod dwm;
+mod gallery;
 mod helper;
 mod http;
 mod icon;
@@ -30,6 +31,7 @@ mod shellwin;
 mod sysinfo;
 mod updater;
 mod uxtheme;
+mod wallpreview;
 mod wide;
 
 pub fn start() -> i32 {

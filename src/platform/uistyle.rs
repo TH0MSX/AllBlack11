@@ -190,6 +190,7 @@ pub mod glyph {
     pub const SHIELD: char = '\u{EA18}';
     pub const PHOTO: char = '\u{E91B}';
     pub const TAG: char = '\u{E8EC}';
+    pub const PICTURE: char = '\u{E8B9}';
 }
 
 thread_local! {

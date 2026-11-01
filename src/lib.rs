@@ -46,6 +46,7 @@ mod trial;
 mod uitheme;
 mod update;
 mod version;
+mod wallpaper;
 
 pub use accents::{key_for as accent_key, Accents, PALETTE as ACCENT_PALETTE};
 pub use arch::{classify, machine_name, ArchStatus, BUILD_MACHINE};

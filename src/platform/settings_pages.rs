@@ -40,6 +40,15 @@ pub struct Ext {
     pub packs: Vec<(crate::Pack, bool)>,
     pub pack_sel: usize,
     pub class_sel: usize,
+    /// The wallpaper gallery: the catalog, which one is selected, the preview bitmaps, what is
+    /// remembered, and the display Apply targets (0 = all displays).
+    pub walls: Vec<crate::wallpaper::Entry>,
+    pub wall_sel: usize,
+    pub wall_previews: Vec<(String, windows_sys::Win32::Graphics::Gdi::HBITMAP)>,
+    pub wall_state: crate::wallpaper::State,
+    pub wall_display: usize,
+    pub wall_seen: u64,
+    pub wall_loaded: bool,
     /// What the last pack install or removal did, in plain lines. Never saved.
     pub pack_report: Vec<String>,
     pub recipe_diff: Vec<String>,
@@ -96,7 +105,7 @@ impl Ext {
 impl Page {
     /// Navigation order. Settings and help sits last, apart from the others, as the footer
     /// item, as NavigationView does with its optional settings item.
-    pub const ALL: [Page; 8] = [
+    pub const ALL: [Page; 9] = [
         Page::Home,
         Page::Fix,
         Page::Appearance,
@@ -104,6 +113,7 @@ impl Page {
         Page::Rules,
         Page::Safety,
         Page::Diagnostics,
+        Page::Gallery,
         Page::Help,
     ];
 
@@ -117,6 +127,7 @@ impl Page {
             Page::Rules => "Rules",
             Page::Safety => "Safety",
             Page::Diagnostics => "Diagnostics",
+            Page::Gallery => "Wallpapers",
             Page::Help => "Settings & help",
         }
     }
@@ -131,6 +142,7 @@ impl Page {
             Page::Rules => uistyle::glyph::TAG,
             Page::Safety => uistyle::glyph::SHIELD,
             Page::Diagnostics => uistyle::glyph::INFO,
+            Page::Gallery => uistyle::glyph::PICTURE,
             Page::Help => uistyle::glyph::SETTINGS,
         }
     }
@@ -165,6 +177,10 @@ impl Page {
             Page::Diagnostics => (
                 "Diagnostics",
                 "Details for troubleshooting. Nothing is sent anywhere.",
+            ),
+            Page::Gallery => (
+                "Wallpapers",
+                "Eight original black wallpapers made for OLED screens. Preview, download and apply one.",
             ),
             Page::Help => (
                 "Settings and help",
@@ -204,6 +220,38 @@ impl Builder {
     }
 }
 
+const TILE_GAP: i32 = 12;
+const TILE_LABEL_H: i32 = 40;
+
+/// Columns, tile width, preview height and tile height of the wallpaper grid.
+fn wall_geom(lw: i32) -> (i32, i32, i32, i32) {
+    let inner = lw - 2 * MARGIN - 2 * PAD;
+    let cols = ((inner + TILE_GAP) / (180 + TILE_GAP)).clamp(2, 4);
+    let tile_w = ((inner - TILE_GAP * (cols - 1)) / cols).max(60);
+    let thumb_h = tile_w * 9 / 16;
+    (cols, tile_w, thumb_h, thumb_h + TILE_LABEL_H)
+}
+
+/// A tile's rectangle relative to the top of the grid row.
+fn wall_rect(lw: i32, index: usize) -> (i32, i32, i32, i32) {
+    let (cols, tile_w, _, tile_h) = wall_geom(lw);
+    let col = index as i32 % cols;
+    let row = index as i32 / cols;
+    let left = MARGIN + PAD + col * (tile_w + TILE_GAP);
+    let top = PAD + row * (tile_h + TILE_GAP);
+    (left, top, left + tile_w, top + tile_h)
+}
+
+pub fn wall_rect_pub(lw: i32, index: usize) -> (i32, i32, i32, i32) {
+    wall_rect(lw, index)
+}
+
+fn wall_height(lw: i32, count: usize) -> i32 {
+    let (cols, _, _, tile_h) = wall_geom(lw);
+    let rows = (count as i32 + cols - 1) / cols;
+    2 * PAD + rows * tile_h + (rows - 1).max(0) * TILE_GAP + GAP
+}
+
 fn list_height(len: usize) -> i32 {
     (len.max(1) as i32) * LIST_LINE + 16 + GAP
 }
@@ -231,6 +279,7 @@ impl Ui {
             Page::Rules => self.rows_rules(),
             Page::Safety => self.rows_safety(),
             Page::Diagnostics => self.rows_diagnostics(),
+            Page::Gallery => self.rows_gallery(),
             Page::Help => self.rows_help(),
         }
     }
@@ -628,6 +677,88 @@ impl Ui {
         self.push_packs(&mut b);
         self.push_notebook(&mut b);
         self.push_legacy(&mut b);
+        b.out
+    }
+
+    fn rows_gallery(&self) -> Vec<Laid> {
+        use super::super::gallery;
+        let mut b = Builder::new();
+        b.push(page_title(Page::Gallery));
+        b.push(Row::Note(
+            "Original wallpapers drawn by a script in this project: a true-black foundation, no large bright areas, and only the silver and blue of the AllBlack11 brand. Nothing is downloaded until you press Download, and nothing is sent anywhere.",
+        ));
+        if self.ext.walls.is_empty() {
+            b.push(Row::Note("No wallpapers are available in this build."));
+            return b.out;
+        }
+        let lw = self.lw(self.hwnd);
+        b.push_h(Row::WallGrid, wall_height(lw, self.ext.walls.len()));
+        let Some(entry) = self.ext.walls.get(self.ext.wall_sel) else {
+            return b.out;
+        };
+        let have = gallery::downloaded(entry);
+        let job = gallery::job();
+        let mut lines = vec![
+            format!("{}: {}", entry.name, entry.description),
+            if have {
+                format!(
+                    "On this PC, {}, {}x{}. Checked against the checksum built into AllBlack11.",
+                    crate::wallpaper::size_text(entry.bytes),
+                    entry.width,
+                    entry.height
+                )
+            } else {
+                format!(
+                    "Not on this PC yet. Download is {} ({}x{}), from the {} release on GitHub, and is checked against a checksum built into AllBlack11.",
+                    crate::wallpaper::size_text(entry.bytes),
+                    entry.width,
+                    entry.height,
+                    crate::wallpaper::release_tag()
+                )
+            },
+        ];
+        match &job {
+            gallery::Job::Downloading { id, done, total } if *id == entry.id => {
+                lines.push(format!(
+                    "Downloading: {} of {}.",
+                    crate::update::format_bytes(*done),
+                    crate::update::format_bytes(*total)
+                ))
+            }
+            gallery::Job::Applying { .. } => lines.push("Applying through Windows…".to_string()),
+            gallery::Job::PuttingBack => {
+                lines.push("Putting the earlier wallpaper back…".to_string())
+            }
+            _ => {}
+        }
+        if let Some(applied) = &self.ext.wall_state.applied {
+            if applied.id == entry.id {
+                lines.push("This is the wallpaper you applied last.".to_string());
+            }
+        }
+        b.push(Row::Lines(lines));
+        b.push(Row::Choice(Choice::WallDisplay));
+        b.push(Row::Choice(Choice::WallFit));
+        let mut buttons = match &job {
+            gallery::Job::Downloading { id, .. } if *id == entry.id => vec![Button::WallCancel],
+            _ if have => vec![
+                Button::WallApply,
+                Button::WallPreview,
+                Button::WallOpenFolder,
+            ],
+            _ => vec![
+                Button::WallDownload,
+                Button::WallPreview,
+                Button::WallOpenFolder,
+            ],
+        };
+        if self.ext.wall_state.can_put_back() {
+            buttons.push(Button::WallPutBack);
+        }
+        b.push(Row::Buttons(buttons));
+        b.push(Row::Note(
+            "Preview shows the picture on this display the way Windows will place it; Enter applies it and Esc closes. Apply keeps what was there before, so Put back previous can undo it. Wallpapers are not part of Look history.",
+        ));
         b.out
     }
 
@@ -1237,6 +1368,7 @@ impl Ui {
         self.ext.focus = None;
         match page {
             Page::Fix => self.refresh_windows(),
+            Page::Gallery => self.open_gallery(),
             Page::Scenes => {
                 self.refresh_recipes();
                 self.refresh_looks();
@@ -1324,7 +1456,19 @@ impl Ui {
             }
             self.relayout(hwnd);
         }
-        if !self.trial_active() && !updater::busy() {
+        if super::super::gallery::stamp() != self.ext.wall_seen {
+            self.ext.wall_seen = super::super::gallery::stamp();
+            if let Some(message) = super::super::gallery::take_message() {
+                self.status = message;
+            }
+            self.ext.wall_state = super::super::gallery::load_state();
+            let count = super::super::gallery::displays().len() + 1;
+            if self.ext.wall_display >= count {
+                self.ext.wall_display = 0;
+            }
+            self.relayout(hwnd);
+        }
+        if !self.trial_active() && !updater::busy() && !super::super::gallery::busy() {
             unsafe { windows_sys::Win32::UI::WindowsAndMessaging::KillTimer(hwnd, TIMER_UI) };
         } else if self.trial_focus().is_some() && !self.ext.trial_announced {
             // The trial has started and focus is on Keep: tell a screen reader once.
@@ -1518,6 +1662,7 @@ impl Ui {
                 Row::Buttons(list) => Some((index, list.len())),
                 Row::Presets => Some((index, PRESETS.len())),
                 Row::LookList if self.look_count() > 0 => Some((index, self.look_count())),
+                Row::WallGrid if !self.ext.walls.is_empty() => Some((index, self.ext.walls.len())),
                 // Sliders are reachable by keyboard: Left and Right change the value.
                 Row::Slider(_) => Some((index, 1)),
                 _ => None,
@@ -1694,6 +1839,7 @@ impl Ui {
             Row::Presets => self.apply_preset(sub.min(PRESETS.len() - 1)),
             Row::Credit => self.open_credit(),
             Row::LookList => self.click_look_list(sub as i32),
+            Row::WallGrid => self.select_wall(sub),
             _ => {}
         }
         self.relayout(hwnd);
@@ -2093,6 +2239,54 @@ pub fn paint_extra(c: &Canvas, ui: &Ui, row: &Laid, top: i32, lw: i32) {
                 );
             }
         }
+        Row::WallGrid => {
+            card(c, top, row.h, lw);
+            let (_, _, thumb_h, _) = wall_geom(lw);
+            for (index, entry) in ui.ext.walls.iter().enumerate() {
+                let (l, t, r, b) = wall_rect(lw, index);
+                let selected = ui.ext.wall_sel == index;
+                c.round(
+                    l - 3,
+                    top + t - 3,
+                    r + 3,
+                    top + b + 1,
+                    6,
+                    Some(if selected { th().card_hi } else { th().card }),
+                    Some(if selected { ui.accent } else { th().edge }),
+                );
+                c.fill(l, top + t, r, top + t + thumb_h, 0x0000_0000);
+                if let Some((_, bitmap)) =
+                    ui.ext.wall_previews.iter().find(|(id, _)| *id == entry.id)
+                {
+                    c.bitmap(*bitmap, l, top + t, r, top + t + thumb_h);
+                }
+                let status = crate::wallpaper::status_text(
+                    entry,
+                    super::super::gallery::downloaded(entry),
+                    &ui.ext.wall_state,
+                );
+                c.text(
+                    l + 2,
+                    top + t + thumb_h + 2,
+                    r - 2,
+                    top + t + thumb_h + 20,
+                    &entry.name,
+                    th().text,
+                    fonts.body,
+                    DT_LEFT | DT_VCENTER | DT_SINGLELINE | DT_END_ELLIPSIS,
+                );
+                c.text(
+                    l + 2,
+                    top + t + thumb_h + 20,
+                    r - 2,
+                    top + t + thumb_h + 38,
+                    &status,
+                    th().muted,
+                    fonts.small,
+                    DT_LEFT | DT_VCENTER | DT_SINGLELINE | DT_END_ELLIPSIS,
+                );
+            }
+        }
         Row::RecipeList => {
             card(c, top, row.h, lw);
             if ui.ext.recipes.is_empty() {
@@ -2234,6 +2428,13 @@ pub fn paint_focus_ring(c: &Canvas, ui: &Ui, row: &Laid, top: i32, lw: i32) {
                 (MARGIN + 4, line_top, lw - MARGIN - 4, line_top + LIST_LINE),
             );
         }
+        Row::WallGrid => {
+            let (l, t, r, b) = wall_rect(
+                lw,
+                ui.ext.focus_sub.min(ui.ext.walls.len().saturating_sub(1)),
+            );
+            controls::focus_ring(c, (l - 3, top + t - 3, r + 3, top + b + 3));
+        }
         Row::Presets => {
             let (l, t, r, b) = preset_rect(lw, ui.ext.focus_sub.min(PRESETS.len() - 1));
             controls::focus_ring(c, (l, top + t, r, top + b));
@@ -2324,6 +2525,110 @@ impl Ui {
         b.push(Row::Note(
             "To see why one app is or is not styled, use Test without applying above: it names the layer that wins.",
         ));
+    }
+
+    // ---- wallpaper gallery ---------------------------------------------------------------
+
+    /// First open of the Wallpapers page: the catalog, what is remembered, the preview pictures,
+    /// and (on a worker) the attached displays.
+    fn open_gallery(&mut self) {
+        if !self.ext.wall_loaded {
+            self.ext.wall_loaded = true;
+            self.ext.walls = crate::wallpaper::catalog();
+            self.ext.wall_previews = super::super::gallery::load_previews(&self.ext.walls);
+        }
+        self.ext.wall_state = super::super::gallery::load_state();
+        if let Some(index) = self
+            .ext
+            .wall_state
+            .applied
+            .as_ref()
+            .and_then(|applied| self.ext.walls.iter().position(|w| w.id == applied.id))
+        {
+            self.ext.wall_sel = index;
+        }
+        super::super::gallery::refresh_displays();
+        self.watch_updates();
+    }
+
+    pub fn select_wall(&mut self, index: usize) {
+        if index < self.ext.walls.len() {
+            self.ext.wall_sel = index;
+            if let Some(entry) = self.ext.walls.get(index) {
+                self.status = format!("{}. {}", entry.name, entry.description);
+            }
+        }
+    }
+
+    pub fn click_wall_grid(&mut self, lw: i32, lx: i32, local: i32) {
+        for index in 0..self.ext.walls.len() {
+            let (l, t, r, b) = wall_rect(lw, index);
+            if lx >= l && lx < r && local >= t && local < b {
+                self.select_wall(index);
+                self.ext.focus_sub = index;
+                return;
+            }
+        }
+    }
+
+    fn selected_wall(&self) -> Option<crate::wallpaper::Entry> {
+        self.ext.walls.get(self.ext.wall_sel).cloned()
+    }
+
+    fn wall_target(&self) -> Option<String> {
+        match self.ext.wall_display {
+            0 => None,
+            n => super::super::gallery::displays()
+                .get(n - 1)
+                .map(|d| d.id.clone()),
+        }
+    }
+
+    fn wall_action(&mut self, id: Button) {
+        use super::super::gallery;
+        let Some(entry) = self.selected_wall() else {
+            return;
+        };
+        match id {
+            Button::WallDownload => {
+                gallery::download(&entry);
+                self.status = format!(
+                    "Downloading {} ({}). Nothing is applied until you press Apply.",
+                    entry.name,
+                    crate::wallpaper::size_text(entry.bytes)
+                );
+            }
+            Button::WallCancel => {
+                gallery::cancel();
+                self.status = "Cancelling the download.".into();
+            }
+            Button::WallApply => {
+                let fit = self.ext.wall_state.fit_for(&entry);
+                gallery::apply(&entry, self.wall_target(), fit);
+                self.status = format!("Applying {}…", entry.name);
+            }
+            Button::WallPutBack => {
+                gallery::put_back();
+                self.status = "Putting the earlier wallpaper back…".into();
+            }
+            Button::WallOpenFolder => {
+                self.status = match gallery::open_location(&entry) {
+                    Ok(()) => "Opened the folder.".into(),
+                    Err(message) => message,
+                };
+            }
+            Button::WallPreview => {
+                let fit = self.ext.wall_state.fit_for(&entry);
+                super::super::wallpreview::open(self.hwnd, &entry, fit);
+            }
+            _ => {}
+        }
+        self.watch_updates();
+    }
+
+    /// Enter in the full-screen preview.
+    pub fn wall_apply_selected(&mut self) {
+        self.wall_action(Button::WallApply);
     }
 
     /// Compatibility packs: pick one, read what it does and what it cannot, install or remove it.
@@ -2715,6 +3020,18 @@ impl Ui {
                     self.ext.class_sel = (self.ext.class_sel + 1) % count;
                 }
             }
+            Choice::WallDisplay => {
+                let count = super::super::gallery::displays().len() + 1;
+                self.ext.wall_display = (self.ext.wall_display + 1) % count;
+            }
+            Choice::WallFit => {
+                if let Some(entry) = self.selected_wall() {
+                    let next = self.ext.wall_state.fit_for(&entry).next();
+                    self.ext.wall_state.set_fit(&entry.id, next);
+                    super::super::gallery::save_state(&self.ext.wall_state);
+                    self.status = format!("{}: {}.", entry.name, next.label());
+                }
+            }
             Choice::Pack => {
                 if !self.ext.packs.is_empty() {
                     self.ext.pack_sel = (self.ext.pack_sel + 1) % self.ext.packs.len();
@@ -2889,6 +3206,12 @@ impl Ui {
                     None => self.status = "Pick a window class first.".into(),
                 }
             }
+            Button::WallDownload
+            | Button::WallCancel
+            | Button::WallApply
+            | Button::WallPreview
+            | Button::WallOpenFolder
+            | Button::WallPutBack => self.wall_action(id),
             Button::PackInstall => self.install_selected_pack(),
             Button::PackRemove => self.remove_selected_pack(),
             Button::ImportPack => self.import_pack(),

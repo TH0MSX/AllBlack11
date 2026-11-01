@@ -67,6 +67,8 @@ use uistyle::{accent as theme_accent, th};
 
 static PENDING_PAGE: std::sync::atomic::AtomicUsize =
     std::sync::atomic::AtomicUsize::new(usize::MAX);
+/// Posted by the full-screen wallpaper preview when Enter is pressed.
+pub const WM_WALL_APPLY: u32 = windows_sys::Win32::UI::WindowsAndMessaging::WM_APP + 31;
 const WM_GOTO_PAGE: u32 = windows_sys::Win32::UI::WindowsAndMessaging::WM_APP + 21;
 
 /// Open the command palette (or close it if it is open).
@@ -134,6 +136,7 @@ enum Page {
     Rules,
     Safety,
     Diagnostics,
+    Gallery,
     Help,
 }
 
@@ -227,6 +230,8 @@ enum Row {
     AddField(Button),
     About(Vec<String>),
     Lines(Vec<String>),
+    /// The wallpaper previews as a grid of tiles (sized by the caller).
+    WallGrid,
     /// Paragraphs in body size, for the text a step or page is mainly about (setup).
     Prose(Vec<String>),
     /// The brand header: the mark, the name and one line of what AllBlack11 does.
@@ -282,6 +287,10 @@ enum Choice {
     Pack,
     /// Which of your excluded window classes Remove acts on.
     ExcludedClass,
+    /// Which display a wallpaper goes to.
+    WallDisplay,
+    /// How the selected wallpaper sits on a display.
+    WallFit,
 }
 
 #[derive(Clone, Copy, PartialEq, Eq)]
@@ -316,6 +325,12 @@ enum Button {
     PackRemove,
     ImportPack,
     RemoveExcludedClass,
+    WallDownload,
+    WallCancel,
+    WallApply,
+    WallPreview,
+    WallOpenFolder,
+    WallPutBack,
     TestRule,
     TestPicked,
     UndoLook,
@@ -489,6 +504,8 @@ fn choice_desc(ui: &Ui, id: Choice) -> &'static str {
             2 => "A new rule matches the package (Store apps). Falls back to the executable.",
             _ => "A new rule matches only the window class, across every app that uses it.",
         },
+        Choice::WallDisplay => "Where the wallpaper goes. Click to step through your displays. Windows keeps one fit for all displays, so changing the fit changes it everywhere.",
+        Choice::WallFit => "How the picture sits on a display. These wallpapers are black at the edges, so Fit leaves no visible bars. Click to step through the choices.",
         Choice::ExcludedClass => "Window classes you told AllBlack11 to leave alone in every app. Click to step through them, then Remove. To add one, type class=Name in the box above and press Add.",
         Choice::Pack => "Pick a compatibility pack, read what it can and cannot do below, then Install. A pack adds ordinary rules named \"Pack: …\" that your own rules override. Click to step to the next pack.",
         Choice::UpdateChannel => "Which releases to offer. Automatic follows the kind of build you run: a preview build is offered previews, a stable build only stable releases. Click to change.",
@@ -516,6 +533,8 @@ fn choice_title(id: Choice) -> &'static str {
         Choice::UpdateChannel => "Update channel",
         Choice::Pack => "Pack",
         Choice::ExcludedClass => "Excluded window class",
+        Choice::WallDisplay => "Apply to",
+        Choice::WallFit => "Fit",
         Choice::DayScene => "Day scene",
         Choice::NightScene => "Night scene",
         Choice::DayStarts => "Day starts",
@@ -592,6 +611,12 @@ fn button_meta(id: Button) -> (&'static str, &'static str, &'static str) {
         Button::PackRemove => ("", "", "Remove pack"),
         Button::ImportPack => ("", "", "Import pack…"),
         Button::RemoveExcludedClass => ("", "", "Remove class"),
+        Button::WallDownload => ("", "", "Download image"),
+        Button::WallCancel => ("", "", "Cancel download"),
+        Button::WallApply => ("", "", "Apply wallpaper"),
+        Button::WallPreview => ("", "", "Preview full screen"),
+        Button::WallOpenFolder => ("", "", "Open file location"),
+        Button::WallPutBack => ("", "", "Put back previous"),
         Button::ExportRecipe => ("", "", "Export current…"),
         Button::CheckUpdates => ("", "", "Check for updates"),
         Button::DownloadUpdate => ("", "", "Download"),
@@ -967,7 +992,7 @@ fn row_height(row: &Row) -> i32 {
         }
         Row::Credit => credit_layout(lw).height,
         Row::Buttons(_) => 52 + GAP,
-        Row::WindowList | Row::RecipeList | Row::LookList => 0, // sized by the caller
+        Row::WindowList | Row::RecipeList | Row::LookList | Row::WallGrid => 0, // sized by the caller
         Row::Filter => 52 + GAP,
         Row::About(lines) => 24 + about_line_heights(lines, lw).iter().sum::<i32>() + GAP,
     }
@@ -1326,6 +1351,11 @@ unsafe extern "system" fn wndproc(hwnd: HWND, msg: u32, wparam: WPARAM, lparam: 
                 0x23 => ui.scroll = i32::MAX / 2,               // End
                 _ => {}
             }
+            ui.relayout(hwnd);
+            0
+        }
+        WM_WALL_APPLY => {
+            ui.wall_apply_selected();
             ui.relayout(hwnd);
             0
         }
@@ -1861,6 +1891,7 @@ impl Ui {
                 Row::WindowList => self.click_window_list((local - 8) / LIST_LINE),
                 Row::RecipeList => self.click_recipe_list((local - 8) / LIST_LINE),
                 Row::LookList => self.click_look_list((local - 8) / LIST_LINE),
+                Row::WallGrid => self.click_wall_grid(lw, lx, local),
                 Row::RuleList => self.pick_rule((local - 8) / LIST_LINE),
                 Row::ExcludeList => self.pick_exclude((local - 8) / LIST_LINE),
                 _ => {}
@@ -1970,6 +2001,8 @@ impl Ui {
                 | Choice::UpdateChannel
                 | Choice::Pack
                 | Choice::ExcludedClass
+                | Choice::WallDisplay
+                | Choice::WallFit
         ) {
             self.cycle_ext(id);
             return;
@@ -2343,6 +2376,57 @@ impl Canvas {
                 std::ptr::null_mut(),
                 windows_sys::Win32::UI::WindowsAndMessaging::DI_NORMAL,
             );
+        }
+    }
+
+    /// Stretch a bitmap into a logical rectangle (smooth scaling).
+    fn bitmap(
+        &self,
+        bitmap: windows_sys::Win32::Graphics::Gdi::HBITMAP,
+        l: i32,
+        t: i32,
+        r: i32,
+        b: i32,
+    ) {
+        use windows_sys::Win32::Graphics::Gdi::{
+            CreateCompatibleDC, DeleteDC, GetObjectW, SetStretchBltMode, StretchBlt, BITMAP,
+            HALFTONE, SRCCOPY,
+        };
+        if bitmap.is_null() {
+            return;
+        }
+        unsafe {
+            let mut info: BITMAP = std::mem::zeroed();
+            if GetObjectW(
+                bitmap,
+                std::mem::size_of::<BITMAP>() as i32,
+                &mut info as *mut BITMAP as *mut _,
+            ) == 0
+            {
+                return;
+            }
+            let mem = CreateCompatibleDC(self.dc);
+            if mem.is_null() {
+                return;
+            }
+            let old = SelectObject(mem, bitmap);
+            SetStretchBltMode(self.dc, HALFTONE);
+            let dest = self.rect(l, t, r, b);
+            StretchBlt(
+                self.dc,
+                dest.left,
+                dest.top,
+                dest.right - dest.left,
+                dest.bottom - dest.top,
+                mem,
+                0,
+                0,
+                info.bmWidth,
+                info.bmHeight,
+                SRCCOPY,
+            );
+            SelectObject(mem, old);
+            DeleteDC(mem);
         }
     }
 
@@ -2920,6 +3004,7 @@ fn paint_row(c: &Canvas, ui: &Ui, row: &Laid, top: i32, lw: i32) {
         | Row::WindowList
         | Row::RecipeList
         | Row::LookList
+        | Row::WallGrid
         | Row::SearchField
         | Row::Filter => {
             pages::paint_extra(c, ui, row, top, lw);
@@ -3087,6 +3172,19 @@ fn choice_text(ui: &Ui, id: Choice) -> String {
         .to_string(),
         Choice::AppAppearance => ui.config.ui.appearance.label().to_string(),
         Choice::UpdateChannel => ui.config.updates.channel.label().to_string(),
+        Choice::WallDisplay => match ui.ext.wall_display {
+            0 => "All displays".to_string(),
+            n => super::gallery::displays()
+                .get(n - 1)
+                .map(|d| d.label.clone())
+                .unwrap_or_else(|| "All displays".to_string()),
+        },
+        Choice::WallFit => ui
+            .ext
+            .walls
+            .get(ui.ext.wall_sel)
+            .map(|entry| ui.ext.wall_state.fit_for(entry).label().to_string())
+            .unwrap_or_else(|| "Fill".to_string()),
         Choice::ExcludedClass => ui
             .config
             .exclude_classes
