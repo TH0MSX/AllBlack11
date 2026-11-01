@@ -3083,7 +3083,7 @@ fn paint_row(c: &Canvas, ui: &Ui, row: &Laid, top: i32, lw: i32) {
                     top + 28,
                     right - 150,
                     top + card_h - 2,
-                    "⚠ Not a color yet. Use #RRGGBB, accent, none or default.",
+                    "Not a color yet. Use #RRGGBB, accent, none or default.",
                     th().bad,
                     fonts.small,
                     DT_LEFT | DT_VCENTER | DT_SINGLELINE | DT_END_ELLIPSIS,

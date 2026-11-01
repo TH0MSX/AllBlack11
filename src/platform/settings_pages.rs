@@ -1924,6 +1924,7 @@ impl Ui {
     fn move_focus_inner(&mut self, hwnd: HWND, backwards: bool) {
         #[derive(Clone, Copy, PartialEq)]
         enum Stop {
+            Search,
             Nav,
             Content(usize),
             Trial(u8),
@@ -1933,6 +1934,12 @@ impl Ui {
         // while a trial runs, then back to the pane. Focus is never trapped and the trial's
         // answer is always reachable (Microsoft: keyboard accessibility).
         let mut ring: Vec<Stop> = Vec::new();
+        // The search box leads the navigation pane; on the narrow rail it is not in the ring (its
+        // button is the pane's, and its box is on the results page).
+        let search_in_pane = self.nav_w > crate::ui_metrics::NAV_COMPACT;
+        if search_in_pane {
+            ring.push(Stop::Search);
+        }
         if self.nav_w > 0 {
             ring.push(Stop::Nav);
         }
@@ -1946,6 +1953,11 @@ impl Ui {
         }
         let here = if let Some(button) = self.trial_focus() {
             Some(Stop::Trial(button))
+        } else if search_in_pane
+            && unsafe { windows_sys::Win32::UI::Input::KeyboardAndMouse::GetFocus() }
+                == self.edits.search
+        {
+            Some(Stop::Search)
         } else if self.ext.nav_focus {
             Some(Stop::Nav)
         } else {
@@ -1962,6 +1974,9 @@ impl Ui {
         self.ext.focus = None;
         self.ext.trial_focus = None;
         match ring[next] {
+            Stop::Search => unsafe {
+                windows_sys::Win32::UI::Input::KeyboardAndMouse::SetFocus(self.edits.search);
+            },
             Stop::Nav => self.ext.nav_focus = true,
             Stop::Content(index) => {
                 self.ext.focus = Some(index);
@@ -3088,13 +3103,19 @@ impl Ui {
             _ => {
                 // Down arrow or Tab: into the results (or the content, when there are none).
                 unsafe { windows_sys::Win32::UI::Input::KeyboardAndMouse::SetFocus(hwnd) };
-                if shift {
-                    self.ext.nav_focus = true;
-                    self.ext.focus = None;
-                } else {
+                self.ext.focus = None;
+                if key == 0x28 {
+                    // Down arrow: into the results (or the content when there are none).
                     self.ext.nav_focus = false;
-                    self.ext.focus = None;
                     self.move_focus(hwnd, false);
+                    if self.page == Page::Search && self.ext.focus.is_none() {
+                        self.ext.nav_focus = true;
+                    }
+                } else if shift {
+                    self.ext.nav_focus = false;
+                    self.move_focus(hwnd, true);
+                } else {
+                    self.ext.nav_focus = true;
                 }
                 self.relayout(hwnd);
             }

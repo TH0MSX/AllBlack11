@@ -1,6 +1,6 @@
 [package]
 name = "allblack11-harness"
-version = "3.8.0-preview.1"
+version = "3.8.0-preview.2"
 edition = "2021"
 description = "Native test surface for the AllBlack11 legacy layer: every supported control family and state."
 license = "MIT"

@@ -1,6 +1,6 @@
 [package]
 name = "allblack11"
-version = "3.8.0-preview.1"
+version = "3.8.0-preview.2"
 edition = "2021"
 description = "Windows 11 tray app that paints a deep-black frame on other windows and can blacken the taskbar, Start menu, and notification center."
 readme = "README.md"

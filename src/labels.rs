@@ -14,7 +14,7 @@ pub struct EditLabel {
 }
 
 /// In the order of `Edits` in `platform/settings.rs`.
-pub const EDIT_LABELS: [EditLabel; 9] = [
+pub const EDIT_LABELS: [EditLabel; 10] = [
     EditLabel {
         id: "filter",
         name: "Filter windows",
@@ -59,6 +59,11 @@ pub const EDIT_LABELS: [EditLabel; 9] = [
         id: "help",
         name: "Search help",
         description: "Type a word to find a help topic.",
+    },
+    EditLabel {
+        id: "search",
+        name: "Search",
+        description: "Search settings, actions, scenes, packs and help. Enter opens the first result, Down moves to the list, Escape clears.",
     },
 ];
 

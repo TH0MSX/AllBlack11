@@ -1,6 +1,6 @@
 [package]
 name = "allblack11-setup"
-version = "3.8.0-preview.1"
+version = "3.8.0-preview.2"
 edition = "2021"
 description = "Per-user Setup for AllBlack11. Embeds the app for the CPU type it was built for."
 license = "MIT"
