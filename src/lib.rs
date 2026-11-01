@@ -10,7 +10,10 @@ mod commands;
 mod compat;
 mod config;
 mod contrast_lab;
+mod destinations;
+mod download;
 mod effects;
+mod exclusions;
 mod explain;
 mod fixapp;
 mod help;
@@ -18,10 +21,12 @@ mod helper_protocol;
 mod history;
 mod identity;
 mod inject;
+mod labels;
 mod legacy_policy;
 mod lkg;
 mod menu_model;
 mod onboarding;
+mod packs;
 mod palette;
 mod playground;
 mod policy;
@@ -31,6 +36,7 @@ mod report;
 mod rules;
 mod scenes;
 mod schedule;
+mod sha256;
 mod shell;
 mod snapshot;
 mod startup;
@@ -39,7 +45,10 @@ mod timefmt;
 mod traytext;
 mod trial;
 mod uitheme;
+mod update;
 mod version;
+mod wallpaper;
+mod windowbounds;
 
 pub use accents::{key_for as accent_key, Accents, PALETTE as ACCENT_PALETTE};
 pub use arch::{classify, machine_name, ArchStatus, BUILD_MACHINE};
@@ -49,8 +58,8 @@ pub use brand::{
     NAME as BRAND_NAME, TAGLINE as BRAND_TAGLINE, VERIFICATION_STATUS,
 };
 pub use commands::{
-    commands as palette_commands, search as palette_search, Action as PaletteAction,
-    Command as PaletteCommand, Context as PaletteContext,
+    commands as palette_commands, destination as palette_destination, search as palette_search,
+    Action as PaletteAction, Command as PaletteCommand, Context as PaletteContext,
 };
 pub use compat::{Entry as CompatEntry, Notebook, Status as CompatStatus};
 pub use config::{
@@ -62,7 +71,12 @@ pub use contrast_lab::{
     check as contrast_check, lines as contrast_lines, palette_pairs as contrast_palette_pairs,
     style_pairs as contrast_style_pairs,
 };
+pub use destinations::{Category, Dest};
 pub use effects::{focus_style, reduce_reason, reduced, Explicit, SystemState};
+pub use exclusions::{
+    add_class as add_excluded_class, precedence as exclusion_precedence,
+    remove_class as remove_excluded_class, summary as exclusion_summary, why as exclusion_why,
+};
 pub use explain::{
     attribute_support, explain, framework_hint, reason_text, AttributeSupport, Confirm,
     Explanation, Framework, FrameworkHint, Support, TitleBar,
@@ -86,6 +100,7 @@ pub use history::{
 };
 pub use identity::{check as check_identity, Fingerprint, Identity};
 pub use inject::{inject_allowed, InjectTarget};
+pub use labels::{EditLabel, EDIT_LABELS};
 pub use legacy_policy::{
     capability, contrast_ratio, host_kind, palette, window_verdict, Capability, HostKind, Level,
     Palette, SharedState, Tech, Verdict, PALETTES,
@@ -101,6 +116,12 @@ pub use onboarding::{
     initial as onboarding_initial, parse as onboarding_parse, to_json as onboarding_json,
     State as OnboardingState, Status as OnboardingStatus, LAST_STEP as SETUP_LAST_STEP,
     STEP_TITLES as SETUP_STEP_TITLES,
+};
+pub use packs::{
+    catalog as pack_catalog, install as install_pack, installed as installed_packs,
+    is_installed as pack_is_installed, look_actions as pack_look_actions, parse_pack,
+    preview as preview_pack, remove as remove_pack, scope_text as pack_scope_text,
+    unavailable as pack_unavailable, Pack, Verdict as PackVerdict, MAX_BYTES as PACK_MAX_BYTES,
 };
 pub use palette::{
     check_image, derive as derive_palette, sample_points, to_scene as palette_scene,
@@ -118,7 +139,8 @@ pub use policy::{
 pub use presets::{apply as apply_preset, Preset, PRESETS};
 pub use recipes::{
     apply as apply_recipe, bundled as bundled_recipes, export_current as export_recipe,
-    parse_recipe, preview as preview_recipe, Change, Recipe, Trust,
+    parse_recipe, preview as preview_recipe, remix as remix_recipes, Change, Recipe, RemixPart,
+    Trust,
 };
 pub use report::{redact, render as render_report, source_text, Attempt, LegacyView, Report};
 pub use rules::{
@@ -152,6 +174,10 @@ pub use uitheme::{
 };
 pub use uitheme::{metrics as ui_metrics, BODY, BODY_STRONG, CAPTION, SUBTITLE, TITLE};
 pub use version::display_version;
+pub use windowbounds::{
+    restore as restore_window_bounds, Bounds as WindowBounds, WorkArea,
+    DEFAULT_SIZE as WINDOW_DEFAULT_SIZE, MIN_SIZE as WINDOW_MIN_SIZE,
+};
 
 #[cfg(windows)]
 mod platform;

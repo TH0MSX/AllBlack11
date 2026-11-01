@@ -217,7 +217,7 @@ pub fn reason_text(reason: &str) -> &'static str {
         "x86-process" => "32-bit x86 process. There is no x86 hook in this build.",
         "needs-arm64-build" => "This is a native ARM64 process and this is the x64 build. Use the ARM64 build.",
         "x64-helper-off" => {
-            "Emulated x64 process. Turn on emulated-x64 coverage under Rules and compatibility to use the x64 helper."
+            "Emulated x64 process. Turn on emulated-x64 coverage under Safety > Experimental features to use the x64 helper."
         }
         "architecture" => "The process architecture does not match any available hook.",
         _ => "No further detail is available for this reason.",

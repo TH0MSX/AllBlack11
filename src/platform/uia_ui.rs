@@ -23,11 +23,16 @@ enum Do {
     Window(usize),
     Recipe(usize),
     Look(usize),
+    Wall(usize),
     Rule(usize),
     Exclude(usize),
     TrialKeep,
     TrialRevert,
     Credit,
+    FocusSearch,
+    Go(Page),
+    Result(usize),
+    Section(&'static str),
 }
 
 struct Built {
@@ -56,6 +61,9 @@ struct Builder2<'a> {
     hwnd: HWND,
     out: Vec<Built>,
     seen: HashMap<String, u32>,
+    /// Top and bottom of the visible part of the page, in screen pixels. A content element wholly
+    /// outside it is reported off-screen.
+    view: (f64, f64),
 }
 
 impl Builder2<'_> {
@@ -74,7 +82,7 @@ impl Builder2<'_> {
     }
 
     fn key(&mut self, tag: &str) -> u64 {
-        let base = format!("{}|{tag}", self.ui.page.nav_label());
+        let base = format!("{}|{tag}", self.ui.page.title());
         let count = self.seen.entry(base.clone()).or_insert(0);
         *count += 1;
         fnv64(&format!("{base}#{count}"))
@@ -93,6 +101,10 @@ impl Builder2<'_> {
         row: Option<(usize, usize)>,
     ) -> usize {
         let key = self.key(tag);
+        // Only the scrolling content can be off-screen; the navigation pane and the trial bar
+        // are always where they are.
+        let offscreen =
+            row.is_some() && (rect[1] + rect[3] <= self.view.0 || rect[1] >= self.view.1);
         self.out.push(Built {
             info: Info {
                 key,
@@ -103,6 +115,7 @@ impl Builder2<'_> {
                 enabled: true,
                 focusable,
                 focused: false,
+                offscreen,
                 toggled: None,
                 selected: None,
                 value: None,
@@ -118,27 +131,50 @@ impl Builder2<'_> {
 impl Ui {
     fn uia_build(&self, hwnd: HWND) -> Vec<Built> {
         let _measure = MeasureScope::new(self, None, self.lw(hwnd));
+        let view = {
+            let (_, client_h) = client_size(hwnd);
+            let top = self.px(self.top());
+            let bottom = client_h - self.px(self.bottom_h());
+            let rect = uia::to_screen(hwnd, (0, top, 0, bottom));
+            (rect[1], rect[1] + rect[3])
+        };
         let mut b = Builder2 {
             ui: self,
             hwnd,
             out: Vec::new(),
             seen: HashMap::new(),
+            view,
         };
         // Navigation pane first: it is the first Tab stop.
         if self.nav_w > 0 {
-            for (index, page) in Page::ALL.iter().enumerate() {
-                let (l, t, r, bm) = pages::nav_item_rect(self, index);
-                let i = b.push(
-                    &format!("nav:{}", page.nav_label()),
-                    Role::TabItem,
-                    page.nav_label(),
-                    page.heading().1,
+            // The search box is a native edit with its own accessible name; the narrow rail shows
+            // a button instead.
+            if self.nav_w <= crate::ui_metrics::NAV_COMPACT {
+                let (l, t, r, bm) = pages::nav_search_rect(self);
+                b.push(
+                    "nav:search",
+                    Role::Button,
+                    "Search",
+                    "Search settings, actions, scenes and help",
                     b.screen_client(l, t, r, bm),
                     true,
-                    Do::Nav(*page),
+                    Do::FocusSearch,
                     None,
                 );
-                b.out[i].info.selected = Some(*page == self.page);
+            }
+            for (index, category) in crate::Category::ALL.iter().enumerate() {
+                let (l, t, r, bm) = pages::nav_item_rect(self, index);
+                let i = b.push(
+                    &format!("nav:{}", category.title()),
+                    Role::TabItem,
+                    category.title(),
+                    category.landing().description(),
+                    b.screen_client(l, t, r, bm),
+                    true,
+                    Do::Nav(category.landing()),
+                    None,
+                );
+                b.out[i].info.selected = Some(*category == self.page.category());
             }
         }
         let rows = self.rows();
@@ -246,6 +282,66 @@ impl Ui {
                         Do::Nothing,
                         None,
                     );
+                }
+                Row::Crumb => {
+                    let parent = self.page.parent().map(|p| p.title()).unwrap_or("");
+                    b.push(
+                        "crumb:back",
+                        Role::Button,
+                        &format!("Back to {parent}"),
+                        "Alt+Left also goes back",
+                        b.screen(cl, top, cr, top + row.h - GAP),
+                        true,
+                        Do::Go(self.page.parent().unwrap_or(Page::Home)),
+                        Some((row_index, 0)),
+                    );
+                }
+                Row::Link(dest) => {
+                    b.push(
+                        &format!("link:{}", dest.id()),
+                        Role::Button,
+                        dest.title(),
+                        dest.description(),
+                        card(&b),
+                        true,
+                        Do::Go(*dest),
+                        Some((row_index, 0)),
+                    );
+                }
+                Row::Result(index) => {
+                    if let Some(result) = self.ext.results.get(*index) {
+                        let place = if result.path.is_empty() {
+                            crate::palette_destination(&result.action).0.path()
+                        } else {
+                            result.path.clone()
+                        };
+                        b.push(
+                            &format!("result:{index}"),
+                            Role::Button,
+                            &format!("{}, {}", result.title, place),
+                            &result.hint,
+                            card(&b),
+                            true,
+                            Do::Result(*index),
+                            Some((row_index, 0)),
+                        );
+                    }
+                }
+                Row::Expander(title) => {
+                    let i = b.push(
+                        &format!("section:{title}"),
+                        Role::Toggle,
+                        title,
+                        "Show or hide the options in this section",
+                        card(&b),
+                        true,
+                        Do::Section(title),
+                        Some((row_index, 0)),
+                    );
+                    b.out[i].info.toggled = Some(self.section_open(title));
+                }
+                Row::GlobalSearch => {
+                    // The native search box is the control; the card around it is decoration.
                 }
                 Row::Toggle(id) => {
                     let (label, desc) = toggle_meta(*id);
@@ -406,6 +502,27 @@ impl Ui {
                         b.out[i].info.selected = Some(selected);
                     }
                 }
+                Row::WallGrid => {
+                    for (index, entry) in self.ext.walls.iter().enumerate() {
+                        let (l, t, r, bt) = pages::wall_rect_pub(lw, index);
+                        let status = crate::wallpaper::status_text(
+                            entry,
+                            crate::platform::gallery::downloaded(entry),
+                            &self.ext.wall_state,
+                        );
+                        let i = b.push(
+                            &format!("wallpaper:{}", entry.id),
+                            Role::ListItem,
+                            &format!("{}, {}", entry.name, status),
+                            &entry.description,
+                            b.screen(l, top + t, r, top + bt),
+                            true,
+                            Do::Wall(index),
+                            Some((row_index, index)),
+                        );
+                        b.out[i].info.selected = Some(self.ext.wall_sel == index);
+                    }
+                }
                 Row::RecipeList => {
                     for (index, (recipe, _)) in self.ext.recipes.iter().enumerate().take(40) {
                         let t = top + 8 + index as i32 * LIST_LINE;
@@ -552,9 +669,9 @@ impl Ui {
             });
         }
         if self.ext.nav_focus {
-            return built
-                .iter()
-                .position(|b| matches!(b.action, Do::Nav(page) if page == self.page));
+            return built.iter().position(
+                |b| matches!(b.action, Do::Nav(page) if page.category() == self.page.category()),
+            );
         }
         let ordinal = self.ext.focus?;
         let (row_index, _) = *self.interactive_rows().get(ordinal)?;
@@ -625,11 +742,16 @@ impl Ui {
             Do::Window(index) => self.click_window_list(index as i32),
             Do::Recipe(index) => self.click_recipe_list(index as i32),
             Do::Look(index) => self.click_look_list(index as i32),
+            Do::Wall(index) => self.select_wall(index),
             Do::Rule(index) => self.pick_rule(index as i32),
             Do::Exclude(index) => self.pick_exclude(index as i32),
             Do::TrialKeep => self.trial_keep(),
             Do::TrialRevert => self.trial_revert(),
             Do::Credit => self.open_credit(),
+            Do::FocusSearch => self.focus_search(hwnd),
+            Do::Go(page) => self.set_page(hwnd, page),
+            Do::Result(index) => self.open_result(hwnd, index),
+            Do::Section(title) => self.toggle_section(title),
         }
         self.relayout(hwnd);
         true

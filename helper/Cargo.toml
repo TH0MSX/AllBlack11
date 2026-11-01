@@ -1,6 +1,6 @@
 [package]
 name = "allblack11-helper"
-version = "3.7.0-preview.1"
+version = "3.8.0-preview.2"
 edition = "2021"
 description = "On-demand x64 helper for AllBlack11 on ARM64: hooks classic dialogs of emulated x64 apps."
 license = "MIT"

@@ -1,0 +1,142 @@
+{
+  "schema": 1,
+  "generator": "assets/wallpapers/generate.py",
+  "wallpapers": [
+    {
+      "id": "moonrise",
+      "name": "Moonrise",
+      "description": "A large silver moon rising from the bottom right edge, with a thin lit rim and a faint cool glow around it.",
+      "file": "allblack11-wallpaper-moonrise-3840x2160.png",
+      "width": 3840,
+      "height": 2160,
+      "bytes": 630552,
+      "sha256": "5c20db5a407d106beadcb546f2dc043faf365057d0eec691efd55bbea0846032",
+      "fit": "fill",
+      "oled": {
+        "mean_luma": 2.7761,
+        "black_share": 0.9126,
+        "bright_share": 0.0013,
+        "peak_luma": 171.4596
+      }
+    },
+    {
+      "id": "eclipse",
+      "name": "Eclipse",
+      "description": "A pure black disc at the centre ringed by a thin silver edge and a soft corona.",
+      "file": "allblack11-wallpaper-eclipse-3840x2160.png",
+      "width": 3840,
+      "height": 2160,
+      "bytes": 647483,
+      "sha256": "2ae89d3ca05d5f4509bc24a8df51899b1b31258e64b37b79f2933d357a9bd44b",
+      "fit": "fit",
+      "oled": {
+        "mean_luma": 1.8073,
+        "black_share": 0.9239,
+        "bright_share": 0.0035,
+        "peak_luma": 255.0
+      }
+    },
+    {
+      "id": "window-light",
+      "name": "Window light",
+      "description": "A single thin blue window frame with a title band and three small controls, glowing faintly on black.",
+      "file": "allblack11-wallpaper-window-light-3840x2160.png",
+      "width": 3840,
+      "height": 2160,
+      "bytes": 1135209,
+      "sha256": "5dac73b5845896782a70223dbbccc6b86325efe93fa43c0d427e81b36189dcfd",
+      "fit": "fit",
+      "oled": {
+        "mean_luma": 1.4625,
+        "black_share": 0.8651,
+        "bright_share": 0.0051,
+        "peak_luma": 141.3802
+      }
+    },
+    {
+      "id": "horizon",
+      "name": "Horizon",
+      "description": "One fine silver horizon line with a dim blue haze rising above it.",
+      "file": "allblack11-wallpaper-horizon-3840x2160.png",
+      "width": 3840,
+      "height": 2160,
+      "bytes": 728462,
+      "sha256": "d3f6c68ffc7075b337fcb72d539deb7d1543bb20e809e6c9360b194b6e5a068a",
+      "fit": "fill",
+      "oled": {
+        "mean_luma": 1.4486,
+        "black_share": 0.8677,
+        "bright_share": 0.0029,
+        "peak_luma": 207.4728
+      }
+    },
+    {
+      "id": "contour",
+      "name": "Contour",
+      "description": "Graphite topographic contour lines fading to black at the edges, with blue on the highest ground.",
+      "file": "allblack11-wallpaper-contour-3840x2160.png",
+      "width": 3840,
+      "height": 2160,
+      "bytes": 1049750,
+      "sha256": "b1dfb07a25090d9609f4d9d8dc0d0cd7a713c605ec4952f4188a5b676421642e",
+      "fit": "fill",
+      "oled": {
+        "mean_luma": 1.2457,
+        "black_share": 0.9444,
+        "bright_share": 0.0006,
+        "peak_luma": 120.0964
+      }
+    },
+    {
+      "id": "orbit",
+      "name": "Orbit",
+      "description": "Five tilted elliptical orbits around a small centre point, with a tiny silver moon on one of them.",
+      "file": "allblack11-wallpaper-orbit-3840x2160.png",
+      "width": 3840,
+      "height": 2160,
+      "bytes": 399620,
+      "sha256": "4b858a608d18aae3b6abd07bd3a9ee017094a0c40bf51fc18cf81ec45dd0593a",
+      "fit": "fit",
+      "oled": {
+        "mean_luma": 0.7546,
+        "black_share": 0.9717,
+        "bright_share": 0.0001,
+        "peak_luma": 255.0
+      }
+    },
+    {
+      "id": "dot-matrix",
+      "name": "Dot matrix",
+      "description": "A fine grid of graphite dots fading out from the lower left corner, with a blue core.",
+      "file": "allblack11-wallpaper-dot-matrix-3840x2160.png",
+      "width": 3840,
+      "height": 2160,
+      "bytes": 290245,
+      "sha256": "c73b215f959a1bd7a03b577920196d62799e0246f8603bb3dd123d1d4aae4bde",
+      "fit": "fill",
+      "oled": {
+        "mean_luma": 0.3555,
+        "black_share": 0.9865,
+        "bright_share": 0.0007,
+        "peak_luma": 193.791
+      }
+    },
+    {
+      "id": "ridges",
+      "name": "Ridges",
+      "description": "Five black ridge lines layered one behind another, each edged with a thin moonlit rim.",
+      "file": "allblack11-wallpaper-ridges-3840x2160.png",
+      "width": 3840,
+      "height": 2160,
+      "bytes": 822391,
+      "sha256": "c6abfb96c049f37ec95422cf79d893a9616d8eb83360c78d0d928e747b7fb1c8",
+      "fit": "fill",
+      "oled": {
+        "mean_luma": 1.3501,
+        "black_share": 0.9486,
+        "bright_share": 0.0044,
+        "peak_luma": 136.0934
+      }
+    }
+  ]
+}

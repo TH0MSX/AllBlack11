@@ -154,8 +154,46 @@ pub fn set_autostart(enabled: bool) -> Result<(), String> {
     }
 }
 
+/// Open this repository's release pages in the default browser (`update::is_release_page_url`).
+/// Call this only in response to a click or a key press.
+pub fn open_release_url(url: &str) -> Result<(), String> {
+    if !crate::update::is_release_page_url(url) {
+        return Err("that address is not one AllBlack11 opens".into());
+    }
+    shell_open(url)
+}
+
+fn shell_open(url: &str) -> Result<(), String> {
+    let op = to_wide("open");
+    let target = to_wide(url);
+    let code = unsafe {
+        ShellExecuteW(
+            null_mut(),
+            pcw(&op),
+            pcw(&target),
+            null_mut(),
+            null_mut(),
+            SW_SHOWNORMAL,
+        )
+    };
+    if (code as isize) > 32 {
+        Ok(())
+    } else {
+        Err(format!(
+            "could not open the browser (ShellExecute {})",
+            code as isize
+        ))
+    }
+}
+
 /// Open a web address in the default browser. Only the creator's GitHub profile address passes
 /// (`brand::is_safe_profile_url`); call this only in response to a click or key press.
+/// Open Windows Settings > Personalization > Colors (a documented `ms-settings:` page). The text
+/// is fixed here; nothing from a file or the network can reach it.
+pub fn open_windows_colors() -> Result<(), String> {
+    shell_open("ms-settings:colors")
+}
+
 pub fn open_url(url: &str) -> Result<(), String> {
     if !crate::is_safe_profile_url(url) {
         return Err("that address is not one AllBlack11 opens".into());

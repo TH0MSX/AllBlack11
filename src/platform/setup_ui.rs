@@ -74,7 +74,7 @@ impl Ui {
         self.ext.focus = None;
         let hwnd = self.hwnd;
         self.ext.nav_focus = false;
-        self.page = Page::Fix; // forces set_page to treat Home as a change
+        self.page = Page::AppsFix; // forces set_page to treat Home as a change
         self.set_page(hwnd, Page::Home);
     }
 
@@ -173,7 +173,7 @@ impl Ui {
                 b.push(Row::Toggle(Toggle::PaletteHotkey));
                 b.push(Row::Header("Experimental features"));
                 b.push(Row::Prose(vec![
-                    "Dark classic dialogs and, on ARM64, emulated x64 coverage stay off. They recolor some old dialogs from inside the app and have limits. You can read about them, and turn them on, under Rules and compatibility.".to_string(),
+                    "Dark classic dialogs and, on ARM64, emulated x64 coverage stay off. They recolor some old dialogs from inside the app and have limits. You can read about them, and turn them on, under Safety > Experimental features.".to_string(),
                 ]));
             }
             _ => {
@@ -189,7 +189,7 @@ impl Ui {
                     self.experimental_summary(),
                 ];
                 summary.push(
-                    "Next: pick an app on Fix this app, or open Help for walkthroughs.".to_string(),
+                    "Next: pick an app under Customize an app, or open Help & About for walkthroughs.".to_string(),
                 );
                 b.push(Row::Prose(summary));
                 b.push(Row::Buttons(vec![
@@ -242,13 +242,13 @@ impl Ui {
             }
             Button::SetupSkip => {
                 self.ext.setup.state.dismiss();
-                self.setup_leave("Setup skipped. You can run it again from Settings and help.");
+                self.setup_leave("Setup skipped. You can run it again from Help & About.");
             }
             Button::SetupFinish | Button::SetupFinishHelp => {
                 if self.ext.setup.state.finish() {
                     self.setup_leave("Setup finished.");
                     if id == Button::SetupFinishHelp {
-                        self.set_page(hwnd, Page::Help);
+                        self.set_page(hwnd, Page::HelpTopics);
                     }
                 }
             }
@@ -286,7 +286,7 @@ impl Ui {
             Button::TipDone | Button::TipClose => {
                 self.ext.tutorial = None;
                 self.status =
-                    "Walkthrough closed. You can start it again from Settings and help.".into();
+                    "Walkthrough closed. You can start it again from Help & About.".into();
             }
             Button::Tutorial(index) => {
                 if let Some(tutorial) = TUTORIALS.get(index as usize) {
@@ -351,10 +351,8 @@ impl Ui {
         else {
             return;
         };
-        if let Some(page) = Page::ALL.get(step.page).copied() {
-            let hwnd = self.hwnd;
-            self.set_page(hwnd, page);
-        }
+        let hwnd = self.hwnd;
+        self.set_page(hwnd, step.page);
     }
 
     /// The current step, if it belongs on the page being shown.
@@ -362,7 +360,7 @@ impl Ui {
         let run = self.ext.tutorial.as_ref()?;
         let steps = self.tutorial_steps_now();
         let step = *steps.get(run.step)?;
-        let here = Page::ALL.get(step.page).copied()?;
+        let here = step.page;
         (here == self.page && !self.ext.setup.active).then_some((run.step, steps.len(), step))
     }
 

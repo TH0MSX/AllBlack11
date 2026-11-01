@@ -1,5 +1,7 @@
 # Screenshots
 
+**3.8 stabilization renders** (`3.8-stabilize-*.png`): the real x64 exe run under Wine on Linux, to check layout. Wine is not Windows and has no Segoe Fluent Icons, so these show no icons and are not evidence of how it looks on Windows. The 3.8 screenshots from a real Windows PC are in [`../mockup-source/shots`](../mockup-source/shots).
+
 3.7 Preview, from a Snapdragon (ARM64) Windows 11 PC. Only app windows are cropped in; anything that shows a user name, a taskbar or personal notifications is left out.
 
 - `3.7-home.png` — Settings > Home

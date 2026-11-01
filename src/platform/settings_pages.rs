@@ -15,6 +15,7 @@ use crate::{
 use super::super::app::TRIAL_DEADLINE;
 use super::super::cmdq::{self, AppCommand, WM_APP_COMMAND};
 use super::super::inspect::{self, WindowEntry};
+use super::super::updater;
 
 #[path = "setup_ui.rs"]
 mod setup;
@@ -35,6 +36,40 @@ pub struct Ext {
     pub filter: String,
     pub recipes: Vec<(Recipe, Trust)>,
     pub recipe_sel: Option<usize>,
+    /// Compatibility packs: the built-in catalog first, then valid imported files (true).
+    pub packs: Vec<(crate::Pack, bool)>,
+    pub pack_sel: usize,
+    pub class_sel: usize,
+    /// Global search: what is typed, the results shown (at most 12), the index they come from
+    /// (rebuilt when the box gains focus, never per keystroke), and where to go back to.
+    pub query: String,
+    pub results: Vec<crate::PaletteCommand>,
+    pub index: Vec<crate::PaletteCommand>,
+    pub search_from: Option<Page>,
+    /// The search box is being changed by the program, not typed in: ignore its change event.
+    pub search_silent: bool,
+    /// Sections the person opened (keyed by title).
+    pub open_sections: Vec<&'static str>,
+    /// A row to mark for a moment after a search result took you to it: (row index, until tick).
+    pub highlight: Option<(usize, u64)>,
+    pub remix_with: usize,
+    pub remix_part: crate::RemixPart,
+    /// The wallpaper gallery: the catalog, which one is selected, the preview bitmaps, what is
+    /// remembered, and the display Apply targets (0 = all displays).
+    pub walls: Vec<crate::wallpaper::Entry>,
+    pub wall_sel: usize,
+    pub wall_previews: Vec<(String, windows_sys::Win32::Graphics::Gdi::HBITMAP)>,
+    pub wall_state: crate::wallpaper::State,
+    pub wall_display: usize,
+    pub wall_seen: u64,
+    pub wall_loaded: bool,
+    /// What the last pack install or removal did, in plain lines. Never saved.
+    pub pack_report: Vec<String>,
+    /// The last "Check now": the status line and what it found. Never saved.
+    pub pack_check: Vec<String>,
+    /// A matching window was found by the last check (so "I see ..." has something to be about).
+    pub pack_found: bool,
+    pub pack_marks: crate::packs::Marks,
     pub recipe_diff: Vec<String>,
     /// 0 executable, 1 executable + class, 2 package, 3 class only.
     pub rule_scope: u8,
@@ -49,6 +84,8 @@ pub struct Ext {
     pub trial_announced: bool,
     /// Whether the last layout had the trial bar, so it can be redone when that changes.
     pub trial_shown: bool,
+    /// The updater phase the page was last laid out for.
+    pub update_seen: u64,
     pub loaded: bool,
     /// The navigation pane holds keyboard focus (arrow keys move between destinations).
     pub nav_focus: bool,
@@ -84,91 +121,17 @@ impl Ext {
     }
 }
 
-impl Page {
-    /// Navigation order. Settings and help sits last, apart from the others, as the footer
-    /// item, as NavigationView does with its optional settings item.
-    pub const ALL: [Page; 8] = [
-        Page::Home,
-        Page::Fix,
-        Page::Appearance,
-        Page::Scenes,
-        Page::Rules,
-        Page::Safety,
-        Page::Diagnostics,
-        Page::Help,
-    ];
-
-    /// Short label for the navigation pane.
-    pub fn nav_label(self) -> &'static str {
-        match self {
-            Page::Home => "Home",
-            Page::Fix => "Fix this app",
-            Page::Appearance => "Appearance",
-            Page::Scenes => "Scenes",
-            Page::Rules => "Rules",
-            Page::Safety => "Safety",
-            Page::Diagnostics => "Diagnostics",
-            Page::Help => "Settings & help",
-        }
-    }
-
-    /// Segoe Fluent Icons glyph for the navigation pane.
-    pub fn glyph(self) -> char {
-        match self {
-            Page::Home => uistyle::glyph::HOME,
-            Page::Fix => uistyle::glyph::SEARCH,
-            Page::Appearance => uistyle::glyph::COLOR,
-            Page::Scenes => uistyle::glyph::PHOTO,
-            Page::Rules => uistyle::glyph::TAG,
-            Page::Safety => uistyle::glyph::SHIELD,
-            Page::Diagnostics => uistyle::glyph::INFO,
-            Page::Help => uistyle::glyph::SETTINGS,
-        }
-    }
-
-    /// Page title and one-line description, shown at the top of every page.
-    pub fn heading(self) -> (&'static str, &'static str) {
-        match self {
-            Page::Home => (
-                "Home",
-                "See what AllBlack11 is doing right now, and what to do next.",
-            ),
-            Page::Fix => (
-                "Fix this app",
-                "Pick any window to see what can change, preview a look, then keep it or undo it.",
-            ),
-            Page::Appearance => (
-                "Appearance",
-                "Colors, materials and corners for window frames. Changes apply as you make them.",
-            ),
-            Page::Scenes => (
-                "Scenes",
-                "Switch the whole default look in one step, or save your own.",
-            ),
-            Page::Rules => (
-                "Rules and compatibility",
-                "Per-app exceptions, apps to leave alone, and optional compatibility features.",
-            ),
-            Page::Safety => (
-                "Safety and recovery",
-                "Pause, undo and restore. Everything here is reversible.",
-            ),
-            Page::Diagnostics => (
-                "Diagnostics",
-                "Details for troubleshooting. Nothing is sent anywhere.",
-            ),
-            Page::Help => (
-                "Settings and help",
-                "How AllBlack11 looks and starts, plus guides and answers.",
-            ),
-        }
-    }
-}
-
 /// The title block every page starts with.
 fn page_title(page: Page) -> Row {
-    let (title, description) = page.heading();
-    Row::PageTitle(title, description.to_string())
+    Row::PageTitle(page.title(), page.description().to_string())
+}
+
+/// What every page starts with: the way back (on a subpage), then the title and its line.
+fn push_head(b: &mut Builder, page: Page) {
+    if page.parent().is_some() {
+        b.push(Row::Crumb);
+    }
+    b.push(page_title(page));
 }
 
 pub struct Builder {
@@ -195,6 +158,38 @@ impl Builder {
     }
 }
 
+const TILE_GAP: i32 = 12;
+const TILE_LABEL_H: i32 = 40;
+
+/// Columns, tile width, preview height and tile height of the wallpaper grid.
+fn wall_geom(lw: i32) -> (i32, i32, i32, i32) {
+    let inner = lw - 2 * MARGIN - 2 * PAD;
+    let cols = ((inner + TILE_GAP) / (180 + TILE_GAP)).clamp(2, 4);
+    let tile_w = ((inner - TILE_GAP * (cols - 1)) / cols).max(60);
+    let thumb_h = tile_w * 9 / 16;
+    (cols, tile_w, thumb_h, thumb_h + TILE_LABEL_H)
+}
+
+/// A tile's rectangle relative to the top of the grid row.
+fn wall_rect(lw: i32, index: usize) -> (i32, i32, i32, i32) {
+    let (cols, tile_w, _, tile_h) = wall_geom(lw);
+    let col = index as i32 % cols;
+    let row = index as i32 / cols;
+    let left = MARGIN + PAD + col * (tile_w + TILE_GAP);
+    let top = PAD + row * (tile_h + TILE_GAP);
+    (left, top, left + tile_w, top + tile_h)
+}
+
+pub fn wall_rect_pub(lw: i32, index: usize) -> (i32, i32, i32, i32) {
+    wall_rect(lw, index)
+}
+
+fn wall_height(lw: i32, count: usize) -> i32 {
+    let (cols, _, _, tile_h) = wall_geom(lw);
+    let rows = (count as i32 + cols - 1) / cols;
+    2 * PAD + rows * tile_h + (rows - 1).max(0) * TILE_GAP + GAP
+}
+
 fn list_height(len: usize) -> i32 {
     (len.max(1) as i32) * LIST_LINE + 16 + GAP
 }
@@ -216,14 +211,77 @@ impl Ui {
     fn rows_for_current_page(&self) -> Vec<Laid> {
         match self.page {
             Page::Home => self.rows_home(),
-            Page::Fix => self.rows_fix(),
-            Page::Appearance => self.rows_appearance(),
-            Page::Scenes => self.rows_scenes(),
-            Page::Rules => self.rows_rules(),
+            Page::Appearance | Page::Apps | Page::Help => self.rows_hub(self.page),
+            Page::AppearanceScenes => self.rows_scenes(),
+            Page::AppearanceEffects => self.rows_appearance(),
+            Page::AppearanceWallpapers => self.rows_gallery(),
+            Page::AppearanceSchedule => self.rows_schedule(),
+            Page::AppearanceTools => self.rows_tools(),
+            Page::AppsFix => self.rows_fix(),
+            Page::AppsRules => self.rows_rules(),
+            Page::AppsPacks => self.rows_packs(),
+            Page::AppsExclusions => self.rows_exclusions(),
             Page::Safety => self.rows_safety(),
-            Page::Diagnostics => self.rows_diagnostics(),
-            Page::Help => self.rows_help(),
+            Page::SafetyExperimental => self.rows_experimental(),
+            Page::Settings => self.rows_settings(),
+            Page::HelpTopics => self.rows_help(),
+            Page::HelpDiagnostics => self.rows_diagnostics(),
+            Page::HelpAbout => self.rows_about(),
+            Page::Search => self.rows_search(),
         }
+    }
+
+    /// A category's landing page: a line of status, then a card for each subpage.
+    fn rows_hub(&self, hub: Page) -> Vec<Laid> {
+        let mut b = Builder::new();
+        push_head(&mut b, hub);
+        let status = match hub {
+            Page::Appearance => Some(self.current_look_line()),
+            Page::Apps => Some(format!(
+                "{} per-app rule(s), {} app(s) left alone, {} compatibility pack(s) installed.",
+                self.config
+                    .rules
+                    .iter()
+                    .filter(|r| !r
+                        .name
+                        .as_deref()
+                        .is_some_and(|n| n.starts_with(crate::packs::RULE_PREFIX)))
+                    .count(),
+                self.config.exclude.len() + self.config.exclude_classes.len(),
+                crate::installed_packs(&self.config).len()
+            )),
+            _ => None,
+        };
+        if let Some(line) = status {
+            b.push(Row::About(vec![line]));
+        }
+        for child in hub.children() {
+            b.push(Row::Link(child));
+        }
+        b.out
+    }
+
+    /// Search results: a card per result, each opening its place. Nothing here changes a setting.
+    fn rows_search(&self) -> Vec<Laid> {
+        let mut b = Builder::new();
+        // On the narrow rail the search box has no room in the pane, so it sits here.
+        if self.nav_w <= crate::ui_metrics::NAV_COMPACT {
+            b.push(Row::GlobalSearch);
+        }
+        push_head(&mut b, Page::Search);
+        if self.ext.query.trim().is_empty() {
+            b.push(Row::Note("Type a setting, an action, a scene or a help topic. Results open the place; nothing changes until you do it there."));
+        } else if self.ext.results.is_empty() {
+            b.push(Row::About(vec![
+                format!("Nothing matches \"{}\".", self.ext.query.trim()),
+                "Try one word, such as blur, restore, updates or wallpaper.".to_string(),
+            ]));
+        } else {
+            for index in 0..self.ext.results.len() {
+                b.push(Row::Result(index));
+            }
+        }
+        b.out
     }
 
     fn rows_home(&self) -> Vec<Laid> {
@@ -244,7 +302,6 @@ impl Ui {
         if let Some(text) = &safe {
             status.push(text.clone());
         }
-        status.push(self.current_look_line());
         status.push(self.experimental_summary());
         if let Some(reason) = super::super::app::reduce_reason_now() {
             status.push(format!(
@@ -252,8 +309,29 @@ impl Ui {
             ));
         }
         b.push(Row::About(status));
+        match updater::phase() {
+            crate::update::Phase::Available(c) => {
+                b.push(Row::About(vec![
+                    format!(
+                        "Update available: {} ({})",
+                        c.tag,
+                        if c.preview { "preview" } else { "stable" }
+                    ),
+                    "Nothing is downloaded or installed until you choose.".to_string(),
+                ]));
+                b.push(Row::Buttons(vec![Button::GoUpdates, Button::SkipUpdate]));
+            }
+            crate::update::Phase::Ready { candidate, .. } => {
+                b.push(Row::About(vec![
+                    format!("Update ready: {} is downloaded", candidate.tag),
+                    "Nothing has been installed yet.".to_string(),
+                ]));
+                b.push(Row::Buttons(vec![Button::GoUpdates]));
+            }
+            _ => {}
+        }
         self.push_setup_card(&mut b);
-        b.push(Row::Header("What next"));
+        b.push(Row::Header("Customize"));
         b.push(Row::Buttons(vec![
             Button::GoFix,
             if paused {
@@ -261,15 +339,31 @@ impl Ui {
             } else {
                 Button::PauseAll
             },
-            Button::GoPalette,
         ]));
         b.push(Row::Note(
-            "Fix an app: pick a window, preview a look, keep it or undo it. Pause puts every window back at once; nothing is lost.",
+            "Customize an app: pick a window, preview a look, keep it or undo it. Pause puts every window back at once; nothing is lost. Recovery options are under Safety.",
         ));
+        b.push(Row::Header("Looks"));
+        let mut looks = vec![self.current_look_line()];
+        let saved: Vec<&str> = self
+            .ext
+            .book
+            .looks
+            .iter()
+            .take(3)
+            .map(|look| look.name.as_str())
+            .collect();
+        if saved.is_empty() {
+            looks.push(
+                "No saved looks yet. Save one under Appearance > Scenes and looks.".to_string(),
+            );
+        } else {
+            looks.push(format!("Your saved looks: {}.", saved.join(", ")));
+        }
+        b.push(Row::Lines(looks));
+        b.push(Row::Buttons(vec![Button::GoScenes, Button::GoHelp]));
         b.push(Row::Header("Customization"));
         b.push(Row::Toggle(Toggle::Theme));
-        b.push(Row::Header("Explore"));
-        b.push(Row::Buttons(vec![Button::GoScenes, Button::GoHelp]));
         b.push(Row::Credit);
         b.out
     }
@@ -315,14 +409,29 @@ impl Ui {
 
     fn rows_help(&self) -> Vec<Laid> {
         let mut b = Builder::new();
-        b.push(page_title(Page::Help));
+        push_head(&mut b, Page::HelpTopics);
         self.push_help(&mut b);
+        b.out
+    }
+
+    /// General preferences: how AllBlack11 itself looks and starts, shortcuts, updates.
+    fn rows_settings(&self) -> Vec<Laid> {
+        let mut b = Builder::new();
+        push_head(&mut b, Page::Settings);
         b.push(Row::Header("AllBlack11 itself"));
         b.push(Row::Choice(Choice::AppAppearance));
         b.push(Row::Toggle(Toggle::Autostart));
-        b.push(Row::Header("Command palette"));
-        b.push(Row::Action(Button::OpenPalette));
+        b.push(Row::Header("Shortcuts"));
         b.push(Row::Toggle(Toggle::PaletteHotkey));
+        b.push(Row::Action(Button::OpenPalette));
+        self.push_updates(&mut b);
+        b.out
+    }
+
+    /// Version, CPU type, verification status, credits and licenses.
+    fn rows_about(&self) -> Vec<Laid> {
+        let mut b = Builder::new();
+        push_head(&mut b, Page::HelpAbout);
         b.push(Row::Header("About"));
         let mut about = vec![
             format!("AllBlack11 {}", env!("CARGO_PKG_VERSION")),
@@ -344,11 +453,19 @@ impl Ui {
         about.push(crate::credit_text());
         b.push(Row::About(about));
         b.push(Row::Credit);
+        b.push(Row::Header("Licenses"));
+        b.push(Row::Lines(vec![
+            "AllBlack11 is free software under the MIT license (the LICENSE file in the source).".to_string(),
+            "It uses the Rust standard library, serde and serde_json, and Microsoft's windows-sys bindings, all MIT or Apache-2.0.".to_string(),
+            "Windows, Segoe Fluent Icons and the Fluent design guidance belong to Microsoft; no Microsoft code or font is bundled.".to_string(),
+            "The wallpapers and the icon are original works made for this project.".to_string(),
+        ]));
         b.out
     }
+
     fn rows_appearance(&self) -> Vec<Laid> {
         let mut b = Builder::new();
-        b.push(page_title(Page::Appearance));
+        push_head(&mut b, Page::AppearanceEffects);
         b.push(Row::Header("Quick looks"));
         b.push(Row::Presets);
         b.push(Row::Note(
@@ -360,7 +477,7 @@ impl Ui {
         };
         b.push(Row::About(vec![
             target,
-            "Pick a different target on the Fix this app or Rules page.".to_string(),
+            "Pick a different target under Apps > Customize an app or Per-app rules.".to_string(),
         ]));
         b.push(Row::Header(if self.rule.is_some() {
             "Look for one app"
@@ -388,22 +505,34 @@ impl Ui {
         ));
         b.push(Row::Toggle(Toggle::Blur));
         b.push(Row::Action(Button::PreferAppDefaults));
-        b.push(Row::Action(Button::DemoMaterials));
-        b.push(Row::Action(Button::DemoCompare));
-        b.push(Row::Header("Focus Look"));
-        b.push(Row::Toggle(Toggle::FocusLook));
-        b.push(Row::Toggle(Toggle::Reapply));
-        b.push(Row::Header("Reduce effects automatically"));
-        b.push(Row::Toggle(Toggle::ReduceBattery));
-        b.push(Row::Toggle(Toggle::ReduceRemote));
-        b.push(Row::Toggle(Toggle::ReduceTransparency));
-        b.push(Row::Header("Title bar height"));
-        b.push(Row::Slider(Slider::Caption));
-        b.push(Row::Header("Taskbar and Start (shell)"));
-        b.push(Row::Toggle(Toggle::Oled));
-        b.push(Row::Toggle(Toggle::Black));
-        b.push(Row::Action(Button::RestartExplorer));
-        self.push_contrast_lab(&mut b);
+        b.push(Row::Expander("Focus Look and automatic reductions"));
+        if self.section_open("Focus Look and automatic reductions") {
+            b.push(Row::Header("Focus Look"));
+            b.push(Row::Toggle(Toggle::FocusLook));
+            b.push(Row::Toggle(Toggle::Reapply));
+            b.push(Row::Header("Reduce effects automatically"));
+            b.push(Row::Toggle(Toggle::ReduceBattery));
+            b.push(Row::Toggle(Toggle::ReduceRemote));
+            b.push(Row::Toggle(Toggle::ReduceTransparency));
+        }
+        b.push(Row::Expander("Title bar height and test windows"));
+        if self.section_open("Title bar height and test windows") {
+            b.push(Row::Header("Title bar height"));
+            b.push(Row::Slider(Slider::Caption));
+            b.push(Row::Action(Button::DemoMaterials));
+            b.push(Row::Action(Button::DemoCompare));
+        }
+        b.push(Row::Expander("Taskbar and Start (shell)"));
+        if self.section_open("Taskbar and Start (shell)") {
+            b.push(Row::Header("Taskbar and Start (shell)"));
+            b.push(Row::Toggle(Toggle::Oled));
+            b.push(Row::Toggle(Toggle::Black));
+            b.push(Row::Action(Button::RestartExplorer));
+        }
+        b.push(Row::Expander("Contrast check"));
+        if self.section_open("Contrast check") {
+            self.push_contrast_lab(&mut b);
+        }
         b.out
     }
 
@@ -452,7 +581,7 @@ impl Ui {
     pub fn push_fix_card(&self, b: &mut Builder) {
         if let (Some(plan), Some(_)) = (&self.ext.fix, &self.ext.selected) {
             // The guided path: what this is, what can change, then the safe actions.
-            b.push(Row::Header("Fix this app"));
+            b.push(Row::Header("This app"));
             b.push(Row::Lines(plan.identity.clone()));
             b.push(Row::Header("What can change here"));
             b.push(Row::Lines(
@@ -474,7 +603,7 @@ impl Ui {
             if !plan.actions.is_empty() {
                 b.push(Row::Header("Safe actions"));
                 b.push(Row::Note(
-                    "Preview shows the look from the Appearance page on this one window for 20 seconds, then puts it back. Nothing is saved until you press Save as rule.",
+                    "Preview shows the look from Appearance > Effects and colors on this one window for 20 seconds, then puts it back. Nothing is saved until you press Save as rule.",
                 ));
                 b.push(Row::Choice(Choice::RuleScope));
                 let buttons = plan
@@ -506,16 +635,18 @@ impl Ui {
 
     fn rows_fix(&self) -> Vec<Laid> {
         let mut b = Builder::new();
-        b.push(page_title(Page::Fix));
+        push_head(&mut b, Page::AppsFix);
         self.push_pick(&mut b);
         self.push_fix_card(&mut b);
-        b.push(Row::Header("Full inspector report"));
-        let lines = if self.ext.report_lines.is_empty() {
-            vec!["Pick a window to see what AllBlack11 does with it, and why.".to_string()]
-        } else {
-            self.ext.report_lines.clone()
-        };
-        b.push(Row::Lines(lines));
+        b.push(Row::Expander("Full inspector report"));
+        if self.section_open("Full inspector report") {
+            let lines = if self.ext.report_lines.is_empty() {
+                vec!["Pick a window to see what AllBlack11 does with it, and why.".to_string()]
+            } else {
+                self.ext.report_lines.clone()
+            };
+            b.push(Row::Lines(lines));
+        }
         if self.ext.selected.is_some() {
             b.push(Row::Header("Your note for this app on this Windows build"));
             b.push(Row::Buttons(vec![
@@ -530,10 +661,10 @@ impl Ui {
 
     fn rows_rules(&self) -> Vec<Laid> {
         let mut b = Builder::new();
-        b.push(page_title(Page::Rules));
+        push_head(&mut b, Page::AppsRules);
         b.push(Row::Header("Per-app rules"));
         b.push(Row::Note(
-            "Most specific match wins, then the higher priority, then the earlier rule. Pick a rule to edit its look on the Appearance page.",
+            "Most specific match wins, then the higher priority, then the earlier rule. Pick a rule to edit its look under Appearance > Effects and colors.",
         ));
         b.push_h(Row::RuleList, list_height(self.config.rules.len()));
         if let Some(rule) = self.rule.and_then(|index| self.config.rules.get(index)) {
@@ -586,21 +717,123 @@ impl Ui {
         } else {
             b.push(Row::Lines(self.ext.playground.clone()));
         }
+        b.out
+    }
+
+    fn rows_exclusions(&self) -> Vec<Laid> {
+        let mut b = Builder::new();
+        push_head(&mut b, Page::AppsExclusions);
         b.push(Row::Header("Never theme these apps"));
         b.push(Row::Note(
-            "Games and launchers belong here. Use the exe name, such as steam.exe.",
+            "Games and launchers belong here. Use the exe name, such as steam.exe. To leave a window class alone in every app instead, type class=Name.",
         ));
         b.push_h(Row::ExcludeList, list_height(self.config.exclude.len()));
         b.push(Row::AddField(Button::AddExclude));
         b.push(Row::Action(Button::RemoveExclude));
+        self.push_exclusions(&mut b);
+        b.out
+    }
+
+    fn rows_packs(&self) -> Vec<Laid> {
+        let mut b = Builder::new();
+        push_head(&mut b, Page::AppsPacks);
+        self.push_packs(&mut b);
         self.push_notebook(&mut b);
+        b.out
+    }
+
+    fn rows_experimental(&self) -> Vec<Laid> {
+        let mut b = Builder::new();
+        push_head(&mut b, Page::SafetyExperimental);
         self.push_legacy(&mut b);
+        b.out
+    }
+
+    fn rows_gallery(&self) -> Vec<Laid> {
+        use super::super::gallery;
+        let mut b = Builder::new();
+        push_head(&mut b, Page::AppearanceWallpapers);
+        b.push(Row::Note(
+            "Original wallpapers drawn by a script in this project: a true-black foundation, no large bright areas, and only the silver and blue of the AllBlack11 brand. Nothing is downloaded until you press Download, and nothing is sent anywhere.",
+        ));
+        if self.ext.walls.is_empty() {
+            b.push(Row::Note("No wallpapers are available in this build."));
+            return b.out;
+        }
+        let lw = self.lw(self.hwnd);
+        b.push_h(Row::WallGrid, wall_height(lw, self.ext.walls.len()));
+        let Some(entry) = self.ext.walls.get(self.ext.wall_sel) else {
+            return b.out;
+        };
+        let have = gallery::downloaded(entry);
+        let job = gallery::job();
+        let mut lines = vec![
+            format!("{}: {}", entry.name, entry.description),
+            if have {
+                format!(
+                    "On this PC, {}, {}x{}. Checked against the checksum built into AllBlack11.",
+                    crate::wallpaper::size_text(entry.bytes),
+                    entry.width,
+                    entry.height
+                )
+            } else {
+                format!(
+                    "Not on this PC yet. Download is {} ({}x{}), from the {} release on GitHub, and is checked against a checksum built into AllBlack11.",
+                    crate::wallpaper::size_text(entry.bytes),
+                    entry.width,
+                    entry.height,
+                    crate::wallpaper::release_tag()
+                )
+            },
+        ];
+        match &job {
+            gallery::Job::Downloading { id, done, total } if *id == entry.id => {
+                lines.push(format!(
+                    "Downloading: {} of {}.",
+                    crate::update::format_bytes(*done),
+                    crate::update::format_bytes(*total)
+                ))
+            }
+            gallery::Job::Applying { .. } => lines.push("Applying through Windows…".to_string()),
+            gallery::Job::PuttingBack => {
+                lines.push("Putting the earlier wallpaper back…".to_string())
+            }
+            _ => {}
+        }
+        if let Some(applied) = &self.ext.wall_state.applied {
+            if applied.id == entry.id {
+                lines.push("This is the wallpaper you applied last.".to_string());
+            }
+        }
+        b.push(Row::Lines(lines));
+        b.push(Row::Choice(Choice::WallDisplay));
+        b.push(Row::Choice(Choice::WallFit));
+        let mut buttons = match &job {
+            gallery::Job::Downloading { id, .. } if *id == entry.id => vec![Button::WallCancel],
+            _ if have => vec![
+                Button::WallApply,
+                Button::WallPreview,
+                Button::WallOpenFolder,
+            ],
+            _ => vec![
+                Button::WallDownload,
+                Button::WallPreview,
+                Button::WallOpenFolder,
+            ],
+        };
+        if self.ext.wall_state.can_put_back() {
+            buttons.push(Button::WallPutBack);
+        }
+        b.push(Row::Buttons(buttons));
+        b.push(Row::Note(
+            "Preview shows the picture on this display the way Windows will place it; Enter applies it and Esc closes. Apply keeps what was there before, so Put back previous can undo it. Wallpapers are not part of Look history.",
+        ));
         b.out
     }
 
     fn rows_scenes(&self) -> Vec<Laid> {
         let mut b = Builder::new();
-        b.push(page_title(Page::Scenes));
+        push_head(&mut b, Page::AppearanceScenes);
         b.push(Row::Note(
             "A scene sets the default look and Focus Look. It never changes your per-app rules, exclusions, the shell or the legacy layer, so an app with its own rule keeps its own colors. Scenes change window frames only.",
         ));
@@ -637,11 +870,13 @@ impl Ui {
         ));
         b.push(Row::AddField(Button::SaveLook));
         b.push(Row::Action(Button::DemoCompare));
-        b.push(Row::Header("Palette from a picture"));
-        b.push(Row::Note(
-            "Pick a picture on this PC. AllBlack11 reads up to 64 x 64 sample points with Windows' own picture support, builds a frame look that keeps text readable, and adds it to the list above as a scene. The picture is not stored, copied or uploaded.",
-        ));
-        b.push(Row::Action(Button::PaletteFromImage));
+        b.out
+    }
+
+    /// Day and night scenes, and a border color for each app.
+    fn rows_schedule(&self) -> Vec<Laid> {
+        let mut b = Builder::new();
+        push_head(&mut b, Page::AppearanceSchedule);
         b.push(Row::Header("Day / Night (optional)"));
         b.push(Row::Toggle(Toggle::DayNight));
         if self.config.features.day_night.enabled {
@@ -656,8 +891,20 @@ impl Ui {
         b.push(Row::Header("Identity accents (optional)"));
         b.push(Row::Toggle(Toggle::IdentityAccents));
         b.push(Row::Note(
-            "Pick an app on Fix this app to change its accent. Colors are chosen once per app, saved on this PC (app names only, never window titles), and stay the same.",
+            "Pick an app under Apps > Customize an app to change its accent. Colors are chosen once per app, saved on this PC (app names only, never window titles), and stay the same.",
         ));
+        b.out
+    }
+
+    /// Palette from a picture, recipes and the remixer.
+    fn rows_tools(&self) -> Vec<Laid> {
+        let mut b = Builder::new();
+        push_head(&mut b, Page::AppearanceTools);
+        b.push(Row::Header("Palette from a picture"));
+        b.push(Row::Note(
+            "Pick a picture on this PC. AllBlack11 reads up to 64 x 64 sample points with Windows' own picture support, builds a frame look that keeps text readable, and adds it to the list above as a scene. The picture is not stored, copied or uploaded.",
+        ));
+        b.push(Row::Action(Button::PaletteFromImage));
         b.push(Row::Header("Recipes"));
         b.push(Row::Note(
             "A recipe is a small data file describing a look. It cannot run anything or change the shell. Built-in recipes are trusted; imported ones are checked and shown to you before they are tried.",
@@ -704,12 +951,46 @@ impl Ui {
             Button::ImportRecipe,
             Button::ExportRecipe,
         ]));
+        b.push(Row::Header("Remix two recipes"));
+        b.push(Row::Note(
+            "Take one group of fields (frame colors, material, or dark title bar and corners) from another recipe and keep the rest of the recipe picked above. The mix is checked like an imported file, and refused if the title text would be hard to read. Try runs it for 15 seconds; nothing is saved until you press Keep.",
+        ));
+        if self.remix_donor().is_some() && self.ext.recipe_sel.is_some() {
+            b.push(Row::Choice(Choice::RemixWith));
+            b.push(Row::Choice(Choice::RemixPart));
+            let lines = match self.current_remix() {
+                Some(Ok(recipe)) => {
+                    let diff = crate::preview_recipe(&self.config, &recipe);
+                    let mut lines = vec![format!("Result: {}", recipe.name)];
+                    if diff.is_empty() {
+                        lines.push(
+                            "It would change nothing: your look already matches.".to_string(),
+                        );
+                    } else {
+                        lines.push("It would change:".to_string());
+                        lines.extend(
+                            diff.iter()
+                                .map(|c| format!("  {}: {} → {}", c.field, c.from, c.to)),
+                        );
+                    }
+                    lines
+                }
+                Some(Err(reason)) => vec![reason],
+                None => vec!["Pick a recipe above first.".to_string()],
+            };
+            b.push(Row::Lines(lines));
+            b.push(Row::Buttons(vec![Button::TryRemix, Button::SaveRemix]));
+        } else {
+            b.push(Row::Note(
+                "Pick a recipe in the list above to remix it with another.",
+            ));
+        }
         b.out
     }
 
     fn rows_diagnostics(&self) -> Vec<Laid> {
         let mut b = Builder::new();
-        b.push(page_title(Page::Diagnostics));
+        push_head(&mut b, Page::HelpDiagnostics);
         b.push(Row::Header("This PC"));
         let mut pc = vec![
             self.arch_line.clone(),
@@ -725,15 +1006,17 @@ impl Ui {
             None => pc.push("Effects are at full strength.".to_string()),
         }
         b.push(Row::About(pc));
-        b.push(Row::Header("What this Windows build supports"));
-        let support: Vec<String> = attribute_support(self.build)
-            .iter()
-            .map(|item| format!("{} — {}", item.name, item.support.label()))
-            .collect();
-        b.push(Row::Lines(support));
-        b.push(Row::Note(
-            "Supported means Windows accepts the call on this build. It does not mean every app shows the result: an app's own opaque content can hide a backdrop, and apps with their own title bar ignore caption colors.",
-        ));
+        b.push(Row::Expander("What this Windows build supports"));
+        if self.section_open("What this Windows build supports") {
+            let support: Vec<String> = attribute_support(self.build)
+                .iter()
+                .map(|item| format!("{} — {}", item.name, item.support.label()))
+                .collect();
+            b.push(Row::Lines(support));
+            b.push(Row::Note(
+                "Supported means Windows accepts the call on this build. It does not mean every app shows the result: an app's own opaque content can hide a backdrop, and apps with their own title bar ignore caption colors.",
+            ));
+        }
         b.push(Row::Header("Tools"));
         b.push(Row::Toggle(Toggle::Logging));
         b.push(Row::Action(Button::Diagnostics));
@@ -768,7 +1051,7 @@ impl Ui {
                 counts[2],
                 counts[3]
             ),
-            "Notes stay on this PC (compat.json). Nothing is sent anywhere. Add one from Fix this app.".to_string(),
+            "Notes stay on this PC (compat.json). Nothing is sent anywhere. Add one from Customize an app.".to_string(),
         ]));
         b.push(Row::Buttons(vec![Button::ClearNotebook]));
     }
@@ -812,7 +1095,7 @@ impl Ui {
 
     fn rows_safety(&self) -> Vec<Laid> {
         let mut b = Builder::new();
-        b.push(page_title(Page::Safety));
+        push_head(&mut b, Page::Safety);
         if let Some(text) = super::super::app::safe_mode_text() {
             b.push(Row::Header("Safe mode"));
             b.push(Row::About(vec![
@@ -874,8 +1157,9 @@ impl Ui {
         b.push(Row::Header("x64 helper (ARM64 only)"));
         b.push(Row::About(vec![super::super::legacy::helper_status()]));
         b.push(Row::Note(
-            "Turn off emulated x64 coverage under Rules and compatibility, or press Turn off experimental features above. Either one asks the helper to stop and ends it if it does not.",
+            "Turn off emulated x64 coverage under Safety > Experimental features, or press Turn off experimental features above. Either one asks the helper to stop and ends it if it does not.",
         ));
+        b.push(Row::Link(Page::SafetyExperimental));
         b.out
     }
 
@@ -883,14 +1167,17 @@ impl Ui {
         let on = |flag: bool| if flag { "on" } else { "off" };
         vec![
             format!(
-                "Dark classic dialogs: {} (Rules and compatibility)",
+                "Dark classic dialogs: {} (Safety > Experimental features)",
                 on(self.config.experimental_dark_legacy)
             ),
             format!(
-                "Emulated x64 coverage: {} (Rules and compatibility)",
+                "Emulated x64 coverage: {} (Safety > Experimental features)",
                 on(self.config.legacy.emulated_x64)
             ),
-            format!("Focus Look: {} (Appearance)", on(self.config.focus.enabled)),
+            format!(
+                "Focus Look: {} (Appearance > Effects and colors)",
+                on(self.config.focus.enabled)
+            ),
         ]
     }
 }
@@ -939,35 +1226,132 @@ pub fn trial_pills(lw: i32, status_top: i32) -> ((i32, i32, i32, i32), (i32, i32
     )
 }
 
-pub const NAV_ITEM_H: i32 = 40;
-const NAV_TOP: i32 = 60;
+/// `color:<name>` anchors, for the four color boxes.
+fn color_anchor(id: u16) -> &'static str {
+    match id {
+        ID_CAPTION => "caption",
+        ID_BORDER => "border",
+        ID_TEXT => "text",
+        _ => "tint",
+    }
+}
 
-/// Rectangle (l, t, r, b) of navigation item `index`, in client logical px. The last item
-/// (Settings and help) is anchored to the bottom, apart from the rest.
-pub fn nav_item_rect(ui: &Ui, index: usize) -> (i32, i32, i32, i32) {
-    let last = Page::ALL.len() - 1;
-    let top = if index == last {
-        ui.client_lh - 8 - NAV_ITEM_H
+pub const NAV_ITEM_H: i32 = 40;
+/// The search box sits under the brand line; the categories start below it.
+const NAV_SEARCH_TOP: i32 = 52;
+const NAV_SEARCH_H: i32 = 32;
+const NAV_TOP: i32 = 100;
+
+/// The global search box (expanded pane) or its magnifier button (narrow rail), in client logical
+/// px.
+pub fn nav_search_rect(ui: &Ui) -> (i32, i32, i32, i32) {
+    if ui.nav_w > crate::ui_metrics::NAV_COMPACT {
+        (
+            12,
+            NAV_SEARCH_TOP,
+            ui.nav_w - 12,
+            NAV_SEARCH_TOP + NAV_SEARCH_H,
+        )
     } else {
-        NAV_TOP + index as i32 * NAV_ITEM_H
-    };
+        (
+            4,
+            NAV_SEARCH_TOP,
+            ui.nav_w - 4,
+            NAV_SEARCH_TOP + NAV_ITEM_H - 4,
+        )
+    }
+}
+
+/// The small clear (x) button at the right of a non-empty search box.
+pub fn nav_search_clear_rect(ui: &Ui) -> (i32, i32, i32, i32) {
+    let (_, t, r, b) = nav_search_rect(ui);
+    (r - 28, t + 2, r - 2, b - 2)
+}
+
+/// Rectangle (l, t, r, b) of navigation item `index` (a category), in client logical px.
+pub fn nav_item_rect(ui: &Ui, index: usize) -> (i32, i32, i32, i32) {
+    let top = NAV_TOP + index as i32 * NAV_ITEM_H;
     (4, top, ui.nav_w - 4, top + NAV_ITEM_H - 4)
 }
 
-/// Which destination is under a point (client logical px), if any.
-pub fn nav_hit(ui: &Ui, lx: i32, ly: i32) -> Option<Page> {
+/// Which category is under a point (client logical px), if any.
+pub fn nav_hit(ui: &Ui, lx: i32, ly: i32) -> Option<crate::Category> {
     if ui.nav_w == 0 || lx < 0 || lx >= ui.nav_w {
         return None;
     }
-    Page::ALL.iter().enumerate().find_map(|(index, page)| {
-        let (l, t, r, b) = nav_item_rect(ui, index);
-        (lx >= l && lx < r && ly >= t && ly < b).then_some(*page)
-    })
+    crate::Category::ALL
+        .iter()
+        .enumerate()
+        .find_map(|(index, category)| {
+            let (l, t, r, b) = nav_item_rect(ui, index);
+            (lx >= l && lx < r && ly >= t && ly < b).then_some(*category)
+        })
 }
 
-/// The navigation pane: a flat list of destinations, the selected one marked by a filled row
-/// *and* an accent bar *and* a bold label (never color alone), a divider before the footer
-/// item, and a visible focus ring when it holds keyboard focus.
+/// The frame around the native search box (or the magnifier button on the narrow rail), with a
+/// magnifier and, once something is typed, a clear button.
+fn paint_nav_search(c: &Canvas, ui: &Ui, expanded: bool) {
+    let theme = th();
+    let (l, t, r, b) = nav_search_rect(ui);
+    let active = !ui.ext.query.is_empty() || ui.page == Page::Search;
+    c.round(
+        l,
+        t,
+        r,
+        b,
+        crate::ui_metrics::CONTROL_RADIUS,
+        Some(theme.edit_bg),
+        Some(if active {
+            ui.accent
+        } else {
+            theme.control_edge
+        }),
+    );
+    if ui.fonts.icon.is_null() {
+        return;
+    }
+    let glyph = '\u{E721}'.to_string();
+    if expanded {
+        c.text(
+            l + 6,
+            t,
+            l + 30,
+            b,
+            &glyph,
+            theme.muted,
+            ui.fonts.icon,
+            DT_CENTER | DT_VCENTER | DT_SINGLELINE,
+        );
+        if !ui.ext.query.is_empty() {
+            let (cl, ct, cr, cb) = nav_search_clear_rect(ui);
+            c.text(
+                cl,
+                ct,
+                cr,
+                cb,
+                &'\u{E711}'.to_string(),
+                theme.text,
+                ui.fonts.icon,
+                DT_CENTER | DT_VCENTER | DT_SINGLELINE,
+            );
+        }
+    } else {
+        c.text(
+            l,
+            t,
+            r,
+            b,
+            &glyph,
+            theme.text,
+            ui.fonts.icon,
+            DT_CENTER | DT_VCENTER | DT_SINGLELINE,
+        );
+    }
+}
+
+/// The navigation pane: the search box, then the six categories, the selected one marked by a
+/// filled row *and* an accent bar *and* a bold label (never color alone), and a visible focus
+/// ring when it holds keyboard focus.
 pub fn paint_nav(c: &Canvas, ui: &Ui) {
     let fonts = &ui.fonts;
     let theme = th();
@@ -993,18 +1377,10 @@ pub fn paint_nav(c: &Canvas, ui: &Ui) {
             DT_LEFT | DT_VCENTER | DT_SINGLELINE,
         );
     }
-    let last = Page::ALL.len() - 1;
-    let (_, footer_top, _, _) = nav_item_rect(ui, last);
-    c.fill(
-        12,
-        footer_top - 8,
-        ui.nav_w - 12,
-        footer_top - 7,
-        theme.edge,
-    );
-    for (index, page) in Page::ALL.iter().enumerate() {
+    paint_nav_search(c, ui, expanded);
+    for (index, category) in crate::Category::ALL.iter().enumerate() {
         let (l, t, r, b) = nav_item_rect(ui, index);
-        let selected = *page == ui.page;
+        let selected = *category == ui.page.category();
         if selected {
             c.round(
                 l,
@@ -1040,7 +1416,7 @@ pub fn paint_nav(c: &Canvas, ui: &Ui) {
             // No icon font installed: text only, never a box of missing-glyph squares. The
             // compact rail then shows an initial so each item stays distinguishable.
             if !expanded {
-                let initial: String = page.nav_label().chars().take(1).collect();
+                let initial: String = category.title().chars().take(1).collect();
                 c.text(
                     l,
                     t,
@@ -1053,7 +1429,7 @@ pub fn paint_nav(c: &Canvas, ui: &Ui) {
                 );
             }
         } else {
-            let glyph = page.glyph().to_string();
+            let glyph = category.glyph().to_string();
             let (gl, gr) = if expanded {
                 (icon_box.0, icon_box.2)
             } else {
@@ -1072,11 +1448,11 @@ pub fn paint_nav(c: &Canvas, ui: &Ui) {
         }
         if expanded {
             c.text(
-                l + 44,
+                l + if fonts.icon.is_null() { 12 } else { 44 },
                 t,
                 r - 4,
                 b,
-                page.nav_label(),
+                category.title(),
                 theme.text,
                 if selected { fonts.head } else { fonts.body },
                 DT_LEFT | DT_VCENTER | DT_SINGLELINE | DT_END_ELLIPSIS,
@@ -1171,9 +1547,25 @@ impl Ui {
         let client_x = (lparam_x(lparam) as f32 / self.k) as i32;
         let ly = (lparam_y(lparam) as f32 / self.k) as i32;
         // Navigation pane.
-        if let Some(page) = nav_hit(self, client_x, ly) {
+        if self.nav_w > 0 {
+            let inside = |r: (i32, i32, i32, i32)| {
+                client_x >= r.0 && client_x < r.2 && ly >= r.1 && ly < r.3
+            };
+            if !self.ext.query.is_empty()
+                && self.nav_w > crate::ui_metrics::NAV_COMPACT
+                && inside(nav_search_clear_rect(self))
+            {
+                self.clear_search(hwnd);
+                return true;
+            }
+            if inside(nav_search_rect(self)) {
+                self.focus_search(hwnd);
+                return true;
+            }
+        }
+        if let Some(category) = nav_hit(self, client_x, ly) {
             self.ext.nav_focus = true;
-            self.set_page(hwnd, page);
+            self.navigate(hwnd, category.landing());
             return true;
         }
         if client_x < self.nav_w {
@@ -1195,6 +1587,15 @@ impl Ui {
         false
     }
 
+    /// Navigation the person chose (a category, a card, Back): the status line belongs to the page
+    /// they left, so it is cleared.
+    pub fn navigate(&mut self, hwnd: HWND, page: Page) {
+        if self.page != page {
+            self.status.clear();
+        }
+        self.set_page(hwnd, page);
+    }
+
     pub fn set_page(&mut self, hwnd: HWND, page: Page) {
         if self.page == page {
             return;
@@ -1202,9 +1603,14 @@ impl Ui {
         self.page = page;
         self.scroll = 0;
         self.ext.focus = None;
+        self.ext.highlight = None;
+        if page != Page::Search && !self.ext.query.is_empty() {
+            self.set_search_text("");
+        }
         match page {
-            Page::Fix => self.refresh_windows(),
-            Page::Scenes => {
+            Page::AppsFix => self.refresh_windows(),
+            Page::AppearanceWallpapers => self.open_gallery(),
+            Page::AppearanceScenes => {
                 self.refresh_recipes();
                 self.refresh_looks();
             }
@@ -1284,7 +1690,36 @@ impl Ui {
             self.ext.refresh_pending = false;
             self.refresh_report();
         }
-        if !self.trial_active() {
+        if updater::stamp() != self.ext.update_seen {
+            self.ext.update_seen = updater::stamp();
+            if let Some(line) = crate::update::short_status(&updater::phase()) {
+                self.status = line;
+            }
+            self.relayout(hwnd);
+        }
+        if let Some((_, until)) = self.ext.highlight {
+            let now = unsafe { windows_sys::Win32::System::SystemInformation::GetTickCount64() };
+            if now >= until {
+                self.ext.highlight = None;
+            }
+        }
+        if super::super::gallery::stamp() != self.ext.wall_seen {
+            self.ext.wall_seen = super::super::gallery::stamp();
+            if let Some(message) = super::super::gallery::take_message() {
+                self.status = message;
+            }
+            self.ext.wall_state = super::super::gallery::load_state();
+            let count = super::super::gallery::displays().len() + 1;
+            if self.ext.wall_display >= count {
+                self.ext.wall_display = 0;
+            }
+            self.relayout(hwnd);
+        }
+        if !self.trial_active()
+            && !updater::busy()
+            && !super::super::gallery::busy()
+            && self.ext.highlight.is_none()
+        {
             unsafe { windows_sys::Win32::UI::WindowsAndMessaging::KillTimer(hwnd, TIMER_UI) };
         } else if self.trial_focus().is_some() && !self.ext.trial_announced {
             // The trial has started and focus is on Keep: tell a screen reader once.
@@ -1415,7 +1850,7 @@ impl Ui {
     }
 
     pub fn pick_hit(&self, lw: i32, lx: i32, cy: i32) -> bool {
-        if self.page != Page::Fix {
+        if self.page != Page::AppsFix {
             return false;
         }
         for row in self.rows() {
@@ -1474,10 +1909,15 @@ impl Ui {
                 | Row::Choice(_)
                 | Row::Action(_)
                 | Row::AddField(_)
-                | Row::Credit => Some((index, 1)),
+                | Row::Credit
+                | Row::Crumb
+                | Row::Link(_)
+                | Row::Result(_)
+                | Row::Expander(_) => Some((index, 1)),
                 Row::Buttons(list) => Some((index, list.len())),
                 Row::Presets => Some((index, PRESETS.len())),
                 Row::LookList if self.look_count() > 0 => Some((index, self.look_count())),
+                Row::WallGrid if !self.ext.walls.is_empty() => Some((index, self.ext.walls.len())),
                 // Sliders are reachable by keyboard: Left and Right change the value.
                 Row::Slider(_) => Some((index, 1)),
                 _ => None,
@@ -1496,6 +1936,7 @@ impl Ui {
     fn move_focus_inner(&mut self, hwnd: HWND, backwards: bool) {
         #[derive(Clone, Copy, PartialEq)]
         enum Stop {
+            Search,
             Nav,
             Content(usize),
             Trial(u8),
@@ -1505,6 +1946,12 @@ impl Ui {
         // while a trial runs, then back to the pane. Focus is never trapped and the trial's
         // answer is always reachable (Microsoft: keyboard accessibility).
         let mut ring: Vec<Stop> = Vec::new();
+        // The search box leads the navigation pane; on the narrow rail it is not in the ring (its
+        // button is the pane's, and its box is on the results page).
+        let search_in_pane = self.nav_w > crate::ui_metrics::NAV_COMPACT;
+        if search_in_pane {
+            ring.push(Stop::Search);
+        }
         if self.nav_w > 0 {
             ring.push(Stop::Nav);
         }
@@ -1518,6 +1965,11 @@ impl Ui {
         }
         let here = if let Some(button) = self.trial_focus() {
             Some(Stop::Trial(button))
+        } else if search_in_pane
+            && unsafe { windows_sys::Win32::UI::Input::KeyboardAndMouse::GetFocus() }
+                == self.edits.search
+        {
+            Some(Stop::Search)
         } else if self.ext.nav_focus {
             Some(Stop::Nav)
         } else {
@@ -1534,6 +1986,9 @@ impl Ui {
         self.ext.focus = None;
         self.ext.trial_focus = None;
         match ring[next] {
+            Stop::Search => unsafe {
+                windows_sys::Win32::UI::Input::KeyboardAndMouse::SetFocus(self.edits.search);
+            },
             Stop::Nav => self.ext.nav_focus = true,
             Stop::Content(index) => {
                 self.ext.focus = Some(index);
@@ -1654,6 +2109,16 @@ impl Ui {
             Row::Presets => self.apply_preset(sub.min(PRESETS.len() - 1)),
             Row::Credit => self.open_credit(),
             Row::LookList => self.click_look_list(sub as i32),
+            Row::WallGrid => self.select_wall(sub),
+            Row::Crumb => {
+                if let Some(parent) = self.page.parent() {
+                    self.navigate(hwnd, parent);
+                }
+            }
+            Row::Link(dest) => self.navigate(hwnd, *dest),
+            Row::Result(index) => self.open_result(hwnd, *index),
+            Row::Expander(title) => self.toggle_section(title),
+            Row::GlobalSearch => self.focus_search(hwnd),
             _ => {}
         }
         self.relayout(hwnd);
@@ -1961,7 +2426,150 @@ pub fn paint_extra(c: &Canvas, ui: &Ui, row: &Laid, top: i32, lw: i32) {
     let fonts = &ui.fonts;
     let left = MARGIN + PAD;
     let right = lw - MARGIN - PAD;
+    let card_h = row.h - GAP;
+    let text_left = left + if fonts.icon.is_null() { 0 } else { 44 };
+    // One icon from one family (Segoe Fluent Icons) in a fixed box, or nothing when the font is
+    // missing, so a gap never shows a "missing glyph" square.
+    let glyph_at = |ch: char, l: i32, t: i32, r: i32, b: i32, color: u32| {
+        if !fonts.icon.is_null() {
+            c.text(
+                l,
+                t,
+                r,
+                b,
+                &ch.to_string(),
+                color,
+                fonts.icon,
+                DT_CENTER | DT_VCENTER | DT_SINGLELINE,
+            );
+        }
+    };
     match &row.row {
+        Row::Crumb => {
+            let parent = ui.page.parent().map(|p| p.title()).unwrap_or("");
+            glyph_at(
+                '\u{E72B}',
+                MARGIN,
+                top + 6,
+                MARGIN + 28,
+                top + 30,
+                th().brand,
+            );
+            c.text(
+                MARGIN + 32,
+                top + 6,
+                right,
+                top + 30,
+                parent,
+                th().brand,
+                fonts.body,
+                DT_LEFT | DT_VCENTER | DT_SINGLELINE | DT_END_ELLIPSIS,
+            );
+        }
+        Row::Link(dest) => {
+            card(c, top, row.h, lw);
+            glyph_at(dest.glyph(), left, top, left + 32, top + card_h, th().text);
+            c.text(
+                text_left,
+                top + 10,
+                right - 24,
+                top + 32,
+                dest.title(),
+                th().text,
+                fonts.body,
+                DT_LEFT | DT_VCENTER | DT_SINGLELINE | DT_END_ELLIPSIS,
+            );
+            c.text(
+                text_left,
+                top + 32,
+                right - 24,
+                top + card_h - 6,
+                dest.description(),
+                th().muted,
+                fonts.small,
+                DT_LEFT | DT_WORDBREAK,
+            );
+            glyph_at('\u{E76C}', right - 20, top, right, top + card_h, th().muted);
+        }
+        Row::Result(index) => {
+            card(c, top, row.h, lw);
+            if let Some(result) = ui.ext.results.get(*index) {
+                glyph_at(result.glyph, left, top, left + 32, top + card_h, th().text);
+                c.text(
+                    text_left,
+                    top + 8,
+                    right - 24,
+                    top + 30,
+                    &result.title,
+                    th().text,
+                    fonts.body,
+                    DT_LEFT | DT_VCENTER | DT_SINGLELINE | DT_END_ELLIPSIS,
+                );
+                // An action is not run from here: its result says where its button is.
+                let place = if result.path.is_empty() {
+                    crate::palette_destination(&result.action).0.path()
+                } else {
+                    result.path.clone()
+                };
+                c.text(
+                    text_left,
+                    top + 30,
+                    right - 24,
+                    top + 48,
+                    &place,
+                    th().brand,
+                    fonts.small,
+                    DT_LEFT | DT_VCENTER | DT_SINGLELINE | DT_END_ELLIPSIS,
+                );
+                c.text(
+                    text_left,
+                    top + 48,
+                    right - 24,
+                    top + card_h - 4,
+                    &result.hint,
+                    th().muted,
+                    fonts.small,
+                    DT_LEFT | DT_VCENTER | DT_SINGLELINE | DT_END_ELLIPSIS,
+                );
+            }
+            glyph_at('\u{E76C}', right - 20, top, right, top + card_h, th().muted);
+        }
+        Row::Expander(title) => {
+            card(c, top, row.h, lw);
+            let open = ui.section_open(title);
+            c.text(
+                left,
+                top,
+                right - 90,
+                top + card_h,
+                title,
+                th().text,
+                fonts.body,
+                DT_LEFT | DT_VCENTER | DT_SINGLELINE | DT_END_ELLIPSIS,
+            );
+            c.text(
+                right - 84,
+                top,
+                right - 24,
+                top + card_h,
+                if open { "Hide" } else { "Show" },
+                th().muted,
+                fonts.small,
+                DT_RIGHT | DT_VCENTER | DT_SINGLELINE,
+            );
+            glyph_at(
+                if open { '\u{E70E}' } else { '\u{E70D}' },
+                right - 20,
+                top,
+                right,
+                top + card_h,
+                th().muted,
+            );
+        }
+        Row::GlobalSearch => {
+            card(c, top, row.h, lw);
+            glyph_at('\u{E721}', left, top, left + 24, top + card_h, th().muted);
+        }
         Row::Lines(lines) => {
             card(c, top, row.h, lw);
             let mut y = top + 10;
@@ -2048,6 +2656,54 @@ pub fn paint_extra(c: &Canvas, ui: &Ui, row: &Laid, top: i32, lw: i32) {
                     line_top + LIST_LINE,
                     &ui.window_line(entry),
                     th().text,
+                    fonts.small,
+                    DT_LEFT | DT_VCENTER | DT_SINGLELINE | DT_END_ELLIPSIS,
+                );
+            }
+        }
+        Row::WallGrid => {
+            card(c, top, row.h, lw);
+            let (_, _, thumb_h, _) = wall_geom(lw);
+            for (index, entry) in ui.ext.walls.iter().enumerate() {
+                let (l, t, r, b) = wall_rect(lw, index);
+                let selected = ui.ext.wall_sel == index;
+                c.round(
+                    l - 3,
+                    top + t - 3,
+                    r + 3,
+                    top + b + 1,
+                    6,
+                    Some(if selected { th().card_hi } else { th().card }),
+                    Some(if selected { ui.accent } else { th().edge }),
+                );
+                c.fill(l, top + t, r, top + t + thumb_h, 0x0000_0000);
+                if let Some((_, bitmap)) =
+                    ui.ext.wall_previews.iter().find(|(id, _)| *id == entry.id)
+                {
+                    c.bitmap(*bitmap, l, top + t, r, top + t + thumb_h);
+                }
+                let status = crate::wallpaper::status_text(
+                    entry,
+                    super::super::gallery::downloaded(entry),
+                    &ui.ext.wall_state,
+                );
+                c.text(
+                    l + 2,
+                    top + t + thumb_h + 2,
+                    r - 2,
+                    top + t + thumb_h + 20,
+                    &entry.name,
+                    th().text,
+                    fonts.body,
+                    DT_LEFT | DT_VCENTER | DT_SINGLELINE | DT_END_ELLIPSIS,
+                );
+                c.text(
+                    l + 2,
+                    top + t + thumb_h + 20,
+                    r - 2,
+                    top + t + thumb_h + 38,
+                    &status,
+                    th().muted,
                     fonts.small,
                     DT_LEFT | DT_VCENTER | DT_SINGLELINE | DT_END_ELLIPSIS,
                 );
@@ -2175,6 +2831,40 @@ pub fn paint_extra(c: &Canvas, ui: &Ui, row: &Laid, top: i32, lw: i32) {
     }
 }
 
+/// Mark the row a search result took you to: a thick double outline *and* a bar down its left
+/// edge *and* the word "Found" (never color alone). Expires by itself after a moment.
+pub fn paint_found(c: &Canvas, ui: &Ui, row_index: usize, row: &Laid, top: i32, lw: i32) {
+    let Some((marked, _)) = ui.ext.highlight else {
+        return;
+    };
+    if marked != row_index {
+        return;
+    }
+    let (l, t, r, b) = (MARGIN, top, lw - MARGIN, top + row.h - GAP);
+    for grow in [3, 5] {
+        c.round(
+            l - grow,
+            t - grow,
+            r + grow,
+            b + grow,
+            6 + grow / 2,
+            None,
+            Some(ui.accent),
+        );
+    }
+    c.round(l - 7, t, l - 3, b, 2, Some(ui.accent), None);
+    c.text(
+        r - 70,
+        t - 18,
+        r,
+        t - 2,
+        "Found",
+        ui.accent,
+        ui.fonts.small,
+        DT_RIGHT | DT_VCENTER | DT_SINGLELINE,
+    );
+}
+
 /// Focus ring around the keyboard-focused row.
 pub fn paint_focus_ring(c: &Canvas, ui: &Ui, row: &Laid, top: i32, lw: i32) {
     // Composite rows (a row of buttons, the preset list, the scene list) ring the one item that
@@ -2193,6 +2883,13 @@ pub fn paint_focus_ring(c: &Canvas, ui: &Ui, row: &Laid, top: i32, lw: i32) {
                 c,
                 (MARGIN + 4, line_top, lw - MARGIN - 4, line_top + LIST_LINE),
             );
+        }
+        Row::WallGrid => {
+            let (l, t, r, b) = wall_rect(
+                lw,
+                ui.ext.focus_sub.min(ui.ext.walls.len().saturating_sub(1)),
+            );
+            controls::focus_ring(c, (l - 3, top + t - 3, r + 3, top + b + 3));
         }
         Row::Presets => {
             let (l, t, r, b) = preset_rect(lw, ui.ext.focus_sub.min(PRESETS.len() - 1));
@@ -2221,6 +2918,23 @@ impl Ui {
                 crate::CREDIT_URL
             ),
         };
+    }
+
+    /// Keep the page repainting while the updater works.
+    fn watch_updates(&mut self) {
+        unsafe {
+            windows_sys::Win32::UI::WindowsAndMessaging::SetTimer(self.hwnd, TIMER_UI, 250, None)
+        };
+    }
+
+    fn scroll_to_header(&mut self, text: &str) {
+        let rows = self.rows();
+        if let Some(row) = rows
+            .iter()
+            .find(|row| matches!(&row.row, Row::Header(title) if *title == text))
+        {
+            self.scroll = (row.y - 8).max(0);
+        }
     }
 
     /// Undo the most recent look change from the session history. The earlier config is parsed
@@ -2254,6 +2968,878 @@ impl Ui {
         }
     }
 
+    /// The exclusion manager: every reason a window is left alone, in order, and what is yours.
+    fn push_exclusions(&self, b: &mut Builder) {
+        b.push(Row::Header("Exclusion manager"));
+        let mut lines = crate::exclusion_summary(&self.config);
+        lines.extend(crate::exclusion_precedence());
+        b.push(Row::Lines(lines));
+        if !self.config.exclude_classes.is_empty() {
+            b.push(Row::Choice(Choice::ExcludedClass));
+            b.push(Row::Buttons(vec![Button::RemoveExcludedClass]));
+        }
+        b.push(Row::Note(
+            "To see why one app is or is not styled, use Test without applying above: it names the layer that wins.",
+        ));
+    }
+
+    // ---- global search and navigation ----------------------------------------------------
+
+    pub fn section_open(&self, title: &str) -> bool {
+        self.ext.open_sections.iter().any(|open| *open == title)
+    }
+
+    pub fn toggle_section(&mut self, title: &'static str) {
+        match self
+            .ext
+            .open_sections
+            .iter()
+            .position(|open| *open == title)
+        {
+            Some(index) => {
+                self.ext.open_sections.remove(index);
+            }
+            None => self.ext.open_sections.push(title),
+        }
+    }
+
+    /// Change the search box's text without treating it as typing.
+    fn set_search_text(&mut self, text: &str) {
+        self.ext.search_silent = true;
+        set_text(self.edits.search, text);
+        self.ext.search_silent = false;
+        self.ext.query = text.to_string();
+        if text.is_empty() {
+            self.ext.results.clear();
+        }
+    }
+
+    /// The index search runs on: built when the box gains focus, so typing only filters it.
+    fn rebuild_search_index(&mut self) {
+        let context = crate::PaletteContext {
+            paused: super::super::app::is_paused(),
+            can_undo_scene: false,
+            scenes: self
+                .ext
+                .scenes
+                .iter()
+                .map(|scene| scene.name.clone())
+                .collect(),
+            looks: self
+                .ext
+                .book
+                .looks
+                .iter()
+                .map(|look| look.name.clone())
+                .collect(),
+        };
+        self.ext.index = crate::palette_commands(&context);
+    }
+
+    /// Ctrl+K and the search box's own click: put the caret in the search box (or, on the narrow
+    /// rail, open the results page where the box is).
+    pub fn focus_search(&mut self, hwnd: HWND) {
+        self.rebuild_search_index();
+        if self.nav_w <= crate::ui_metrics::NAV_COMPACT && self.page != Page::Search {
+            self.ext.search_from = Some(self.page);
+            self.set_page(hwnd, Page::Search);
+        }
+        self.ext.nav_focus = false;
+        self.ext.focus = None;
+        unsafe { windows_sys::Win32::UI::Input::KeyboardAndMouse::SetFocus(self.edits.search) };
+        self.relayout(hwnd);
+    }
+
+    /// The box changed because someone typed: filter the cached index, show the results page.
+    pub fn on_search_changed(&mut self, hwnd: HWND) {
+        if self.ext.search_silent {
+            return;
+        }
+        let text = get_text(self.edits.search);
+        self.ext.query = text.clone();
+        if text.trim().is_empty() {
+            self.ext.results.clear();
+            if self.page == Page::Search {
+                let back = self.ext.search_from.take().unwrap_or(Page::Home);
+                self.set_page(hwnd, back);
+            }
+            self.relayout(hwnd);
+            return;
+        }
+        if self.ext.index.is_empty() {
+            self.rebuild_search_index();
+        }
+        let found = crate::palette_search(&self.ext.index, &text, 12);
+        let mut results: Vec<crate::PaletteCommand> = Vec::new();
+        for command in found
+            .into_iter()
+            .filter_map(|index| self.ext.index.get(index).cloned())
+        {
+            if !results.iter().any(|seen| seen.title == command.title) {
+                results.push(command);
+            }
+        }
+        self.ext.results = results;
+        if self.page != Page::Search {
+            self.ext.search_from = Some(self.page);
+            self.set_page(hwnd, Page::Search);
+        } else {
+            self.ext.focus = None;
+            self.scroll = 0;
+            self.relayout(hwnd);
+        }
+        // Keep the caret in the box while the results page replaces the content.
+        unsafe { windows_sys::Win32::UI::Input::KeyboardAndMouse::SetFocus(self.edits.search) };
+    }
+
+    /// Clear the box and leave the results page for where the person was.
+    pub fn clear_search(&mut self, hwnd: HWND) {
+        self.set_search_text("");
+        if self.page == Page::Search {
+            let back = self.ext.search_from.take().unwrap_or(Page::Home);
+            self.set_page(hwnd, back);
+        }
+        self.relayout(hwnd);
+    }
+
+    /// Keys the search box passes up: Enter opens the first result, Down moves into the list,
+    /// Escape clears, Tab leaves the box.
+    pub fn search_key(&mut self, hwnd: HWND, key: u32, shift: bool) {
+        match key {
+            0x0D => {
+                if !self.ext.results.is_empty() {
+                    self.open_result(hwnd, 0);
+                }
+            }
+            0x1B => {
+                if self.ext.query.is_empty() {
+                    self.ext.nav_focus = false;
+                    unsafe { windows_sys::Win32::UI::Input::KeyboardAndMouse::SetFocus(hwnd) };
+                } else {
+                    self.clear_search(hwnd);
+                }
+            }
+            _ => {
+                // Down arrow or Tab: into the results (or the content, when there are none).
+                unsafe { windows_sys::Win32::UI::Input::KeyboardAndMouse::SetFocus(hwnd) };
+                self.ext.focus = None;
+                if key == 0x28 {
+                    // Down arrow: into the results (or the content when there are none).
+                    self.ext.nav_focus = false;
+                    self.move_focus(hwnd, false);
+                    if self.page == Page::Search && self.ext.focus.is_none() {
+                        self.ext.nav_focus = true;
+                    }
+                } else if shift {
+                    self.ext.nav_focus = false;
+                    self.move_focus(hwnd, true);
+                } else {
+                    self.ext.nav_focus = true;
+                }
+                self.relayout(hwnd);
+            }
+        }
+    }
+
+    /// Open a result. The query is cleared first; the place is opened and the control, if the
+    /// result names one, is scrolled to, focused and marked. Nothing is switched or changed.
+    pub fn open_result(&mut self, hwnd: HWND, index: usize) {
+        let Some(command) = self.ext.results.get(index).cloned() else {
+            return;
+        };
+        let (dest, anchor) = crate::palette_destination(&command.action);
+        self.ext.search_from = None;
+        self.set_search_text("");
+        self.go(hwnd, dest, anchor);
+    }
+
+    /// Go to a place and, when an anchor is given, to one control in it.
+    pub fn go(&mut self, hwnd: HWND, dest: Page, anchor: Option<&'static str>) {
+        if self.ext.setup_active() {
+            // First-run setup owns the window; a request waits for it to finish.
+            return;
+        }
+        if self.page == dest {
+            self.ext.highlight = None;
+        }
+        self.set_page(hwnd, dest);
+        if let Some(anchor) = anchor {
+            self.reveal(hwnd, anchor);
+        }
+    }
+
+    /// The row an anchor names, and which item of it (for a row of buttons).
+    fn find_anchor(&self, anchor: &str) -> Option<(usize, usize)> {
+        let (kind, name) = anchor.split_once(':').unwrap_or((anchor, ""));
+        for (index, laid) in self.rows().iter().enumerate() {
+            let hit = match (&laid.row, kind) {
+                (Row::Toggle(id), "toggle") if format!("{id:?}") == name => Some(0),
+                (Row::Choice(id), "choice") if format!("{id:?}") == name => Some(0),
+                (Row::Slider(id), "slider") if format!("{id:?}") == name => Some(0),
+                (Row::Action(id) | Row::AddField(id), "button") if format!("{id:?}") == name => {
+                    Some(0)
+                }
+                (Row::Buttons(list), "button") => {
+                    list.iter().position(|id| format!("{id:?}") == name)
+                }
+                (Row::Color(id), "color") if color_anchor(*id) == name => Some(0),
+                (Row::Header(text), "header") if *text == name => Some(0),
+                (Row::Presets, "presets") => Some(0),
+                _ => None,
+            };
+            if let Some(sub) = hit {
+                return Some((index, sub));
+            }
+        }
+        None
+    }
+
+    /// Scroll to, focus and mark the control an anchor names. If it is inside a closed section,
+    /// the sections of this page are opened first. If it is not on the page right now (a control
+    /// that only exists in some states), the page opens at the top and the status line says so.
+    fn reveal(&mut self, hwnd: HWND, anchor: &'static str) {
+        let mut found = self.find_anchor(anchor);
+        if found.is_none() {
+            let closed: Vec<&'static str> = self
+                .rows()
+                .iter()
+                .filter_map(|laid| match laid.row {
+                    Row::Expander(title) if !self.section_open(title) => Some(title),
+                    _ => None,
+                })
+                .collect();
+            if !closed.is_empty() {
+                self.ext.open_sections.extend(closed);
+                found = self.find_anchor(anchor);
+            }
+        }
+        let Some((row_index, sub)) = found else {
+            self.status = format!(
+                "Opened {}. That control is not shown right now.",
+                self.page.title()
+            );
+            self.relayout(hwnd);
+            return;
+        };
+        let rows = self.rows();
+        let interactive = self.interactive_rows();
+        // A heading is not a control: aim at the first control after it.
+        let target_row = if matches!(rows.get(row_index).map(|r| &r.row), Some(Row::Header(_))) {
+            interactive
+                .iter()
+                .map(|(index, _)| *index)
+                .find(|index| *index > row_index)
+                .unwrap_or(row_index)
+        } else {
+            row_index
+        };
+        if let Some(row) = rows.get(row_index) {
+            self.scroll = (row.y - 24).max(0);
+        }
+        self.ext.nav_focus = false;
+        let ordinal = interactive
+            .iter()
+            .position(|(index, _)| *index == target_row);
+        match ordinal {
+            Some(ordinal) => {
+                self.ext.focus = Some(ordinal);
+                self.ext.focus_sub = sub;
+            }
+            None => {
+                self.ext.focus = None;
+                if let Some(Row::Color(id)) = rows.get(target_row).map(|r| &r.row) {
+                    if let Some(edit) = self.color_edit(*id) {
+                        self.relayout(hwnd);
+                        unsafe { windows_sys::Win32::UI::Input::KeyboardAndMouse::SetFocus(edit) };
+                    }
+                }
+            }
+        }
+        let until =
+            unsafe { windows_sys::Win32::System::SystemInformation::GetTickCount64() } + 2500;
+        self.ext.highlight = Some((target_row, until));
+        self.watch_updates();
+        self.relayout(hwnd);
+        self.scroll_focus_into_view_pub(hwnd);
+        self.relayout(hwnd);
+        self.uia_announce_focus(hwnd);
+    }
+
+    // ---- recipe remix --------------------------------------------------------------------
+
+    /// Index of the recipe the remix takes from: never the one picked in the list.
+    pub fn remix_donor(&self) -> Option<usize> {
+        let count = self.ext.recipes.len();
+        let base = self.ext.recipe_sel?;
+        if count < 2 {
+            return None;
+        }
+        let candidate = self.ext.remix_with % count;
+        Some(if candidate == base {
+            (candidate + 1) % count
+        } else {
+            candidate
+        })
+    }
+
+    fn current_remix(&self) -> Option<Result<Recipe, String>> {
+        let base = &self.ext.recipes.get(self.ext.recipe_sel?)?.0;
+        let donor = &self.ext.recipes.get(self.remix_donor()?)?.0;
+        Some(crate::remix_recipes(base, donor, self.ext.remix_part))
+    }
+
+    fn try_remix(&mut self) {
+        match self.current_remix() {
+            Some(Ok(recipe)) => {
+                let mut next = self.config.clone();
+                crate::apply_recipe(&mut next, &recipe);
+                self.begin_trial(&recipe.name, next);
+            }
+            Some(Err(reason)) => self.status = reason,
+            None => self.status = "Pick a recipe first.".into(),
+        }
+    }
+
+    fn save_remix(&mut self) {
+        let recipe = match self.current_remix() {
+            Some(Ok(recipe)) => recipe,
+            Some(Err(reason)) => {
+                self.status = reason;
+                return;
+            }
+            None => {
+                self.status = "Pick a recipe first.".into();
+                return;
+            }
+        };
+        let dir = recipes_dir();
+        let target = dir.join(format!("{}.json", recipe.id));
+        let result = std::fs::create_dir_all(&dir)
+            .map_err(|e| e.to_string())
+            .and_then(|_| write_atomic(&target, &format!("{}\n", recipe.to_json())));
+        match result {
+            Ok(()) => {
+                self.status = format!("Saved “{}” with your recipes.", recipe.name);
+                self.refresh_recipes();
+                self.ext.recipe_sel = self.ext.recipes.iter().position(|(r, _)| r.id == recipe.id);
+                self.update_recipe_diff();
+            }
+            Err(err) => self.status = format!("Could not save the remix: {err}"),
+        }
+    }
+
+    // ---- wallpaper gallery ---------------------------------------------------------------
+
+    /// First open of the Wallpapers page: the catalog, what is remembered, the preview pictures,
+    /// and (on a worker) the attached displays.
+    fn open_gallery(&mut self) {
+        if !self.ext.wall_loaded {
+            self.ext.wall_loaded = true;
+            self.ext.walls = crate::wallpaper::catalog();
+            self.ext.wall_previews = super::super::gallery::load_previews(&self.ext.walls);
+        }
+        self.ext.wall_state = super::super::gallery::load_state();
+        if let Some(index) = self
+            .ext
+            .wall_state
+            .applied
+            .as_ref()
+            .and_then(|applied| self.ext.walls.iter().position(|w| w.id == applied.id))
+        {
+            self.ext.wall_sel = index;
+        }
+        super::super::gallery::refresh_displays();
+        self.watch_updates();
+    }
+
+    pub fn select_wall(&mut self, index: usize) {
+        if index < self.ext.walls.len() {
+            self.ext.wall_sel = index;
+            if let Some(entry) = self.ext.walls.get(index) {
+                self.status = format!("{}. {}", entry.name, entry.description);
+            }
+        }
+    }
+
+    pub fn click_wall_grid(&mut self, lw: i32, lx: i32, local: i32) {
+        for index in 0..self.ext.walls.len() {
+            let (l, t, r, b) = wall_rect(lw, index);
+            if lx >= l && lx < r && local >= t && local < b {
+                self.select_wall(index);
+                self.ext.focus_sub = index;
+                return;
+            }
+        }
+    }
+
+    fn selected_wall(&self) -> Option<crate::wallpaper::Entry> {
+        self.ext.walls.get(self.ext.wall_sel).cloned()
+    }
+
+    fn wall_target(&self) -> Option<String> {
+        match self.ext.wall_display {
+            0 => None,
+            n => super::super::gallery::displays()
+                .get(n - 1)
+                .map(|d| d.id.clone()),
+        }
+    }
+
+    fn wall_action(&mut self, id: Button) {
+        use super::super::gallery;
+        let Some(entry) = self.selected_wall() else {
+            return;
+        };
+        match id {
+            Button::WallDownload => {
+                gallery::download(&entry);
+                self.status = format!(
+                    "Downloading {} ({}). Nothing is applied until you press Apply.",
+                    entry.name,
+                    crate::wallpaper::size_text(entry.bytes)
+                );
+            }
+            Button::WallCancel => {
+                gallery::cancel();
+                self.status = "Cancelling the download.".into();
+            }
+            Button::WallApply => {
+                let fit = self.ext.wall_state.fit_for(&entry);
+                gallery::apply(&entry, self.wall_target(), fit);
+                self.status = format!("Applying {}…", entry.name);
+            }
+            Button::WallPutBack => {
+                gallery::put_back();
+                self.status = "Putting the earlier wallpaper back…".into();
+            }
+            Button::WallOpenFolder => {
+                self.status = match gallery::open_location(&entry) {
+                    Ok(()) => "Opened the folder.".into(),
+                    Err(message) => message,
+                };
+            }
+            Button::WallPreview => {
+                let fit = self.ext.wall_state.fit_for(&entry);
+                super::super::wallpreview::open(self.hwnd, &entry, fit);
+            }
+            _ => {}
+        }
+        self.watch_updates();
+    }
+
+    /// Enter in the full-screen preview.
+    pub fn wall_apply_selected(&mut self) {
+        self.wall_action(Button::WallApply);
+    }
+
+    /// Compatibility packs: pick one, read what it does and what it cannot, install or remove it.
+    fn push_packs(&self, b: &mut Builder) {
+        b.push(Row::Header("Packs"));
+        b.push(Row::Note(
+            "A pack is a small data file that tells AllBlack11 how to treat one app, and says plainly what it cannot do. It adds ordinary rules; it runs nothing. Your own rules always win over a pack.",
+        ));
+        b.push(Row::About(vec![
+            "Recommended templates: none yet.".to_string(),
+            "The two built-in packs are experiments. They only ask Windows to color the window frame, and no visible effect has been shown. Use Check now to see where the request stops.".to_string(),
+        ]));
+        b.push(Row::Choice(Choice::Pack));
+        if let Some((pack, imported)) = self.ext.packs.get(self.ext.pack_sel) {
+            let installed = crate::pack_is_installed(&self.config, pack);
+            let mut lines = vec![
+                format!(
+                    "{} {} · {} · {}",
+                    pack.name,
+                    pack.version,
+                    pack.verdict.label(),
+                    if installed {
+                        "installed"
+                    } else {
+                        "not installed"
+                    }
+                ),
+                format!(
+                    "Source: {}",
+                    if *imported {
+                        "imported from a file on this PC"
+                    } else {
+                        "built into AllBlack11"
+                    }
+                ),
+                format!("Applies to: {}", crate::pack_scope_text(pack)),
+            ];
+            if !pack.description.is_empty() {
+                lines.push(pack.description.clone());
+            }
+            if !pack.reason.is_empty() {
+                lines.push(pack.reason.clone());
+            }
+            let actions = crate::pack_look_actions(&pack.look);
+            if actions.is_empty() {
+                lines.push("Changes: nothing.".to_string());
+            } else {
+                lines.push(format!("Changes: {}.", actions.join(", ")));
+            }
+            for limit in &pack.limits {
+                lines.push(format!("Limit: {limit}"));
+            }
+            for note in &pack.notes {
+                lines.push(format!("Note: {note}"));
+            }
+            for tested in &pack.tested {
+                lines.push(format!("Tested: {tested}"));
+            }
+            if let Some(reason) = crate::pack_unavailable(pack, self.build) {
+                lines.push(format!("Unavailable: {reason}"));
+            }
+            let changes = crate::packs::delta(&self.config, pack);
+            lines.push(if changes.is_empty() {
+                "Compared with your default look: it asks for exactly what is already in force, so no visible change is possible from this pack.".to_string()
+            } else {
+                format!(
+                    "Compared with your default look, it would change: {}.",
+                    changes.join("; ")
+                )
+            });
+            b.push(Row::Lines(lines));
+            if !self.ext.pack_check.is_empty() {
+                b.push(Row::Lines(self.ext.pack_check.clone()));
+            }
+        } else {
+            b.push(Row::Note("No packs are available."));
+        }
+        if !self.ext.pack_report.is_empty() {
+            b.push(Row::Lines(self.ext.pack_report.clone()));
+        }
+        b.push(Row::Buttons(vec![
+            Button::PackInstall,
+            Button::PackRemove,
+            Button::ImportPack,
+        ]));
+        let mut check = vec![Button::PackCheck];
+        if self.ext.pack_found {
+            check.push(Button::PackSeesChange);
+            check.push(Button::PackSeesNothing);
+        }
+        b.push(Row::Buttons(check));
+        b.push(Row::Action(Button::PackOpenColors));
+        b.push(Row::Note(
+            "Install and Remove are saved like any other change. They appear under Look history and Undo takes them back.",
+        ));
+    }
+
+    /// Built-in packs first, then valid files from the packs folder. A file that fails the same
+    /// validation the built-ins pass is left out, never half-used.
+    pub fn refresh_packs(&mut self) {
+        let mut list: Vec<(crate::Pack, bool)> = crate::pack_catalog()
+            .into_iter()
+            .map(|pack| (pack, false))
+            .collect();
+        if let Ok(entries) = std::fs::read_dir(packs_dir()) {
+            for entry in entries.flatten().take(40) {
+                let path = entry.path();
+                if path.extension().and_then(|e| e.to_str()) != Some("json") {
+                    continue;
+                }
+                let Ok(text) = std::fs::read_to_string(&path) else {
+                    continue;
+                };
+                if let Ok(pack) = crate::parse_pack(&text) {
+                    if !list.iter().any(|(existing, _)| existing.id == pack.id) {
+                        list.push((pack, true));
+                    }
+                }
+            }
+        }
+        self.ext.packs = list;
+        if self.ext.pack_sel >= self.ext.packs.len() {
+            self.ext.pack_sel = 0;
+        }
+    }
+
+    fn marks_path() -> std::path::PathBuf {
+        config_dir().join("pack-marks.json")
+    }
+
+    /// Record what the person saw on the window the last check found.
+    fn mark_pack(&mut self, mark: Option<crate::packs::Mark>) {
+        let Some((pack, _)) = self.ext.packs.get(self.ext.pack_sel).cloned() else {
+            return;
+        };
+        self.ext.pack_marks.set(&pack.id, mark);
+        let _ = write_atomic(&Self::marks_path(), &self.ext.pack_marks.to_json());
+        self.check_selected_pack();
+    }
+
+    /// Walk the chain for the selected pack against the windows open right now: found, matched,
+    /// winning, applied, accepted. Reads only; nothing is changed or applied.
+    fn check_selected_pack(&mut self) {
+        let Some((pack, _)) = self.ext.packs.get(self.ext.pack_sel).cloned() else {
+            return;
+        };
+        if self.ext.pack_marks.marks.is_empty() {
+            if let Ok(text) = std::fs::read_to_string(Self::marks_path()) {
+                self.ext.pack_marks = crate::packs::Marks::parse(&text);
+            }
+        }
+        let observed = self.observe_pack(&pack);
+        let mark = self.ext.pack_marks.get(&pack.id);
+        let (status, sentence) = crate::packs::assess(observed.as_ref(), mark);
+        self.ext.pack_found = observed.is_some();
+        let mut lines = vec![format!("Check: {}", status.label()), sentence];
+        if !crate::pack_is_installed(&self.config, &pack) {
+            lines.push("The pack is not installed, so no rule of it exists yet.".to_string());
+        }
+        self.ext.pack_check = lines;
+        self.status = format!("{}: {}.", pack.name, status.label());
+    }
+
+    fn observe_pack(&self, pack: &crate::Pack) -> Option<crate::packs::Observed> {
+        for entry in inspect::list_windows().into_iter().take(300) {
+            let class_ok = pack.targets.iter().any(|t| {
+                t.class
+                    .as_deref()
+                    .map_or(true, |c| crate::glob_match(c, &entry.class))
+                    && t.process
+                        .as_deref()
+                        .map_or(true, |p| crate::glob_match(p, &entry.exe))
+            });
+            if !class_ok {
+                continue;
+            }
+            let hwnd = entry.key as isize as HWND;
+            let (path, package) = super::super::procinfo::path_and_package_of_window(
+                hwnd, entry.pid, &entry.exe, true,
+            );
+            let target_ok = pack.targets.iter().any(|t| {
+                t.package.as_deref().map_or(true, |p| {
+                    !package.is_empty() && crate::glob_match(p, &package)
+                })
+            });
+            if !target_ok {
+                continue;
+            }
+            let identity = crate::WindowIdentity {
+                exe: &entry.exe,
+                class: &entry.class,
+                path: &path,
+                package: &package,
+                title: None,
+            };
+            let ranked = crate::rank(&self.config.rules, &identity);
+            let pack_rule = |index: usize| {
+                self.config
+                    .rules
+                    .get(index)
+                    .is_some_and(|rule| crate::packs::owns(rule, &pack.name))
+            };
+            let rule_matched = ranked.iter().any(|m| pack_rule(m.index));
+            let winner = ranked.first();
+            let report = super::super::app::report_for(entry.key);
+            let rejected: Vec<String> = report
+                .as_ref()
+                .map(|r| {
+                    r.attempts
+                        .iter()
+                        .filter_map(|a| match a.confirm {
+                            crate::Confirm::Rejected(hr) => {
+                                Some(format!("{} (0x{:08X})", a.name, hr as u32))
+                            }
+                            _ => None,
+                        })
+                        .collect()
+                })
+                .unwrap_or_default();
+            return Some(crate::packs::Observed {
+                exe: entry.exe.clone(),
+                class: entry.class.clone(),
+                package,
+                excluded: crate::exclusion_why(&entry.exe, &entry.class, &self.config),
+                rule_matched,
+                pack_wins: winner.is_some_and(|m| pack_rule(m.index)),
+                winner: winner
+                    .and_then(|m| self.config.rules.get(m.index))
+                    .map(|rule| rule.label())
+                    .unwrap_or_default(),
+                applied: report.as_ref().is_some_and(|r| r.explanation.applied),
+                rejected,
+            });
+        }
+        None
+    }
+
+    fn install_selected_pack(&mut self) {
+        if self.trial_active() {
+            self.status = "Keep or revert the trial look first.".into();
+            return;
+        }
+        let Some((pack, _)) = self.ext.packs.get(self.ext.pack_sel).cloned() else {
+            self.status = "No pack is selected.".into();
+            return;
+        };
+        match crate::install_pack(&mut self.config, &pack, self.build) {
+            Ok(lines) => {
+                self.ext.pack_report = lines;
+                self.rule = None;
+                self.status = if pack.verdict == crate::PackVerdict::Experimental {
+                    format!(
+                        "Installed the {} pack as an experiment. It may show no visible change: press Check now. Undo takes it back.",
+                        pack.name
+                    )
+                } else {
+                    format!("Installed the {} pack. Undo takes it back.", pack.name)
+                };
+                self.commit();
+            }
+            Err(reason) => {
+                self.ext.pack_report = vec![reason.clone()];
+                self.status = format!("{} was not installed. {reason}", pack.name);
+            }
+        }
+    }
+
+    /// Remove a pack's rules; for an imported pack that is not installed, forget the file instead.
+    fn remove_selected_pack(&mut self) {
+        if self.trial_active() {
+            self.status = "Keep or revert the trial look first.".into();
+            return;
+        }
+        let Some((pack, imported)) = self.ext.packs.get(self.ext.pack_sel).cloned() else {
+            self.status = "No pack is selected.".into();
+            return;
+        };
+        let removed = crate::remove_pack(&mut self.config, &pack.name);
+        if removed > 0 {
+            self.ext.pack_report = vec![format!(
+                "Removed the {removed} rule(s) added by the {} pack. Your own rules were not touched.",
+                pack.name
+            )];
+            self.rule = None;
+            self.status = format!("Removed the {} pack. Undo takes it back.", pack.name);
+            self.commit();
+        } else if imported {
+            let file = packs_dir().join(format!("{}.json", pack.id));
+            self.status = match std::fs::remove_file(&file) {
+                Ok(()) => format!("Deleted the imported {} pack file.", pack.name),
+                Err(err) => format!("Could not delete the pack file: {err}"),
+            };
+            self.ext.pack_report.clear();
+            self.refresh_packs();
+        } else {
+            self.status = format!("The {} pack is not installed.", pack.name);
+        }
+    }
+
+    fn import_pack(&mut self) {
+        let Some(path) = file_dialog(self.hwnd, false, "Import a compatibility pack", "pack.json")
+        else {
+            return;
+        };
+        let text = match std::fs::metadata(&path) {
+            Ok(meta) if meta.len() as usize > crate::PACK_MAX_BYTES => {
+                self.status = format!(
+                    "That file is larger than {} KB, which is more than any pack needs.",
+                    crate::PACK_MAX_BYTES / 1024
+                );
+                return;
+            }
+            Ok(_) => match std::fs::read_to_string(&path) {
+                Ok(text) => text,
+                Err(err) => {
+                    self.status = format!("Could not read the file: {err}");
+                    return;
+                }
+            },
+            Err(err) => {
+                self.status = format!("Could not read the file: {err}");
+                return;
+            }
+        };
+        match crate::parse_pack(&text) {
+            Ok(pack) => {
+                let dir = packs_dir();
+                let target = dir.join(format!("{}.json", pack.id));
+                let body = serde_json::to_string_pretty(&pack).unwrap_or_default();
+                let result = std::fs::create_dir_all(&dir)
+                    .map_err(|e| e.to_string())
+                    .and_then(|_| write_atomic(&target, &format!("{body}\n")));
+                match result {
+                    Ok(()) => {
+                        self.refresh_packs();
+                        if let Some(index) =
+                            self.ext.packs.iter().position(|(p, _)| p.id == pack.id)
+                        {
+                            self.ext.pack_sel = index;
+                        }
+                        let preview = crate::preview_pack(&self.config, &pack, self.build);
+                        self.ext.pack_report = std::iter::once(
+                            "Imported. Nothing is installed yet. Installing would:".to_string(),
+                        )
+                        .chain(preview)
+                        .collect();
+                        self.status =
+                            format!("Imported the {} pack. Review it, then Install.", pack.name);
+                    }
+                    Err(err) => self.status = format!("Could not save the pack: {err}"),
+                }
+            }
+            Err(err) => self.status = format!("Not a valid pack: {err}"),
+        }
+    }
+
+    /// The Updates card: what is running, what is known, and the few things the user can do.
+    fn push_updates(&self, b: &mut Builder) {
+        let phase = updater::phase();
+        b.push(Row::Header("Updates"));
+        b.push(Row::About(crate::update::status_lines(
+            &phase,
+            updater::current_version(),
+        )));
+        let notes = match &phase {
+            crate::update::Phase::Available(c) | crate::update::Phase::Skipped(c) => {
+                c.notes.clone()
+            }
+            crate::update::Phase::Ready { candidate, .. } => candidate.notes.clone(),
+            _ => String::new(),
+        };
+        if !notes.is_empty() {
+            let mut lines = vec!["What is in this release:".to_string()];
+            lines.extend(notes.lines().map(str::to_string));
+            b.push(Row::Lines(lines));
+        }
+        b.push(Row::Choice(Choice::UpdateChannel));
+        b.push(Row::Toggle(Toggle::AutoUpdateCheck));
+        let buttons = match phase {
+            crate::update::Phase::Available(_) => {
+                vec![
+                    Button::DownloadUpdate,
+                    Button::SkipUpdate,
+                    Button::OpenReleasePage,
+                ]
+            }
+            crate::update::Phase::Skipped(_) => {
+                vec![
+                    Button::UnskipUpdate,
+                    Button::CheckUpdates,
+                    Button::OpenReleasePage,
+                ]
+            }
+            crate::update::Phase::Downloading { .. } => vec![Button::CancelUpdate],
+            crate::update::Phase::Ready { .. } => {
+                vec![
+                    Button::InstallUpdate,
+                    Button::DiscardUpdate,
+                    Button::OpenReleasePage,
+                ]
+            }
+            crate::update::Phase::Checking => vec![Button::OpenReleasePage],
+            _ => vec![Button::CheckUpdates, Button::OpenReleasePage],
+        };
+        b.push(Row::Buttons(buttons));
+        b.push(Row::Note(
+            "Install opens the downloaded Setup and closes AllBlack11 so it can be replaced; your settings are kept. To go back, install an older release from the release page.",
+        ));
+    }
+
     /// Rule playground, typed: the text in the rule box is read, never applied.
     fn test_typed_rule(&mut self) {
         match crate::playground_parse(&get_text(self.edits.rule)) {
@@ -2273,7 +3859,8 @@ impl Ui {
     fn test_picked_window(&mut self) {
         let Some(entry) = self.ext.selected.clone() else {
             self.status =
-                "Nothing is picked. Pick a window on Fix this app, then test it here.".into();
+                "Nothing is picked. Pick a window under Customize an app, then test it here."
+                    .into();
             return;
         };
         let subject = crate::PlaygroundSubject {
@@ -2298,6 +3885,14 @@ impl Ui {
                     "Identity accents are on. Each app gets its own border color unless a rule sets one. Focus Look, if on, decides the border instead.".into()
                 } else {
                     "Identity accents are off.".into()
+                };
+            }
+            Toggle::AutoUpdateCheck => {
+                self.config.updates.auto_check = !self.config.updates.auto_check;
+                self.status = if self.config.updates.auto_check {
+                    "AllBlack11 will ask GitHub once a day whether a newer release exists. Nothing is downloaded without you.".into()
+                } else {
+                    "Automatic update checks are off.".into()
                 };
             }
             Toggle::PaletteHotkey => {
@@ -2361,6 +3956,46 @@ impl Ui {
             }
             Choice::RuleScope => {
                 self.ext.rule_scope = (self.ext.rule_scope + 1) % 4;
+            }
+            Choice::ExcludedClass => {
+                let count = self.config.exclude_classes.len();
+                if count > 0 {
+                    self.ext.class_sel = (self.ext.class_sel + 1) % count;
+                }
+            }
+            Choice::RemixWith => {
+                let count = self.ext.recipes.len().max(1);
+                let current = self.remix_donor().unwrap_or(0);
+                self.ext.remix_with = (current + 1) % count;
+                if Some(self.ext.remix_with) == self.ext.recipe_sel {
+                    self.ext.remix_with = (self.ext.remix_with + 1) % count;
+                }
+            }
+            Choice::RemixPart => self.ext.remix_part = self.ext.remix_part.next(),
+            Choice::WallDisplay => {
+                let count = super::super::gallery::displays().len() + 1;
+                self.ext.wall_display = (self.ext.wall_display + 1) % count;
+            }
+            Choice::WallFit => {
+                if let Some(entry) = self.selected_wall() {
+                    let next = self.ext.wall_state.fit_for(&entry).next();
+                    self.ext.wall_state.set_fit(&entry.id, next);
+                    super::super::gallery::save_state(&self.ext.wall_state);
+                    self.status = format!("{}: {}.", entry.name, next.label());
+                }
+            }
+            Choice::Pack => {
+                if !self.ext.packs.is_empty() {
+                    self.ext.pack_sel = (self.ext.pack_sel + 1) % self.ext.packs.len();
+                }
+                self.ext.pack_report.clear();
+                self.ext.pack_check.clear();
+                self.ext.pack_found = false;
+            }
+            Choice::UpdateChannel => {
+                self.config.updates.channel = self.config.updates.channel.next();
+                self.status = format!("Update channel: {}.", self.config.updates.channel.label());
+                self.commit();
             }
             Choice::AppAppearance => {
                 self.config.ui.appearance = self.config.ui.appearance.next();
@@ -2472,10 +4107,10 @@ impl Ui {
                 }
             }
             Button::CopyReport => self.copy_report(),
-            Button::OpenPalette | Button::GoPalette => palette_ui::open(self.owner),
-            Button::GoFix => self.set_page(self.hwnd, Page::Fix),
-            Button::GoScenes => self.set_page(self.hwnd, Page::Scenes),
-            Button::GoHelp => self.set_page(self.hwnd, Page::Help),
+            Button::OpenPalette => palette_ui::open(self.owner),
+            Button::GoFix => self.set_page(self.hwnd, Page::AppsFix),
+            Button::GoScenes => self.set_page(self.hwnd, Page::AppearanceScenes),
+            Button::GoHelp => self.set_page(self.hwnd, Page::HelpTopics),
             Button::NextAccent | Button::ClearAccent => self.change_accent(id),
             Button::PaletteFromImage => self.palette_from_image(),
             Button::TryScene => self.try_scene(),
@@ -2515,8 +4150,89 @@ impl Ui {
             Button::PreferAppDefaults => self.prefer_app_defaults(),
             Button::TryRecipe => self.try_recipe(),
             Button::ImportRecipe => self.import_recipe(),
+            Button::RemoveExcludedClass => {
+                match crate::remove_excluded_class(&mut self.config, self.ext.class_sel) {
+                    Some(class) => {
+                        self.status = format!("Window class {class} is styled again.");
+                        self.ext.class_sel = 0;
+                        self.commit();
+                    }
+                    None => self.status = "Pick a window class first.".into(),
+                }
+            }
+            Button::WallDownload
+            | Button::WallCancel
+            | Button::WallApply
+            | Button::WallPreview
+            | Button::WallOpenFolder
+            | Button::WallPutBack => self.wall_action(id),
+            Button::TryRemix => self.try_remix(),
+            Button::SaveRemix => self.save_remix(),
+            Button::PackCheck => self.check_selected_pack(),
+            Button::PackSeesChange => self.mark_pack(Some(crate::packs::Mark::SawChange)),
+            Button::PackSeesNothing => self.mark_pack(Some(crate::packs::Mark::SawNothing)),
+            Button::PackOpenColors => {
+                self.status = match registry::open_windows_colors() {
+                    Ok(()) => "Opened Windows color settings.".into(),
+                    Err(message) => message,
+                };
+            }
+            Button::PackInstall => self.install_selected_pack(),
+            Button::PackRemove => self.remove_selected_pack(),
+            Button::ImportPack => self.import_pack(),
             Button::ExportRecipe => self.export_recipe(),
             Button::UndoLook => self.undo_look(),
+            Button::CheckUpdates => {
+                updater::check(true, self.config.updates.channel);
+                self.watch_updates();
+                self.status = "Checking GitHub…".into();
+            }
+            Button::DownloadUpdate => {
+                updater::download();
+                self.watch_updates();
+                self.status = "Downloading. Nothing is installed until you choose.".into();
+            }
+            Button::CancelUpdate => {
+                updater::cancel();
+                self.status = "Cancelling the download.".into();
+            }
+            Button::InstallUpdate => match updater::install() {
+                Ok(()) => {
+                    self.status =
+                        "Starting Setup. AllBlack11 is closing so it can be replaced.".into();
+                    unsafe { PostMessageW(self.owner, WM_CLOSE, 0, 0) };
+                }
+                Err(message) => self.status = message,
+            },
+            Button::DiscardUpdate => {
+                updater::discard();
+                self.status = "The downloaded installer was deleted.".into();
+            }
+            Button::SkipUpdate => {
+                updater::skip();
+                self.status =
+                    "That version is skipped. You can stop skipping it under Settings > Updates."
+                        .into();
+            }
+            Button::UnskipUpdate => updater::unskip(),
+            Button::OpenReleasePage => {
+                let url = match updater::phase() {
+                    crate::update::Phase::Available(c) | crate::update::Phase::Skipped(c) => {
+                        c.page_url
+                    }
+                    crate::update::Phase::Ready { candidate, .. } => candidate.page_url,
+                    _ => crate::update::releases_page_url(),
+                };
+                self.status = match registry::open_release_url(&url) {
+                    Ok(()) => "Opened the release page in your browser.".into(),
+                    Err(err) => format!("Could not open the link: {err}. The address is {url}."),
+                };
+            }
+            Button::GoUpdates => {
+                let hwnd = self.hwnd;
+                self.set_page(hwnd, Page::Help);
+                self.scroll_to_header("Updates");
+            }
             Button::TestRule => self.test_typed_rule(),
             Button::TestPicked => self.test_picked_window(),
             Button::RestoreLkg => {
@@ -2620,7 +4336,8 @@ impl Ui {
             rule.name = Some(selected.exe.clone());
             self.config.rules.push(rule);
             self.rule = Some(self.config.rules.len() - 1);
-            self.status = "Rule created. Edit its look on the Appearance page.".into();
+            self.status =
+                "Rule created. Edit its look under Appearance > Effects and colors.".into();
         }
         self.push_colors_to_edits();
         self.commit();
@@ -2638,7 +4355,7 @@ impl Ui {
         });
         self.post_command();
         self.schedule_report_refresh();
-        self.status = "Trying the look from the Appearance page on that window for 20 seconds. Nothing is saved.".into();
+        self.status = "Trying the look from Effects and colors on that window for 20 seconds. Nothing is saved.".into();
     }
 
     /// Re-read the selected window's report shortly, once the host has acted.

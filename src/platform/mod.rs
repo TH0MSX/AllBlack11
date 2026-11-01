@@ -8,13 +8,16 @@
 //! `legacy` load `AllBlack11Hook.dll` into same-architecture processes that are
 //! not elevated, protected, or excluded.
 
+mod accname;
 mod app;
 mod cfgio;
 mod cmdq;
 mod composition;
 mod demo;
 mod dwm;
+mod gallery;
 mod helper;
+mod http;
 mod icon;
 mod image;
 mod inspect;
@@ -26,7 +29,9 @@ mod registry;
 mod settings;
 mod shellwin;
 mod sysinfo;
+mod updater;
 mod uxtheme;
+mod wallpreview;
 mod wide;
 
 pub fn start() -> i32 {

@@ -132,6 +132,10 @@ pub fn recipes_dir() -> PathBuf {
     config_dir().join("recipes")
 }
 
+pub fn packs_dir() -> PathBuf {
+    config_dir().join("packs")
+}
+
 pub fn log_path() -> PathBuf {
     config_dir().join("allblack11.log")
 }

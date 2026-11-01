@@ -2,6 +2,11 @@
 # Drive the real Settings window under Wine with synthetic clicks and take screenshots.
 #
 #   scripts/ui-drive.sh PAGE "click X Y" "shot /tmp/a.png" "key ctrl+k" "wait 1" ...
+#   ("rootshot PATH" captures the whole screen, for windows other than Settings, such as the
+#   full-screen wallpaper preview)
+#
+# PAGE is a destination id (home, appearance, appearance/wallpapers, apps, apps/packs, safety,
+# settings, help, help/about, ...; see src/destinations.rs) or a pre-3.8 page number.
 #
 # Same caveats as ui-shot.sh: Wine, not Windows. Coordinates are window-relative pixels.
 set -euo pipefail
@@ -26,6 +31,7 @@ for action in "$@"; do
     key) xdotool key --window "$id" "$2"; sleep 0.8 ;;
     type) xdotool type --delay 40 "$2"; sleep 0.5 ;;
     wait) sleep "$2" ;;
+    rootshot) unmap_wine_shell; sleep 0.3; import -window root "$2" ;;
     shot) unmap_wine_shell; xdotool windowraise "$id"; sleep 0.3; import -window "$id" "$2" ;;
   esac
 done

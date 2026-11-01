@@ -207,3 +207,69 @@ The author ran the ARM64 installer and build on a Windows 11 ARM64 PC (Snapdrago
 - Not implemented in 3.6 (deferred, see `HANDOFF.md`): Window Anatomy view, per-window undo
   timeline, display-aware scenes, controller-friendly Living Room view, Recipe Remixer, saved
   thumbnails, and capturing another app's window for comparison.
+
+## 3.8.0-preview.1 additions
+
+Same categories as above. **Nothing below has been run on Windows.** "Wine" means the real x64
+exe was run under Wine for layout and basic interaction only.
+
+| Area | Unit-tested | Cross-compiled (x64 and ARM64) | Wine-rendered | Windows runtime |
+| --- | --- | --- | --- | --- |
+| Release policy and version ordering (`update.rs`: stable vs preview, flag and tag, channels, skipped, arch pick, malformed JSON, missing assets, rate limits, clock skew) | yes | yes | n/a | not tested |
+| SHA-256 (NIST vectors, streaming) and bounded download (`sha256.rs`, `download.rs`: cancel mid-stream, oversize, short and long body, disk full, wrong digest, unsafe names, stale cleanup) | yes | yes | n/a | not tested |
+| WinHTTP client, updater worker, Install handoff (`platform/http.rs`, `updater.rs`) | no (needs Windows) | yes | the failure path only (the sandbox network answered non-200); real GitHub not reached | not tested |
+| Updates card, Home badge, balloon | layout text yes | yes | card rendered | not tested |
+| Pack schema, validation, install/remove, precedence, catalog honesty (`packs.rs`) | yes (11 tests) | yes | section rendered; Install wrote a `Pack: Microsoft Store` rule | not tested |
+| Package identity for `ApplicationFrameHost` frames (`procinfo.rs`) | no | yes | no | not tested |
+| Whether caption/border colors apply to Store and Calculator windows | n/a | n/a | n/a | **unknown; the pack says so** |
+| Look history names pack install/remove (`history.rs`) | yes | yes | n/a | not tested |
+| Exclusion manager (`exclusions.rs`: layers agree with `policy::exclusion_for`, class list validation) | yes | yes | section rendered | not tested |
+| Text-box names (`labels.rs` table; `accname.rs` `IAccPropServices::SetHwndPropStr`, vtable checked against the SDK `oleacc.idl`) | table only | yes | the service is absent under Wine, so 0 of 9 were named and the quiet failure path ran | **not verified with Narrator, NVDA or Accessibility Insights** |
+| Recipe Remixer (`recipes::remix`: parts, contrast refusal, target mismatch, round-trip through the strict parser, every bundled pair) | yes (4 tests) | yes | section rendered; result and diff shown for Graphite + Black frames | not tested |
+| Wallpaper generator (`generate.py`: deterministic, OLED rules checked) and manifest | yes (manifest, recorded stats, sizes, SHA-256 format) | n/a | contact sheet viewed | n/a |
+| Gallery logic (`wallpaper.rs`: manifest validation, URL allowlist, fit/position, state, placement) | yes (8 tests) | yes | page, tile selection, full-screen preview and the "not attached yet" download message seen | not tested |
+| `IDesktopWallpaper` apply, put back, display list (`gallery.rs`, vtable checked against `shobjidl_core.idl`) | no | yes | the service is absent under Wine (error shown); apply never ran | not tested |
+| Per-display fit | n/a | n/a | n/a | **not possible through Windows' API (one position for all displays); documented, not implemented** |
+
+## 3.8.0-preview.2 stabilization additions
+
+**Nothing below has been run on Windows.**
+
+| Area | Unit-tested | Static | Cross-compiled | Wine-rendered | Windows runtime |
+| --- | --- | --- | --- | --- | --- |
+| Destination registry, legacy numeric switch, tree shape (`destinations.rs`, 7 tests) | yes | n/a | yes | n/a | not tested |
+| Shared index and search (`commands.rs`, 20 tests: synonyms, every destination reachable, scenes/looks/packs/wallpapers/help present, search never runs actions) | yes | 55 anchors checked against the page builders (`check-controls.py`) | yes | results page, selecting a result, scroll, focus ring and "Found" mark seen | not tested |
+| Six-category shell, hubs, subpages, Back, expanders | exhaustive `match` on every destination | every control still on a page (129) | yes | Home, hubs, subpages, expanders, Back seen at 100%, 150%, 200% (Home) | not tested |
+| Window bounds (`windowbounds.rs`, 9 tests: default, clamping, scaling, missing monitor, partly off-screen, damaged file) | yes | n/a | yes | n/a | **not tested** (real monitor changes) |
+| Search box focus order, Tab out of boxes, Esc/Enter/Down | no (window code) | n/a | yes | partly (typing, clearing) | not tested |
+| UIA: names for cards, results, sections, search; `IsOffscreen` | no | n/a | yes | our provider's self-test passed (23 of 23 elements named) | **not tested with Narrator, NVDA or Accessibility Insights** |
+| Store/Calculator evidence chain (`packs::assess`, `delta`, marks; 6 tests) | yes | n/a | yes | "Target not detected" seen (no Store under Wine) | **not tested**: window enumeration, package read, report |
+| Whether caption colors reach Store or Calculator frames | n/a | n/a | n/a | n/a | **unknown** (owner: no visible change) |
+
+Corrections to earlier rows: in 3.8.0-preview.1 the two packs were described as "partly supported";
+they are now "Experimental (no visible effect shown)". The UI Automation provider reported every
+element as on-screen; it now reports scrolled-out content as off-screen.
+
+## Owner screenshots of 3.8.0-preview.2 on Windows 11 ARM64 (2026-11-01)
+
+The owner ran the ARM64 installer on a Snapdragon Windows 11 ARM64 PC and sent eleven screenshots
+(the app windows from these are the images in `docs/mockup-source/shots`; the desktop shots also
+showed notifications and personal data and are **not** kept or published). They are runtime
+evidence for what they show, and for nothing else.
+
+**Seen working on Windows (ARM64):** the six-category shell with the search box and Fluent icons
+in the pane; the selected item marked by a filled row and an outline; the hub pages (Appearance,
+Apps, Help & About) with cards and chevrons; the Back link on a subpage ("‹ Appearance"); Effects and
+colors with the live preview and Quick looks; Safety with **Look history naming real changes**
+("Installed the Microsoft Store pack", "Removed the Calculator pack", "Scene: OLED Black", "Changed the
+default look"); Settings with the Updates card showing "AllBlack11 3.8.0-preview.2 (preview)"; the
+Wallpapers page with all eight preview tiles; the Settings window itself styled black while the
+Control Panel frame behind it also showed a dark title bar and the Run dialog body stayed light
+(the classic-dialogs layer is off by default).
+
+**Not shown, so still unverified:** search results and the focus/mark on a result; keyboard
+navigation; Narrator or NVDA; an actual update check, download or install; a wallpaper download,
+apply or put back; whether the Store or Calculator pack changed any window (the history shows the
+packs were installed and removed, and the owner reported no visible change); DPI other than the
+captured one; the x64 build.
+

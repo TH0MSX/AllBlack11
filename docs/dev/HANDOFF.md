@@ -1,8 +1,38 @@
-# AllBlack11 development handoff (3.7 preview)
+# AllBlack11 development handoff (3.8 preview)
 
 Keep this file current. It exists so the work survives a context reset.
 
-## State
+## Stabilization checkpoint (3.8.0-preview.2) and the two-week feature freeze
+
+- Branch `claude/stabilize-3.8` (from `claude/next-3.8` `0b275e7`, which is untouched and is the recoverable baseline). Details: `INVENTORY-3.8-stabilization.md`; owner checklist: `SMOKE-TEST.md` section S.
+- **Freeze:** for two weeks after this lands, only critical regression and security fixes. No new features, no roadmap items, no new systems. Nothing here schedules anything.
+- Not ready to publish until section S has been run on Windows. The wallpaper files must be attached to the release whose tag equals the app version (`v3.8.0-preview.2` for this build).
+- Wine harness: `scripts/ui-drive.sh PAGE ...` now takes a destination id (`apps/packs`) or the old number.
+
+## Owner instruction for the new GitHub front page (recorded, not yet applied)
+
+When the README is rewritten for the next release, include this message from the owner: *this
+application received over 15 updates in November 2026, and the aim is at least one update every
+month, each with bug fixes, Windows update compatibility tweaks and new features.*
+
+How to write it so it stays true:
+- **The count must come from the repository.** Count the published GitHub releases (or CHANGELOG
+  sections) dated in that month on the day the README is written, and say that number. On
+  2026-11-01 there were 5 tags in total (the newest `v3.7.0-preview.1`) and none dated in
+  November, so "over 15" cannot be stated yet. Do not write a number the releases do not show.
+- **The cadence is a goal, not a promise**: "aims to ship at least one update every month".
+- The 3.8 stabilization pass starts a two-week feature freeze; during it only critical
+  regression and security fixes ship, so plan the November count with that in mind.
+
+## State (3.8)
+
+- **Branch `claude/next-3.8`**, from the released `v3.7.0-preview.1` (merged to main as PR #6 plus the release commits). Version **3.8.0-preview.1**. Not merged, not tagged, not published; no pull request.
+- What is in it: updater (A), compatibility packs (B), Recipe Remixer, exclusion manager and edit-box labels (C3, C4, C6), wallpaper gallery (D). CI (check, windows-arm64, windows-x64) was green at `a555e02`. Status per item: `docs/dev/INVENTORY-3.8.md`. Windows checklist: `SMOKE-TEST.md` section 3.8. Evidence: `EVIDENCE.md` "3.8.0-preview.1 additions".
+- Release steps for the owner (the tag push and workflow dispatch are blocked from the assistant's sandbox): see `RELEASE-POLICY.md`. Publish as a **pre-release**; attach the eight wallpaper PNGs from `python3 assets/wallpapers/generate.py` (`assets/wallpapers/README.md`) to the same release; also tick "Set as a pre-release" on `v3.7.0-preview.1`, which was published without the flag.
+- README still points at 3.7 (the recommended download) on purpose; change it when 3.8 is published.
+- Wine harness: `scripts/ui-drive.sh PAGE ...` where PAGE is the navigation index (0 Home, 1 Fix, 2 Appearance, 3 Scenes, 4 Rules, 5 Safety, 6 Diagnostics, 7 Wallpapers, 8 Help); `rootshot PATH` captures the whole screen (for the wallpaper preview window).
+
+## State (3.7, kept for history)
 
 - Baseline: `7b65598` (3.0.0-preview.2 plus two docs/banner merges). Tag `v3.0.0-preview.2`.
 - Crates: root exe, `hook/` (DLL, built for both CPUs), `setup/` (installer), `harness/` (test dialog, two manifests), `helper/` (x64-only helper shipped in the ARM64 package).

@@ -143,6 +143,8 @@ pub struct Info {
     pub enabled: bool,
     pub focusable: bool,
     pub focused: bool,
+    /// Scrolled out of the visible part of the page (it still exists and can be reached).
+    pub offscreen: bool,
     pub toggled: Option<bool>,
     pub selected: Option<bool>,
     pub value: Option<String>,
@@ -564,7 +566,7 @@ unsafe extern "system" fn simple_property(
         P_HAS_KEYBOARD_FOCUS => put_variant_bool(out, info.focused),
         P_IS_CONTROL_ELEMENT => put_variant_bool(out, true),
         P_IS_CONTENT_ELEMENT => put_variant_bool(out, true),
-        P_IS_OFFSCREEN => put_variant_bool(out, false),
+        P_IS_OFFSCREEN => put_variant_bool(out, info.offscreen),
         _ => {}
     }
     S_OK

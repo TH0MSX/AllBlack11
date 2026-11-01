@@ -178,20 +178,6 @@ pub fn icon_font(effective_dpi: u32, size: i32) -> HFONT {
     std::ptr::null_mut()
 }
 
-/// Segoe Fluent Icons code points used by the navigation and a few buttons. Verified against
-/// Microsoft's icon list (see UI-GUIDELINES.md). A glyph never stands alone: every use is next
-/// to a text label or has an accessible name.
-pub mod glyph {
-    pub const HOME: char = '\u{E80F}';
-    pub const SETTINGS: char = '\u{E713}';
-    pub const INFO: char = '\u{E946}';
-    pub const COLOR: char = '\u{E790}';
-    pub const SEARCH: char = '\u{E721}';
-    pub const SHIELD: char = '\u{EA18}';
-    pub const PHOTO: char = '\u{E91B}';
-    pub const TAG: char = '\u{E8EC}';
-}
-
 thread_local! {
     static ICONS: RefCell<Vec<(usize, i32, windows_sys::Win32::UI::WindowsAndMessaging::HICON)>> =
         const { RefCell::new(Vec::new()) };

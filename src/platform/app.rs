@@ -117,6 +117,8 @@ const TIMER_TRIAL: usize = 5;
 const TIMER_SCHEDULE: usize = 6;
 /// One-shot: has the running config been stable long enough to become the last known good?
 const TIMER_LKG: usize = 7;
+/// One-shot: the optional daily update check. Never armed unless the user turned it on.
+const TIMER_UPDATE: usize = 8;
 const HOTKEY_PALETTE: i32 = 1;
 const TRY_WINDOW_MS: u64 = 20_000;
 
@@ -301,7 +303,7 @@ fn help_text() -> String {
          AllBlack11.exe --restart-explorer  Restart the taskbar, Start and desktop\n\
          AllBlack11.exe --quiet   With --restore or --restart-explorer: no message box\n\
          AllBlack11.exe --safe    Start in safe mode: experimental features off for this run\n\
-         AllBlack11.exe --open-settings[=N]  Start and open Settings (page N, 0 = Home)\n\
+         AllBlack11.exe --open-settings[=ID]  Start and open Settings at a page, such as apps/packs\n\
          AllBlack11.exe --restore Quit, undo the shell tweaks and CaptionHeight, keep the config\n\
          AllBlack11.exe --version Print the version\n\
          AllBlack11.exe --help    Show this help\n\
@@ -609,6 +611,8 @@ fn run() -> Result<(), String> {
     if let Some(text) = lkg_candidate {
         app.offer_lkg(text);
     }
+    super::updater::init(hwnd);
+    app.sync_update_timer();
     APP_HWND.store(hwnd as isize, Ordering::Relaxed);
     uxtheme::allow_dark_menus(!app.high_contrast);
     uxtheme::allow_window(hwnd, true);
@@ -679,17 +683,19 @@ fn run() -> Result<(), String> {
     // setup is the user's own.
     let first_run = cfgio::load_onboarding().is_some_and(|state| state.should_prompt());
     if first_run {
-        settings::open_page(hwnd, 0);
+        settings::open_page(hwnd, crate::Dest::Home, None);
     }
+    // `--open-settings` (Home), `--open-settings=apps/packs` (a destination id) or, as before 3.8,
+    // `--open-settings=N` (the old page numbers; see `Dest::from_legacy_index`).
     if let Some(page) = std::env::args().find_map(|arg| {
         if arg == "--open-settings" {
-            Some(0)
+            Some(crate::Dest::Home)
         } else {
             arg.strip_prefix("--open-settings=")
-                .and_then(|n| n.parse::<usize>().ok())
+                .map(|text| crate::Dest::parse_switch(text).unwrap_or(crate::Dest::Home))
         }
     }) {
-        settings::open_page(hwnd, page);
+        settings::open_page(hwnd, page, None);
     }
     unsafe { message_loop(hwnd) };
     shutdown();
@@ -944,6 +950,15 @@ unsafe extern "system" fn wndproc(hwnd: HWND, msg: u32, wparam: WPARAM, lparam: 
                 with_app(|app| app.fire_due());
             } else if wparam == TIMER_TRIAL {
                 with_app(|app| app.expire_trials());
+            } else if wparam == TIMER_UPDATE {
+                unsafe { KillTimer(hwnd, TIMER_UPDATE) };
+                with_app(|app| {
+                    if app.config.updates.auto_check {
+                        super::updater::check(false, app.config.updates.channel);
+                        // Next one in a day. The check itself records when it last reached GitHub.
+                        unsafe { SetTimer(app.hwnd, TIMER_UPDATE, 86_400_000, None) };
+                    }
+                });
             } else if wparam == TIMER_LKG {
                 with_app(|app| app.promote_lkg(false));
             } else if wparam == TIMER_SCHEDULE {
@@ -973,6 +988,23 @@ unsafe extern "system" fn wndproc(hwnd: HWND, msg: u32, wparam: WPARAM, lparam: 
         WM_QUERYENDSESSION => return TRUE as LRESULT,
         WM_SETTINGCHANGE => {
             on_setting_change(lparam);
+            return 0;
+        }
+        // The updater found a release the user has not been told about: say so once, quietly.
+        super::updater::WM_UPDATE_FOUND => {
+            with_app(|app| {
+                if let Some((tag, preview)) = super::updater::take_announcement() {
+                    app.balloon(
+                        "AllBlack11 update",
+                        &format!(
+                            "{tag} is available ({}). Open Settings to see it. Nothing is downloaded until you choose.",
+                            if preview { "preview" } else { "stable" }
+                        ),
+                        false,
+                    );
+                }
+            });
+            settings::notify_external_change();
             return 0;
         }
         // WM_HOTKEY: the optional Ctrl+Alt+Space for the command palette.
@@ -1172,7 +1204,7 @@ fn show_menu(hwnd: HWND) {
         hinted(
             CMD_PALETTE,
             "Command palette…",
-            "Search every action. Also Ctrl+K inside Settings.",
+            "Search every action, and run it. Settings has its own search box (Ctrl+K there).",
             ItemKind::Action,
             true,
         ),
@@ -1621,6 +1653,23 @@ impl App {
         });
     }
 
+    /// Arm or disarm the optional daily update check to match the config. Off means no timer, so
+    /// an idle AllBlack11 with checks off does nothing here.
+    fn sync_update_timer(&mut self) {
+        unsafe {
+            if self.config.updates.auto_check {
+                SetTimer(
+                    self.hwnd,
+                    TIMER_UPDATE,
+                    super::updater::next_check_delay_ms(),
+                    None,
+                );
+            } else {
+                KillTimer(self.hwnd, TIMER_UPDATE);
+            }
+        }
+    }
+
     /// A parsed config is now being applied. It becomes the "last known good" copy only after it
     /// has run (see `lkg::Promotion`); the clock restarts with every new offer.
     fn offer_lkg(&mut self, text: String) {
@@ -1892,10 +1941,14 @@ impl App {
             }
         };
         self.offer_lkg(text.clone());
+        let update_before = self.config.updates.auto_check;
         if !std::mem::take(&mut self.history_kept) {
             self.record_history(&old, &new);
         }
         self.config = new;
+        if update_before != self.config.updates.auto_check {
+            self.sync_update_timer();
+        }
         self.enforce_safe_mode();
         self.refresh_reduce();
         self.config.caption_height = normalize_caption_height(self.config.caption_height);
@@ -2100,7 +2153,12 @@ impl App {
             .iter()
             .any(|rule| rule.path.is_some() || rule.package.is_some());
         let needs_package = self.config.rules.iter().any(|rule| rule.package.is_some());
-        let (path, package) = if needs_path {
+        let (path, package) = if needs_path && exe.eq_ignore_ascii_case("ApplicationFrameHost.exe")
+        {
+            // One host process serves every UWP frame, so the answer depends on the window and
+            // must not be cached by process.
+            super::procinfo::path_and_package_of_window(hwnd, pid, &exe, needs_package)
+        } else if needs_path {
             let key = (pid, create);
             if self.path_cache.len() > 512 {
                 self.path_cache.clear();
@@ -2808,7 +2866,7 @@ impl App {
             } else {
                 self.balloon(
                     "AllBlack11",
-                    "Ctrl+Alt+Space is already used by another app, so the palette hotkey is off. The tray item and Ctrl+K in Settings still work.",
+                    "Ctrl+Alt+Space is already used by another app, so the palette hotkey is off. The tray item still works, and Settings has its own search box (Ctrl+K).",
                     true,
                 );
             }
@@ -2920,7 +2978,7 @@ impl App {
         self.try_windows.clear();
         self.restore_visuals();
         let _ = legacy::set_active(false, &legacy::LegacyOptions::default());
-        log_line("info", "paused from the Safety page or tray");
+        log_line("info", "paused from Settings or the tray");
         self.update_tray();
         settings::notify_external_change();
     }
@@ -3045,7 +3103,7 @@ impl App {
             return None;
         }
         let (pid, create, exe) = self.identity(hwnd)?;
-        let (path, package) = super::procinfo::path_and_package(pid, true);
+        let (path, package) = super::procinfo::path_and_package_of_window(hwnd, pid, &exe, true);
         let title = super::procinfo::window_title(hwnd);
         let mut facts = collect_facts(hwnd, &exe, pid);
         facts.path = path.clone();

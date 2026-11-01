@@ -120,6 +120,9 @@ pub fn describe_change(old_json: &str, new_json: &str, scene_name: Option<&str>)
     let (Some(old), Some(new)) = (old.as_object(), new.as_object()) else {
         return Some("Changed the config".to_string());
     };
+    if let Some(text) = describe_pack_change(old, new) {
+        return Some(text);
+    }
     let mut parts: Vec<&str> = Vec::new();
     let keys: std::collections::BTreeSet<&String> = old.keys().chain(new.keys()).collect();
     for key in keys {
@@ -156,6 +159,72 @@ pub fn describe_change(old_json: &str, new_json: &str, scene_name: Option<&str>)
         text.push_str(part);
     }
     Some(text)
+}
+
+/// Names of the compatibility packs whose rules appear in a config's `rules` array. A pack's rules
+/// are called "Pack: Name" or "Pack: Name (n)".
+fn pack_names(config: &serde_json::Map<String, serde_json::Value>) -> Vec<String> {
+    let mut names: Vec<String> = Vec::new();
+    for rule in config
+        .get("rules")
+        .and_then(|rules| rules.as_array())
+        .into_iter()
+        .flatten()
+    {
+        let Some(label) = rule
+            .get("name")
+            .and_then(|name| name.as_str())
+            .and_then(|name| name.strip_prefix("Pack: "))
+        else {
+            continue;
+        };
+        let base = match label.rfind(" (") {
+            Some(at)
+                if label.ends_with(')')
+                    && label[at + 2..label.len() - 1]
+                        .chars()
+                        .all(|c| c.is_ascii_digit()) =>
+            {
+                &label[..at]
+            }
+            _ => label,
+        };
+        if !names.iter().any(|name| name == base) {
+            names.push(base.to_string());
+        }
+    }
+    names
+}
+
+/// "Installed the Calculator pack" when the only change is a pack's rules appearing or going.
+fn describe_pack_change(
+    old: &serde_json::Map<String, serde_json::Value>,
+    new: &serde_json::Map<String, serde_json::Value>,
+) -> Option<String> {
+    let others_equal = old
+        .keys()
+        .chain(new.keys())
+        .all(|key| key == "rules" || old.get(key) == new.get(key));
+    if !others_equal {
+        return None;
+    }
+    let before = pack_names(old);
+    let after = pack_names(new);
+    let added: Vec<&String> = after.iter().filter(|name| !before.contains(name)).collect();
+    let removed: Vec<&String> = before.iter().filter(|name| !after.contains(name)).collect();
+    // A pack that was reinstalled keeps its name in both lists, so it is a plain rules change.
+    let mut parts: Vec<String> = Vec::new();
+    for name in &added {
+        parts.push(format!("Installed the {name} pack"));
+    }
+    for name in &removed {
+        parts.push(format!("Removed the {name} pack"));
+    }
+    if parts.is_empty() {
+        None
+    } else {
+        Some(parts.join(" and "))
+    }
 }
 
 /// "12 s ago", "3 min ago", "2 h ago".
@@ -274,5 +343,35 @@ mod tests {
         with_session(|h| h.record("x", "y", 0));
         assert_eq!(with_session(|h| h.len()), 1);
         with_session(|h| h.clear());
+    }
+
+    #[test]
+    fn installing_and_removing_a_pack_is_named_in_the_history() {
+        let none = r#"{"rules":[{"process":"a.exe"}]}"#;
+        let one = r#"{"rules":[{"process":"a.exe"},{"name":"Pack: Calculator","package":"X_*"}]}"#;
+        let two = r#"{"rules":[{"process":"a.exe"},{"name":"Pack: Calculator","package":"X_*"},{"name":"Pack: Calculator (2)","process":"c.exe"}]}"#;
+        assert_eq!(
+            describe_change(none, one, None).as_deref(),
+            Some("Installed the Calculator pack")
+        );
+        assert_eq!(
+            describe_change(one, none, None).as_deref(),
+            Some("Removed the Calculator pack")
+        );
+        // Extra targets of the same pack are the same pack; a reinstall is an ordinary rules change.
+        assert_eq!(
+            describe_change(none, two, None).as_deref(),
+            Some("Installed the Calculator pack")
+        );
+        assert_eq!(
+            describe_change(one, two, None).as_deref(),
+            Some("Changed per-app rules")
+        );
+        // A change outside the rules is never called a pack change.
+        let other = r#"{"enabled":false,"rules":[{"process":"a.exe"},{"name":"Pack: Calculator","package":"X_*"}]}"#;
+        assert_eq!(
+            describe_change(none, other, None).as_deref(),
+            Some("Changed Theme windows on or off and per-app rules")
+        );
     }
 }

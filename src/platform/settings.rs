@@ -49,7 +49,7 @@ use super::cfgio;
 use super::registry;
 use super::sysinfo;
 use super::uxtheme;
-use super::wide::{config_dir, log_path, pcw, recipes_dir, to_wide, write_atomic};
+use super::wide::{config_dir, log_path, packs_dir, pcw, recipes_dir, to_wide, write_atomic};
 use windows_sys::Win32::UI::WindowsAndMessaging::WM_TIMER;
 
 #[path = "controls.rs"]
@@ -65,8 +65,14 @@ mod uistyle;
 
 use uistyle::{accent as theme_accent, th};
 
-static PENDING_PAGE: std::sync::atomic::AtomicUsize =
-    std::sync::atomic::AtomicUsize::new(usize::MAX);
+/// Where Settings should go once its window exists: the place and, optionally, one control.
+static PENDING_PAGE: std::sync::Mutex<Option<(Page, Option<&'static str>)>> =
+    std::sync::Mutex::new(None);
+/// Posted by the full-screen wallpaper preview when Enter is pressed.
+pub const WM_WALL_APPLY: u32 = windows_sys::Win32::UI::WindowsAndMessaging::WM_APP + 31;
+/// Posted by the subclassed edit boxes: a key the box hands to the window (wparam = virtual key,
+/// lparam = 1 when Shift was down).
+const WM_EDIT_KEY: u32 = windows_sys::Win32::UI::WindowsAndMessaging::WM_APP + 32;
 const WM_GOTO_PAGE: u32 = windows_sys::Win32::UI::WindowsAndMessaging::WM_APP + 21;
 
 /// Open the command palette (or close it if it is open).
@@ -74,9 +80,9 @@ pub fn open_palette(owner: HWND) {
     palette_ui::open(owner);
 }
 
-/// Open Settings on page `index` (0 Overview .. 5 Safety).
-pub fn open_page(owner: HWND, index: usize) {
-    PENDING_PAGE.store(index, Ordering::Release);
+/// Open Settings at a place (and a control in it, if `anchor` is given).
+pub fn open_page(owner: HWND, dest: Page, anchor: Option<&'static str>) {
+    *PENDING_PAGE.lock().unwrap_or_else(|e| e.into_inner()) = Some((dest, anchor));
     open(owner);
     let hwnd = SETTINGS.load(Ordering::Acquire);
     if hwnd != 0 {
@@ -115,27 +121,19 @@ const STATUS_H: i32 = 40;
 const ID_FILTER: u16 = 107;
 const ID_LOOK: u16 = 108;
 const ID_HELP: u16 = 109;
+const ID_SEARCH: u16 = 110;
 const TIMER_UI: usize = 1;
 const MARGIN: i32 = crate::ui_metrics::PAGE_MARGIN;
 const MIN_W: i32 = 480;
 /// Content stops growing here (logical px); wider windows get margin instead of long lines.
-const MAX_CONTENT: i32 = 880;
+const MAX_CONTENT: i32 = 960;
 const MIN_H: i32 = 520;
 const LIST_LINE: i32 = 24;
 
 static SETTINGS: AtomicIsize = AtomicIsize::new(0);
 
-#[derive(Clone, Copy, PartialEq, Eq)]
-enum Page {
-    Home,
-    Fix,
-    Appearance,
-    Scenes,
-    Rules,
-    Safety,
-    Diagnostics,
-    Help,
-}
+/// A place in Settings. The typed registry lives in `crate::destinations`.
+use crate::Dest as Page;
 
 struct Edits {
     filter: HWND,
@@ -147,6 +145,8 @@ struct Edits {
     exclude: HWND,
     look: HWND,
     help: HWND,
+    /// The global search box (in the navigation pane, or at the top of the results when narrow).
+    search: HWND,
 }
 
 /// One font per style in the type ramp, plus the icon font (null when none is installed).
@@ -201,7 +201,7 @@ struct Ui {
     arch: ArchStatus,
 }
 
-#[derive(Clone, Copy, PartialEq, Eq)]
+#[derive(Clone, Copy, PartialEq, Eq, Debug)]
 enum Slider {
     Opacity,
     Caption,
@@ -227,6 +227,18 @@ enum Row {
     AddField(Button),
     About(Vec<String>),
     Lines(Vec<String>),
+    /// The wallpaper previews as a grid of tiles (sized by the caller).
+    WallGrid,
+    /// "‹ Parent": the way back from a subpage. One keyboard stop.
+    Crumb,
+    /// A card that opens another place: the rows of a category's landing page.
+    Link(Page),
+    /// One search result (an index into `ext.results`).
+    Result(usize),
+    /// A section that is closed until asked for. Keyed by its title.
+    Expander(&'static str),
+    /// The search box's place in the content when the navigation is a narrow rail.
+    GlobalSearch,
     /// Paragraphs in body size, for the text a step or page is mainly about (setup).
     Prose(Vec<String>),
     /// The brand header: the mark, the name and one line of what AllBlack11 does.
@@ -241,7 +253,7 @@ enum Row {
     Filter,
 }
 
-#[derive(Clone, Copy, PartialEq, Eq)]
+#[derive(Clone, Copy, PartialEq, Eq, Debug)]
 enum Toggle {
     Theme,
     DefaultOn,
@@ -263,9 +275,10 @@ enum Toggle {
     IdentityAccents,
     DayNight,
     PaletteHotkey,
+    AutoUpdateCheck,
 }
 
-#[derive(Clone, Copy, PartialEq, Eq)]
+#[derive(Clone, Copy, PartialEq, Eq, Debug)]
 enum Choice {
     Backdrop,
     Corners,
@@ -276,9 +289,22 @@ enum Choice {
     DayStarts,
     NightStarts,
     AppAppearance,
+    UpdateChannel,
+    /// Which compatibility pack the buttons below act on.
+    Pack,
+    /// Which of your excluded window classes Remove acts on.
+    ExcludedClass,
+    /// Which display a wallpaper goes to.
+    WallDisplay,
+    /// How the selected wallpaper sits on a display.
+    WallFit,
+    /// The recipe a remix takes a group of fields from.
+    RemixWith,
+    /// Which group of fields a remix takes.
+    RemixPart,
 }
 
-#[derive(Clone, Copy, PartialEq, Eq)]
+#[derive(Clone, Copy, PartialEq, Eq, Debug)]
 enum Button {
     UseDefault,
     AddRule,
@@ -306,9 +332,34 @@ enum Button {
     TryRecipe,
     ImportRecipe,
     ExportRecipe,
+    PackInstall,
+    PackRemove,
+    ImportPack,
+    PackCheck,
+    PackSeesChange,
+    PackSeesNothing,
+    PackOpenColors,
+    RemoveExcludedClass,
+    WallDownload,
+    WallCancel,
+    WallApply,
+    WallPreview,
+    WallOpenFolder,
+    WallPutBack,
+    TryRemix,
+    SaveRemix,
     TestRule,
     TestPicked,
     UndoLook,
+    CheckUpdates,
+    DownloadUpdate,
+    CancelUpdate,
+    InstallUpdate,
+    DiscardUpdate,
+    SkipUpdate,
+    UnskipUpdate,
+    OpenReleasePage,
+    GoUpdates,
     RestoreLkg,
     ClearNotebook,
     ResetAllWindows,
@@ -331,7 +382,6 @@ enum Button {
     /// Start walkthrough `n` (index into `crate::TUTORIALS`).
     Tutorial(u8),
     OpenPalette,
-    GoPalette,
     GoFix,
     GoScenes,
     GoHelp,
@@ -430,9 +480,13 @@ fn toggle_meta(id: Toggle) -> (&'static str, &'static str) {
             "Identity accents (optional)",
             "Gives each app its own thin border color so windows are easy to tell apart. Only the border changes, and only where no rule sets one. Off by default.",
         ),
+        Toggle::AutoUpdateCheck => (
+            "Check for updates once a day (optional)",
+            "Asks GitHub (api.github.com) at most once a day whether a newer release exists, and tells you once if so. Nothing is downloaded or installed unless you press a button. Off by default. Checking by button always works.",
+        ),
         Toggle::PaletteHotkey => (
             "Command palette hotkey (optional)",
-            "Ctrl+Alt+Space opens the command palette from anywhere. It registers one system hotkey and nothing else: no keyboard hook, no input is read. Off by default. The tray item and Ctrl+K in Settings always work.",
+            "Ctrl+Alt+Space opens the command palette from anywhere. It registers one system hotkey and nothing else: no keyboard hook, no input is read. Off by default. The tray item always works.",
         ),
         Toggle::DayNight => (
             "Day / Night scenes (optional)",
@@ -466,6 +520,13 @@ fn choice_desc(ui: &Ui, id: Choice) -> &'static str {
             2 => "A new rule matches the package (Store apps). Falls back to the executable.",
             _ => "A new rule matches only the window class, across every app that uses it.",
         },
+        Choice::RemixWith => "The recipe to take a group of fields from. The recipe picked in the list above supplies everything else. Click to step through the recipes.",
+        Choice::RemixPart => "Which group of fields to take from the other recipe. Click to step through the groups.",
+        Choice::WallDisplay => "Where the wallpaper goes. Click to step through your displays. Windows keeps one fit for all displays, so changing the fit changes it everywhere.",
+        Choice::WallFit => "How the picture sits on a display. These wallpapers are black at the edges, so Fit leaves no visible bars. Click to step through the choices.",
+        Choice::ExcludedClass => "Window classes you told AllBlack11 to leave alone in every app. Click to step through them, then Remove. To add one, type class=Name in the box above and press Add.",
+        Choice::Pack => "Pick a compatibility pack, read what it can and cannot do below, then Install. A pack adds ordinary rules named \"Pack: …\" that your own rules override. Click to step to the next pack.",
+        Choice::UpdateChannel => "Which releases to offer. Automatic follows the kind of build you run: a preview build is offered previews, a stable build only stable releases. Click to change.",
         Choice::AppAppearance => "Changes only AllBlack11's own windows, never the apps it styles. Click to switch between Windows setting, Light and Dark.",
         Choice::DayScene => "Used during the day. Click to step through the scenes and your saved looks.",
         Choice::NightScene => "Used at night. Click to step through the scenes and your saved looks.",
@@ -487,6 +548,13 @@ fn choice_title(id: Choice) -> &'static str {
         Choice::Palette => "Dialog palette",
         Choice::RuleScope => "New rule matches",
         Choice::AppAppearance => "AllBlack11 theme",
+        Choice::UpdateChannel => "Update channel",
+        Choice::Pack => "Pack",
+        Choice::ExcludedClass => "Excluded window class",
+        Choice::WallDisplay => "Apply to",
+        Choice::RemixWith => "Take from",
+        Choice::RemixPart => "Take",
+        Choice::WallFit => "Fit",
         Choice::DayScene => "Day scene",
         Choice::NightScene => "Night scene",
         Choice::DayStarts => "Day starts",
@@ -559,7 +627,36 @@ fn button_meta(id: Button) -> (&'static str, &'static str, &'static str) {
         ),
         Button::TryRecipe => ("", "", "Try this look"),
         Button::ImportRecipe => ("", "", "Import…"),
+        Button::PackInstall => ("", "", "Install pack"),
+        Button::PackRemove => ("", "", "Remove pack"),
+        Button::ImportPack => ("", "", "Import pack…"),
+        Button::PackCheck => ("", "", "Check now"),
+        Button::PackSeesChange => ("", "", "I see a change"),
+        Button::PackSeesNothing => ("", "", "I see no change"),
+        Button::PackOpenColors => (
+            "Windows color settings",
+            "Most Microsoft Store apps follow the Windows app mode. This opens Settings > Personalization > Colors, where you can choose it. An app with its own theme option has it in its own settings.",
+            "Open",
+        ),
+        Button::RemoveExcludedClass => ("", "", "Remove class"),
+        Button::WallDownload => ("", "", "Download image"),
+        Button::WallCancel => ("", "", "Cancel download"),
+        Button::WallApply => ("", "", "Apply wallpaper"),
+        Button::WallPreview => ("", "", "Preview full screen"),
+        Button::WallOpenFolder => ("", "", "Open file location"),
+        Button::WallPutBack => ("", "", "Put back previous"),
+        Button::TryRemix => ("", "", "Try remix (15 s)"),
+        Button::SaveRemix => ("", "", "Save remix"),
         Button::ExportRecipe => ("", "", "Export current…"),
+        Button::CheckUpdates => ("", "", "Check for updates"),
+        Button::DownloadUpdate => ("", "", "Download"),
+        Button::CancelUpdate => ("", "", "Cancel download"),
+        Button::InstallUpdate => ("", "", "Install (closes AllBlack11)"),
+        Button::DiscardUpdate => ("", "", "Discard download"),
+        Button::SkipUpdate => ("", "", "Skip this version"),
+        Button::UnskipUpdate => ("", "", "Stop skipping"),
+        Button::OpenReleasePage => ("", "", "Release page"),
+        Button::GoUpdates => ("", "", "See the update"),
         Button::UndoLook => (
             "Undo last change",
             "Puts back the look from before the most recent change listed above, then restyles windows from it. Repeat to go further back.",
@@ -610,13 +707,12 @@ fn button_meta(id: Button) -> (&'static str, &'static str, &'static str) {
             let tutorial = &crate::TUTORIALS[(index as usize).min(crate::TUTORIALS.len() - 1)];
             (tutorial.title, tutorial.blurb, "Start")
         }
-        Button::GoPalette => ("", "", "Command palette"),
-        Button::GoFix => ("", "", "Fix an app"),
+        Button::GoFix => ("", "", "Customize an app"),
         Button::GoScenes => ("", "", "Browse scenes"),
         Button::GoHelp => ("", "", "Help and tutorials"),
         Button::OpenPalette => (
             "Command palette",
-            "Search every action: pick a window, switch scenes, pause, restore, open a page. Also Ctrl+K in Settings and the tray menu.",
+            "Search every action: pick a window, switch scenes, pause, restore, open a page. Also on the tray menu and its hotkey. Ctrl+K in Settings focuses the search box instead.",
             "Open",
         ),
         Button::NextAccent => ("", "", "Change accent"),
@@ -924,8 +1020,17 @@ fn row_height(row: &Row) -> i32 {
             8 + text.max(56) + 16
         }
         Row::Credit => credit_layout(lw).height,
+        Row::Crumb => 36,
+        Row::Link(dest) => {
+            let text_w = card_text_w(lw) - 60;
+            (12 + 20 + wrapped_height(dest.description(), Face::Small, text_w, 16) + 12).max(64)
+                + GAP
+        }
+        Row::Result(_) => 76 + GAP,
+        Row::Expander(_) => 48 + GAP,
+        Row::GlobalSearch => 52 + GAP,
         Row::Buttons(_) => 52 + GAP,
-        Row::WindowList | Row::RecipeList | Row::LookList => 0, // sized by the caller
+        Row::WindowList | Row::RecipeList | Row::LookList | Row::WallGrid => 0, // sized by the caller
         Row::Filter => 52 + GAP,
         Row::About(lines) => 24 + about_line_heights(lines, lw).iter().sum::<i32>() + GAP,
     }
@@ -966,7 +1071,7 @@ pub fn open(owner: HWND) {
         register(instance);
         let class = to_wide("AllBlack11.Settings");
         let title = to_wide("AllBlack11 Settings");
-        let (x, y, w, h) = place(560, 860);
+        let (x, y, w, h, maximized) = initial_placement();
         let hwnd = CreateWindowExW(
             0,
             pcw(&class),
@@ -983,7 +1088,103 @@ pub fn open(owner: HWND) {
         );
         if hwnd.is_null() {
             super::wide::log_line("error", "could not open Settings");
+        } else if maximized {
+            windows_sys::Win32::UI::WindowsAndMessaging::ShowWindow(
+                hwnd,
+                windows_sys::Win32::UI::WindowsAndMessaging::SW_MAXIMIZE,
+            );
         }
+    }
+}
+
+fn window_file() -> std::path::PathBuf {
+    config_dir().join("window.json")
+}
+
+/// The monitors' work areas, the one with the pointer first, so a first start opens where the
+/// person is looking.
+fn work_areas() -> Vec<crate::WorkArea> {
+    use windows_sys::Win32::Foundation::{LPARAM as LP, RECT as R};
+    use windows_sys::Win32::Graphics::Gdi::{EnumDisplayMonitors, GetMonitorInfoW, HDC, HMONITOR};
+    unsafe extern "system" fn visit(monitor: HMONITOR, _dc: HDC, _rect: *mut R, data: LP) -> i32 {
+        let list = &mut *(data as *mut Vec<crate::WorkArea>);
+        let mut info: MONITORINFO = std::mem::zeroed();
+        info.cbSize = std::mem::size_of::<MONITORINFO>() as u32;
+        if GetMonitorInfoW(monitor, &mut info) != 0 && list.len() < 16 {
+            let (mut dpi_x, mut dpi_y) = (0u32, 0u32);
+            let dpi = if GetDpiForMonitor(monitor, MDT_EFFECTIVE_DPI, &mut dpi_x, &mut dpi_y) == 0
+                && dpi_x != 0
+            {
+                dpi_x
+            } else {
+                96
+            };
+            list.push(crate::WorkArea {
+                left: info.rcWork.left,
+                top: info.rcWork.top,
+                right: info.rcWork.right,
+                bottom: info.rcWork.bottom,
+                scale: dpi as f32 / 96.0,
+            });
+        }
+        1
+    }
+    let mut list: Vec<crate::WorkArea> = Vec::new();
+    unsafe {
+        EnumDisplayMonitors(
+            std::ptr::null_mut(),
+            std::ptr::null(),
+            Some(visit),
+            &mut list as *mut Vec<crate::WorkArea> as LP,
+        );
+        // Put the monitor under the pointer first.
+        let mut cursor = POINT { x: 0, y: 0 };
+        GetCursorPos(&mut cursor);
+        if let Some(index) = list.iter().position(|a| {
+            cursor.x >= a.left && cursor.x < a.right && cursor.y >= a.top && cursor.y < a.bottom
+        }) {
+            list.swap(0, index);
+        }
+    }
+    list
+}
+
+/// Where to open: the saved position if it still fits the screens, otherwise the landscape default.
+fn initial_placement() -> (i32, i32, i32, i32, bool) {
+    let saved = std::fs::read_to_string(window_file())
+        .ok()
+        .and_then(|text| crate::WindowBounds::parse(&text));
+    match crate::restore_window_bounds(saved, &work_areas()) {
+        Some(p) => (p.x, p.y, p.w, p.h, p.maximized),
+        None => {
+            let (x, y, w, h) = place(crate::WINDOW_DEFAULT_SIZE.0, crate::WINDOW_DEFAULT_SIZE.1);
+            (x, y, w, h, false)
+        }
+    }
+}
+
+/// Remember where the window is: the normal (not maximized) rectangle, with the size in logical
+/// pixels so another scaling gives the same apparent size.
+fn save_window_bounds(hwnd: HWND) {
+    use windows_sys::Win32::UI::WindowsAndMessaging::{
+        GetWindowPlacement, SW_SHOWMAXIMIZED, WINDOWPLACEMENT,
+    };
+    unsafe {
+        let mut placement: WINDOWPLACEMENT = std::mem::zeroed();
+        placement.length = std::mem::size_of::<WINDOWPLACEMENT>() as u32;
+        if GetWindowPlacement(hwnd, &mut placement) == 0 {
+            return;
+        }
+        let r = placement.rcNormalPosition;
+        let scale = (dpi_of(hwnd) as f32 / 96.0).max(0.5);
+        let bounds = crate::WindowBounds {
+            x: r.left,
+            y: r.top,
+            w: (((r.right - r.left) as f32) / scale).round() as i32,
+            h: (((r.bottom - r.top) as f32) / scale).round() as i32,
+            maximized: placement.showCmd == SW_SHOWMAXIMIZED as u32,
+        };
+        let _ = write_atomic(&window_file(), &bounds.to_json());
     }
 }
 
@@ -1042,8 +1243,9 @@ unsafe extern "system" fn wndproc(hwnd: HWND, msg: u32, wparam: WPARAM, lparam: 
         } else {
             crate::ui_metrics::NAV_TEXT_ONLY
         };
-        info.ptMinTrackSize.x = ((MIN_W + nav_min + 16) as f32 * k) as i32;
-        info.ptMinTrackSize.y = ((MIN_H + 47) as f32 * k) as i32;
+        info.ptMinTrackSize.x =
+            ((MIN_W + nav_min + 16).max(crate::WINDOW_MIN_SIZE.0) as f32 * k) as i32;
+        info.ptMinTrackSize.y = ((MIN_H + 47).max(crate::WINDOW_MIN_SIZE.1) as f32 * k) as i32;
         return 0;
     }
     let ui = get_ui(hwnd);
@@ -1125,7 +1327,7 @@ unsafe extern "system" fn wndproc(hwnd: HWND, msg: u32, wparam: WPARAM, lparam: 
             let client_x = (lparam_x(lparam) as f32 / ui.k) as i32;
             let client_y = (lparam_y(lparam) as f32 / ui.k) as i32;
             let hover = pages::nav_hit(ui, client_x, client_y)
-                .and_then(|page| Page::ALL.iter().position(|p| *p == page));
+                .and_then(|category| crate::Category::ALL.iter().position(|c| *c == category));
             if hover != ui.ext.nav_hover {
                 ui.ext.nav_hover = hover;
                 InvalidateRect(hwnd, std::ptr::null(), 0);
@@ -1181,7 +1383,9 @@ unsafe extern "system" fn wndproc(hwnd: HWND, msg: u32, wparam: WPARAM, lparam: 
         WM_COMMAND => {
             let id = (wparam & 0xFFFF) as u16;
             let code = ((wparam >> 16) & 0xFFFF) as u16;
-            if code == EN_CHANGE && id == ID_HELP {
+            if code == EN_CHANGE && id == ID_SEARCH {
+                ui.on_search_changed(hwnd);
+            } else if code == EN_CHANGE && id == ID_HELP {
                 ui.ext.help_query = get_text(ui.edits.help);
                 ui.relayout(hwnd);
             } else if code == EN_CHANGE && id == ID_FILTER {
@@ -1202,6 +1406,13 @@ unsafe extern "system" fn wndproc(hwnd: HWND, msg: u32, wparam: WPARAM, lparam: 
             SetTextColor(dc, th().text);
             SetBkColor(dc, th().edit_bg);
             ui.edit_brush as LRESULT
+        }
+        // Alt+Left: back from a subpage to its category, as in Windows Settings.
+        0x0104 if wparam == 0x25 => {
+            if let Some(parent) = ui.page.parent() {
+                ui.navigate(hwnd, parent);
+            }
+            0
         }
         WM_KEYDOWN => {
             let ctrl = windows_sys::Win32::UI::Input::KeyboardAndMouse::GetKeyState(0x11) < 0;
@@ -1228,33 +1439,40 @@ unsafe extern "system" fn wndproc(hwnd: HWND, msg: u32, wparam: WPARAM, lparam: 
                 }
                 // Inside the navigation pane the arrows choose the destination.
                 0x26 | 0x28 | 0x24 | 0x23 if ui.ext.nav_focus => {
-                    let count = Page::ALL.len();
-                    let current = Page::ALL.iter().position(|p| *p == ui.page).unwrap_or(0);
+                    let count = crate::Category::ALL.len();
+                    let current = crate::Category::ALL
+                        .iter()
+                        .position(|c| *c == ui.page.category())
+                        .unwrap_or(0);
                     let next = match wparam {
                         0x26 => (current + count - 1) % count,
                         0x28 => (current + 1) % count,
                         0x24 => 0,
                         _ => count - 1,
                     };
-                    ui.set_page(hwnd, Page::ALL[next]);
+                    ui.set_page(hwnd, crate::Category::ALL[next].landing());
                     InvalidateRect(hwnd, std::ptr::null(), 0);
                     return 0;
                 }
                 0x4B if ctrl => {
-                    // Ctrl+K: the command palette.
-                    palette_ui::open(ui.owner);
+                    // Ctrl+K: the search box, as in Windows Settings. The command palette that
+                    // can also run actions stays on its own hotkey and the tray menu.
+                    ui.focus_search(hwnd);
                     return 0;
                 }
                 0x09 if ctrl => {
-                    // Ctrl+Tab and Ctrl+Shift+Tab switch pages.
-                    let count = Page::ALL.len();
-                    let current = Page::ALL.iter().position(|p| *p == ui.page).unwrap_or(0);
+                    // Ctrl+Tab and Ctrl+Shift+Tab switch categories.
+                    let count = crate::Category::ALL.len();
+                    let current = crate::Category::ALL
+                        .iter()
+                        .position(|c| *c == ui.page.category())
+                        .unwrap_or(0);
                     let next = if shift {
                         (current + count - 1) % count
                     } else {
                         (current + 1) % count
                     };
-                    ui.set_page(hwnd, Page::ALL[next]);
+                    ui.set_page(hwnd, crate::Category::ALL[next].landing());
                     return 0;
                 }
                 0x09 => {
@@ -1287,6 +1505,21 @@ unsafe extern "system" fn wndproc(hwnd: HWND, msg: u32, wparam: WPARAM, lparam: 
             ui.relayout(hwnd);
             0
         }
+        WM_EDIT_KEY => {
+            let from_search = GetFocus() == ui.edits.search;
+            if from_search || wparam == 0x09 {
+                if from_search || ui.ext.query.is_empty() || wparam == 0x09 {
+                    ui.search_key(hwnd, wparam as u32, lparam != 0);
+                }
+            }
+            ui.relayout(hwnd);
+            0
+        }
+        WM_WALL_APPLY => {
+            ui.wall_apply_selected();
+            ui.relayout(hwnd);
+            0
+        }
         WM_TIMER => {
             if wparam == TIMER_UI {
                 ui.on_timer(hwnd);
@@ -1294,9 +1527,12 @@ unsafe extern "system" fn wndproc(hwnd: HWND, msg: u32, wparam: WPARAM, lparam: 
             0
         }
         WM_GOTO_PAGE => {
-            let index = PENDING_PAGE.swap(usize::MAX, Ordering::AcqRel);
-            if let Some(page) = Page::ALL.get(index) {
-                ui.set_page(hwnd, *page);
+            let pending = PENDING_PAGE
+                .lock()
+                .unwrap_or_else(|e| e.into_inner())
+                .take();
+            if let Some((page, anchor)) = pending {
+                ui.go(hwnd, page, anchor);
             }
             0
         }
@@ -1315,6 +1551,7 @@ unsafe extern "system" fn wndproc(hwnd: HWND, msg: u32, wparam: WPARAM, lparam: 
             0
         }
         WM_DESTROY => {
+            save_window_bounds(hwnd);
             uia::disconnect(hwnd);
             SETTINGS.store(0, Ordering::Release);
             let ui = Box::from_raw(take_ui(hwnd));
@@ -1426,6 +1663,7 @@ impl Ui {
             exclude: make_edit(hwnd, ID_EXCLUDE, fonts.body),
             look: make_edit(hwnd, ID_LOOK, fonts.body),
             help: make_edit(hwnd, ID_HELP, fonts.body),
+            search: make_edit(hwnd, ID_SEARCH, fonts.body),
         };
         let mut ui = Self {
             hwnd,
@@ -1457,12 +1695,40 @@ impl Ui {
             arch: sysinfo::arch_status(),
         };
         ui.push_colors_to_edits();
+        ui.refresh_packs();
+        ui.refresh_looks();
+        unsafe {
+            // EM_SETCUEBANNER: grey "Search" text while the box is empty, even when it has focus.
+            let cue = to_wide("Search");
+            SendMessageW(ui.edits.search, 0x1501, 1, cue.as_ptr() as LPARAM);
+        }
+        for edit in ui.all_edits() {
+            unsafe {
+                windows_sys::Win32::UI::Shell::SetWindowSubclass(
+                    edit,
+                    Some(edit_key_proc),
+                    2,
+                    hwnd as usize,
+                )
+            };
+        }
+        let edits = ui.all_edits();
+        let named = super::accname::label_edits(&edits);
+        if named != edits.len() {
+            super::wide::log_line(
+                "info",
+                &format!(
+                    "Named {named} of {} Settings text boxes for screen readers.",
+                    edits.len()
+                ),
+            );
+        }
         ui.init_onboarding();
         ui
     }
 
     fn preview_h(&self) -> i32 {
-        if matches!(self.page, Page::Appearance) {
+        if matches!(self.page, Page::AppearanceEffects) {
             PREVIEW_H
         } else {
             0
@@ -1527,7 +1793,7 @@ impl Ui {
         self.relayout(hwnd);
     }
 
-    fn all_edits(&self) -> [HWND; 9] {
+    fn all_edits(&self) -> [HWND; 10] {
         [
             self.edits.filter,
             self.edits.caption,
@@ -1538,6 +1804,7 @@ impl Ui {
             self.edits.exclude,
             self.edits.look,
             self.edits.help,
+            self.edits.search,
         ]
     }
 
@@ -1632,11 +1899,11 @@ impl Ui {
             }
         }
         // Remove the tools added last time, then add one per destination if the rail is showing.
-        self.nav_tip_text = Page::ALL
+        self.nav_tip_text = crate::Category::ALL
             .iter()
-            .map(|page| to_wide(page.nav_label()))
+            .map(|category| to_wide(category.title()))
             .collect();
-        for index in 0..Page::ALL.len() {
+        for index in 0..crate::Category::ALL.len() {
             let mut tool: TTTOOLINFOW = unsafe { std::mem::zeroed() };
             tool.cbSize = std::mem::size_of::<TTTOOLINFOW>() as u32;
             tool.hwnd = hwnd;
@@ -1807,6 +2074,15 @@ impl Ui {
                 Row::WindowList => self.click_window_list((local - 8) / LIST_LINE),
                 Row::RecipeList => self.click_recipe_list((local - 8) / LIST_LINE),
                 Row::LookList => self.click_look_list((local - 8) / LIST_LINE),
+                Row::WallGrid => self.click_wall_grid(lw, lx, local),
+                Row::Crumb => {
+                    if let Some(parent) = self.page.parent() {
+                        self.navigate(hwnd, parent);
+                    }
+                }
+                Row::Link(dest) => self.navigate(hwnd, *dest),
+                Row::Result(index) => self.open_result(hwnd, *index),
+                Row::Expander(title) => self.toggle_section(title),
                 Row::RuleList => self.pick_rule((local - 8) / LIST_LINE),
                 Row::ExcludeList => self.pick_exclude((local - 8) / LIST_LINE),
                 _ => {}
@@ -1885,6 +2161,7 @@ impl Ui {
             | Toggle::IdentityAccents
             | Toggle::DayNight
             | Toggle::PaletteHotkey
+            | Toggle::AutoUpdateCheck
             | Toggle::ShowTitles => {
                 self.toggle_ext(id);
                 return;
@@ -1912,6 +2189,13 @@ impl Ui {
                 | Choice::DayStarts
                 | Choice::NightStarts
                 | Choice::AppAppearance
+                | Choice::UpdateChannel
+                | Choice::Pack
+                | Choice::ExcludedClass
+                | Choice::WallDisplay
+                | Choice::RemixWith
+                | Choice::RemixPart
+                | Choice::WallFit
         ) {
             self.cycle_ext(id);
             return;
@@ -1973,7 +2257,24 @@ impl Ui {
                 self.commit();
             }
             Button::AddExclude => {
-                let name = file_name(&get_text(self.edits.exclude)).trim().to_string();
+                let typed = get_text(self.edits.exclude);
+                if let Some(class) = typed
+                    .trim()
+                    .get(..6)
+                    .filter(|head| head.eq_ignore_ascii_case("class="))
+                    .map(|_| typed.trim()[6..].to_string())
+                {
+                    match crate::add_excluded_class(&mut self.config, &class) {
+                        Ok(message) => {
+                            self.status = message;
+                            set_text(self.edits.exclude, "");
+                            self.commit();
+                        }
+                        Err(message) => self.status = message,
+                    }
+                    return;
+                }
+                let name = file_name(&typed).trim().to_string();
                 if name.is_empty() {
                     self.status = "Type an exe name to exclude.".into();
                     return;
@@ -2149,6 +2450,10 @@ impl Ui {
                     self.edits.help,
                     spot(MARGIN + PAD + 100, 14, lw - 2 * MARGIN - 2 * PAD - 100, 24),
                 )),
+                Row::GlobalSearch if self.nav_w <= crate::ui_metrics::NAV_COMPACT => Some((
+                    self.edits.search,
+                    spot(MARGIN + PAD + 30, 14, lw - 2 * MARGIN - 2 * PAD - 30, 24),
+                )),
                 Row::Filter => Some((
                     self.edits.filter,
                     spot(MARGIN + PAD + 70, 14, lw - 2 * MARGIN - 2 * PAD - 70, 24),
@@ -2171,6 +2476,18 @@ impl Ui {
                 if let Some(slot) = targets.iter_mut().find(|slot| slot.0 == edit) {
                     slot.1 = rect;
                 }
+            }
+        }
+        // The search box lives in the navigation pane; on the narrow rail it sits on the results page.
+        if self.nav_w > crate::ui_metrics::NAV_COMPACT {
+            let (l, t, r, b) = pages::nav_search_rect(self);
+            if let Some(slot) = targets.iter_mut().find(|slot| slot.0 == self.edits.search) {
+                slot.1 = Some((
+                    self.px(l + 30),
+                    self.px(t + 5),
+                    self.px((r - l) - 30 - 30),
+                    self.px((b - t) - 10),
+                ));
             }
         }
         for (edit, rect) in targets {
@@ -2268,6 +2585,57 @@ impl Canvas {
                 std::ptr::null_mut(),
                 windows_sys::Win32::UI::WindowsAndMessaging::DI_NORMAL,
             );
+        }
+    }
+
+    /// Stretch a bitmap into a logical rectangle (smooth scaling).
+    fn bitmap(
+        &self,
+        bitmap: windows_sys::Win32::Graphics::Gdi::HBITMAP,
+        l: i32,
+        t: i32,
+        r: i32,
+        b: i32,
+    ) {
+        use windows_sys::Win32::Graphics::Gdi::{
+            CreateCompatibleDC, DeleteDC, GetObjectW, SetStretchBltMode, StretchBlt, BITMAP,
+            HALFTONE, SRCCOPY,
+        };
+        if bitmap.is_null() {
+            return;
+        }
+        unsafe {
+            let mut info: BITMAP = std::mem::zeroed();
+            if GetObjectW(
+                bitmap,
+                std::mem::size_of::<BITMAP>() as i32,
+                &mut info as *mut BITMAP as *mut _,
+            ) == 0
+            {
+                return;
+            }
+            let mem = CreateCompatibleDC(self.dc);
+            if mem.is_null() {
+                return;
+            }
+            let old = SelectObject(mem, bitmap);
+            SetStretchBltMode(self.dc, HALFTONE);
+            let dest = self.rect(l, t, r, b);
+            StretchBlt(
+                self.dc,
+                dest.left,
+                dest.top,
+                dest.right - dest.left,
+                dest.bottom - dest.top,
+                mem,
+                0,
+                0,
+                info.bmWidth,
+                info.bmHeight,
+                SRCCOPY,
+            );
+            SelectObject(mem, old);
+            DeleteDC(mem);
         }
     }
 
@@ -2424,6 +2792,7 @@ fn paint(hwnd: HWND, ui: &mut Ui) {
             }
             paint_row(&canvas, ui, row, top, lw);
             pages::paint_tutorial_highlight(&canvas, ui, row, top, lw);
+            pages::paint_found(&canvas, ui, index, row, top, lw);
             if focus_row == Some(index) {
                 pages::paint_focus_ring(&canvas, ui, row, top, lw);
             }
@@ -2714,7 +3083,7 @@ fn paint_row(c: &Canvas, ui: &Ui, row: &Laid, top: i32, lw: i32) {
                     top + 28,
                     right - 150,
                     top + card_h - 2,
-                    "⚠ Not a color yet. Use #RRGGBB, accent, none or default.",
+                    "Not a color yet. Use #RRGGBB, accent, none or default.",
                     th().bad,
                     fonts.small,
                     DT_LEFT | DT_VCENTER | DT_SINGLELINE | DT_END_ELLIPSIS,
@@ -2781,7 +3150,7 @@ fn paint_row(c: &Canvas, ui: &Ui, row: &Laid, top: i32, lw: i32) {
             lw,
             ui.config.rules.iter().map(|rule| rule.label()),
             ui.rule,
-            "No rules yet. Add one below or from Fix this app.",
+            "No rules yet. Add one below or from Customize an app.",
         ),
         Row::ExcludeList => draw_list(
             c,
@@ -2845,6 +3214,12 @@ fn paint_row(c: &Canvas, ui: &Ui, row: &Laid, top: i32, lw: i32) {
         | Row::WindowList
         | Row::RecipeList
         | Row::LookList
+        | Row::WallGrid
+        | Row::Crumb
+        | Row::Link(_)
+        | Row::Result(_)
+        | Row::Expander(_)
+        | Row::GlobalSearch
         | Row::SearchField
         | Row::Filter => {
             pages::paint_extra(c, ui, row, top, lw);
@@ -2987,6 +3362,7 @@ fn toggle_on(ui: &Ui, id: Toggle) -> bool {
         Toggle::IdentityAccents => ui.config.features.identity_accents,
         Toggle::DayNight => ui.config.features.day_night.enabled,
         Toggle::PaletteHotkey => ui.config.features.palette_hotkey,
+        Toggle::AutoUpdateCheck => ui.config.updates.auto_check,
     }
 }
 
@@ -3010,6 +3386,44 @@ fn choice_text(ui: &Ui, id: Choice) -> String {
         }
         .to_string(),
         Choice::AppAppearance => ui.config.ui.appearance.label().to_string(),
+        Choice::UpdateChannel => ui.config.updates.channel.label().to_string(),
+        Choice::RemixWith => ui
+            .remix_donor()
+            .and_then(|index| ui.ext.recipes.get(index))
+            .map(|(recipe, _)| recipe.name.clone())
+            .unwrap_or_else(|| "None".to_string()),
+        Choice::RemixPart => ui.ext.remix_part.label().to_string(),
+        Choice::WallDisplay => match ui.ext.wall_display {
+            0 => "All displays".to_string(),
+            n => super::gallery::displays()
+                .get(n - 1)
+                .map(|d| d.label.clone())
+                .unwrap_or_else(|| "All displays".to_string()),
+        },
+        Choice::WallFit => ui
+            .ext
+            .walls
+            .get(ui.ext.wall_sel)
+            .map(|entry| ui.ext.wall_state.fit_for(entry).label().to_string())
+            .unwrap_or_else(|| "Fill".to_string()),
+        Choice::ExcludedClass => ui
+            .config
+            .exclude_classes
+            .get(ui.ext.class_sel)
+            .cloned()
+            .unwrap_or_else(|| "None".to_string()),
+        Choice::Pack => ui
+            .ext
+            .packs
+            .get(ui.ext.pack_sel)
+            .map(|(pack, imported)| {
+                if *imported {
+                    format!("{} (imported)", pack.name)
+                } else {
+                    pack.name.clone()
+                }
+            })
+            .unwrap_or_else(|| "No packs".to_string()),
         Choice::DayScene => ui.scene_name_for(&day_night.day_scene),
         Choice::NightScene => ui.scene_name_for(&day_night.night_scene),
         Choice::DayStarts => day_night.day_starts.clone(),
@@ -3427,6 +3841,36 @@ fn color_token(color: Color) -> String {
         Color::Accent => "accent".into(),
         Color::Rgb { r, g, b } => format!("#{r:02X}{g:02X}{b:02X}"),
     }
+}
+
+/// Every Settings text box hands Tab to the window, so keyboard focus is never trapped in a box;
+/// the search box also hands up Enter, Escape and Down.
+unsafe extern "system" fn edit_key_proc(
+    hwnd: HWND,
+    msg: u32,
+    wparam: WPARAM,
+    lparam: LPARAM,
+    _id: usize,
+    parent: usize,
+) -> LRESULT {
+    use windows_sys::Win32::UI::Input::KeyboardAndMouse::GetKeyState;
+    use windows_sys::Win32::UI::Shell::DefSubclassProc;
+    use windows_sys::Win32::UI::WindowsAndMessaging::{GetDlgCtrlID, WM_CHAR};
+    let is_search = GetDlgCtrlID(hwnd) == ID_SEARCH as i32;
+    match msg {
+        WM_KEYDOWN => {
+            let shift = GetKeyState(0x10) < 0;
+            let key = wparam as u32;
+            if key == 0x09 || (is_search && matches!(key, 0x0D | 0x1B | 0x28)) {
+                PostMessageW(parent as HWND, WM_EDIT_KEY, key as WPARAM, shift as LPARAM);
+                return 0;
+            }
+        }
+        // The character form of Tab, Enter and Escape would beep in a one-line box.
+        WM_CHAR if wparam == 0x09 || (is_search && matches!(wparam, 0x0D | 0x1B)) => return 0,
+        _ => {}
+    }
+    DefSubclassProc(hwnd, msg, wparam, lparam)
 }
 
 fn make_edit(parent: HWND, id: u16, font: HFONT) -> HWND {
