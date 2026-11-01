@@ -15,6 +15,7 @@ use crate::{
 use super::super::app::TRIAL_DEADLINE;
 use super::super::cmdq::{self, AppCommand, WM_APP_COMMAND};
 use super::super::inspect::{self, WindowEntry};
+use super::super::updater;
 
 #[path = "setup_ui.rs"]
 mod setup;
@@ -49,6 +50,8 @@ pub struct Ext {
     pub trial_announced: bool,
     /// Whether the last layout had the trial bar, so it can be redone when that changes.
     pub trial_shown: bool,
+    /// The updater phase the page was last laid out for.
+    pub update_seen: u64,
     pub loaded: bool,
     /// The navigation pane holds keyboard focus (arrow keys move between destinations).
     pub nav_focus: bool,
@@ -252,6 +255,27 @@ impl Ui {
             ));
         }
         b.push(Row::About(status));
+        match updater::phase() {
+            crate::update::Phase::Available(c) => {
+                b.push(Row::About(vec![
+                    format!(
+                        "Update available: {} ({})",
+                        c.tag,
+                        if c.preview { "preview" } else { "stable" }
+                    ),
+                    "Nothing is downloaded or installed until you choose.".to_string(),
+                ]));
+                b.push(Row::Buttons(vec![Button::GoUpdates, Button::SkipUpdate]));
+            }
+            crate::update::Phase::Ready { candidate, .. } => {
+                b.push(Row::About(vec![
+                    format!("Update ready: {} is downloaded", candidate.tag),
+                    "Nothing has been installed yet.".to_string(),
+                ]));
+                b.push(Row::Buttons(vec![Button::GoUpdates]));
+            }
+            _ => {}
+        }
         self.push_setup_card(&mut b);
         b.push(Row::Header("What next"));
         b.push(Row::Buttons(vec![
@@ -323,6 +347,7 @@ impl Ui {
         b.push(Row::Header("Command palette"));
         b.push(Row::Action(Button::OpenPalette));
         b.push(Row::Toggle(Toggle::PaletteHotkey));
+        self.push_updates(&mut b);
         b.push(Row::Header("About"));
         let mut about = vec![
             format!("AllBlack11 {}", env!("CARGO_PKG_VERSION")),
@@ -1284,7 +1309,14 @@ impl Ui {
             self.ext.refresh_pending = false;
             self.refresh_report();
         }
-        if !self.trial_active() {
+        if updater::stamp() != self.ext.update_seen {
+            self.ext.update_seen = updater::stamp();
+            if let Some(line) = crate::update::short_status(&updater::phase()) {
+                self.status = line;
+            }
+            self.relayout(hwnd);
+        }
+        if !self.trial_active() && !updater::busy() {
             unsafe { windows_sys::Win32::UI::WindowsAndMessaging::KillTimer(hwnd, TIMER_UI) };
         } else if self.trial_focus().is_some() && !self.ext.trial_announced {
             // The trial has started and focus is on Keep: tell a screen reader once.
@@ -2223,6 +2255,23 @@ impl Ui {
         };
     }
 
+    /// Keep the page repainting while the updater works.
+    fn watch_updates(&mut self) {
+        unsafe {
+            windows_sys::Win32::UI::WindowsAndMessaging::SetTimer(self.hwnd, TIMER_UI, 250, None)
+        };
+    }
+
+    fn scroll_to_header(&mut self, text: &str) {
+        let rows = self.rows();
+        if let Some(row) = rows
+            .iter()
+            .find(|row| matches!(&row.row, Row::Header(title) if *title == text))
+        {
+            self.scroll = (row.y - 8).max(0);
+        }
+    }
+
     /// Undo the most recent look change from the session history. The earlier config is parsed
     /// and checked before anything is written; if it is not usable nothing changes.
     fn undo_look(&mut self) {
@@ -2252,6 +2301,60 @@ impl Ui {
                 );
             }
         }
+    }
+
+    /// The Updates card: what is running, what is known, and the few things the user can do.
+    fn push_updates(&self, b: &mut Builder) {
+        let phase = updater::phase();
+        b.push(Row::Header("Updates"));
+        b.push(Row::About(crate::update::status_lines(
+            &phase,
+            updater::current_version(),
+        )));
+        let notes = match &phase {
+            crate::update::Phase::Available(c) | crate::update::Phase::Skipped(c) => {
+                c.notes.clone()
+            }
+            crate::update::Phase::Ready { candidate, .. } => candidate.notes.clone(),
+            _ => String::new(),
+        };
+        if !notes.is_empty() {
+            let mut lines = vec!["What is in this release:".to_string()];
+            lines.extend(notes.lines().map(str::to_string));
+            b.push(Row::Lines(lines));
+        }
+        b.push(Row::Choice(Choice::UpdateChannel));
+        b.push(Row::Toggle(Toggle::AutoUpdateCheck));
+        let buttons = match phase {
+            crate::update::Phase::Available(_) => {
+                vec![
+                    Button::DownloadUpdate,
+                    Button::SkipUpdate,
+                    Button::OpenReleasePage,
+                ]
+            }
+            crate::update::Phase::Skipped(_) => {
+                vec![
+                    Button::UnskipUpdate,
+                    Button::CheckUpdates,
+                    Button::OpenReleasePage,
+                ]
+            }
+            crate::update::Phase::Downloading { .. } => vec![Button::CancelUpdate],
+            crate::update::Phase::Ready { .. } => {
+                vec![
+                    Button::InstallUpdate,
+                    Button::DiscardUpdate,
+                    Button::OpenReleasePage,
+                ]
+            }
+            crate::update::Phase::Checking => vec![Button::OpenReleasePage],
+            _ => vec![Button::CheckUpdates, Button::OpenReleasePage],
+        };
+        b.push(Row::Buttons(buttons));
+        b.push(Row::Note(
+            "Install opens the downloaded Setup and closes AllBlack11 so it can be replaced; your settings are kept. To go back, install an older release from the release page.",
+        ));
     }
 
     /// Rule playground, typed: the text in the rule box is read, never applied.
@@ -2298,6 +2401,14 @@ impl Ui {
                     "Identity accents are on. Each app gets its own border color unless a rule sets one. Focus Look, if on, decides the border instead.".into()
                 } else {
                     "Identity accents are off.".into()
+                };
+            }
+            Toggle::AutoUpdateCheck => {
+                self.config.updates.auto_check = !self.config.updates.auto_check;
+                self.status = if self.config.updates.auto_check {
+                    "AllBlack11 will ask GitHub once a day whether a newer release exists. Nothing is downloaded without you.".into()
+                } else {
+                    "Automatic update checks are off.".into()
                 };
             }
             Toggle::PaletteHotkey => {
@@ -2361,6 +2472,11 @@ impl Ui {
             }
             Choice::RuleScope => {
                 self.ext.rule_scope = (self.ext.rule_scope + 1) % 4;
+            }
+            Choice::UpdateChannel => {
+                self.config.updates.channel = self.config.updates.channel.next();
+                self.status = format!("Update channel: {}.", self.config.updates.channel.label());
+                self.commit();
             }
             Choice::AppAppearance => {
                 self.config.ui.appearance = self.config.ui.appearance.next();
@@ -2517,6 +2633,57 @@ impl Ui {
             Button::ImportRecipe => self.import_recipe(),
             Button::ExportRecipe => self.export_recipe(),
             Button::UndoLook => self.undo_look(),
+            Button::CheckUpdates => {
+                updater::check(true, self.config.updates.channel);
+                self.watch_updates();
+                self.status = "Checking GitHub…".into();
+            }
+            Button::DownloadUpdate => {
+                updater::download();
+                self.watch_updates();
+                self.status = "Downloading. Nothing is installed until you choose.".into();
+            }
+            Button::CancelUpdate => {
+                updater::cancel();
+                self.status = "Cancelling the download.".into();
+            }
+            Button::InstallUpdate => match updater::install() {
+                Ok(()) => {
+                    self.status =
+                        "Starting Setup. AllBlack11 is closing so it can be replaced.".into();
+                    unsafe { PostMessageW(self.owner, WM_CLOSE, 0, 0) };
+                }
+                Err(message) => self.status = message,
+            },
+            Button::DiscardUpdate => {
+                updater::discard();
+                self.status = "The downloaded installer was deleted.".into();
+            }
+            Button::SkipUpdate => {
+                updater::skip();
+                self.status =
+                    "That version is skipped. You can stop skipping it on Settings and help."
+                        .into();
+            }
+            Button::UnskipUpdate => updater::unskip(),
+            Button::OpenReleasePage => {
+                let url = match updater::phase() {
+                    crate::update::Phase::Available(c) | crate::update::Phase::Skipped(c) => {
+                        c.page_url
+                    }
+                    crate::update::Phase::Ready { candidate, .. } => candidate.page_url,
+                    _ => crate::update::releases_page_url(),
+                };
+                self.status = match registry::open_release_url(&url) {
+                    Ok(()) => "Opened the release page in your browser.".into(),
+                    Err(err) => format!("Could not open the link: {err}. The address is {url}."),
+                };
+            }
+            Button::GoUpdates => {
+                let hwnd = self.hwnd;
+                self.set_page(hwnd, Page::Help);
+                self.scroll_to_header("Updates");
+            }
             Button::TestRule => self.test_typed_rule(),
             Button::TestPicked => self.test_picked_window(),
             Button::RestoreLkg => {

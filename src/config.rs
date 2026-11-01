@@ -510,6 +510,9 @@ pub struct Config {
     /// How AllBlack11's own windows look. Separate from the look it applies to other apps.
     #[serde(default, skip_serializing_if = "UiSettings::is_default")]
     pub ui: UiSettings,
+    /// How AllBlack11 looks for its own updates. Off until the user turns it on.
+    #[serde(default, skip_serializing_if = "UpdateSettings::is_default")]
+    pub updates: UpdateSettings,
 }
 
 /// Settings for AllBlack11's own windows (Settings, palette, setup). Never the look applied to
@@ -524,6 +527,24 @@ pub struct UiSettings {
 impl UiSettings {
     pub fn is_default(&self) -> bool {
         *self == UiSettings::default()
+    }
+}
+
+/// Update checks. A check contacts GitHub, so the automatic one is off until the user turns it on;
+/// a check the user asks for with a button always works. Nothing is ever downloaded or installed
+/// without a button press.
+#[derive(Debug, Clone, PartialEq, Eq, Default, Deserialize, Serialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields, default)]
+pub struct UpdateSettings {
+    /// `auto` (a preview build follows previews, a stable build follows stable), `stable`, `preview`.
+    pub channel: crate::update::Channel,
+    /// Look once a day, in the background.
+    pub auto_check: bool,
+}
+
+impl UpdateSettings {
+    pub fn is_default(&self) -> bool {
+        *self == UpdateSettings::default()
     }
 }
 
@@ -1082,5 +1103,23 @@ mod tests {
         assert!(crate::lkg::is_pre_schema_2(r#"{"schemaVersion":1}"#));
         assert!(!crate::lkg::is_pre_schema_2(r#"{"schemaVersion":2}"#));
         assert!(!crate::lkg::is_pre_schema_2("{broken"));
+    }
+
+    #[test]
+    fn the_updates_section_is_optional_closed_and_round_trips() {
+        let config = parse_config("{}").unwrap();
+        assert!(!config.updates.auto_check);
+        assert_eq!(config.updates.channel, crate::update::Channel::Auto);
+        let text = serde_json::to_string(&config).unwrap();
+        assert!(
+            !text.contains("updates"),
+            "an untouched config does not grow a key: {text}"
+        );
+        let on = parse_config(r#"{"updates":{"channel":"preview","autoCheck":true}}"#).unwrap();
+        assert!(on.updates.auto_check && on.updates.channel == crate::update::Channel::Preview);
+        let back = parse_config(&serde_json::to_string(&on).unwrap()).unwrap();
+        assert_eq!(back.updates, on.updates);
+        assert!(parse_config(r#"{"updates":{"channel":"nightly"}}"#).is_err());
+        assert!(parse_config(r#"{"updates":{"url":"https://evil.example"}}"#).is_err());
     }
 }

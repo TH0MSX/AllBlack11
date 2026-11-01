@@ -148,8 +148,8 @@ impl Channel {
 
     pub fn label(self) -> &'static str {
         match self {
-            Channel::Auto => "Automatic (same kind as this build)",
-            Channel::Stable => "Stable releases only",
+            Channel::Auto => "Automatic",
+            Channel::Stable => "Stable only",
             Channel::Preview => "Include previews",
         }
     }
@@ -537,6 +537,129 @@ pub fn select(
 }
 
 // ---------------------------------------------------------------------------------------------
+// What the updater is doing, and how it says so
+// ---------------------------------------------------------------------------------------------
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum Phase {
+    Idle,
+    Checking,
+    UpToDate,
+    Available(Candidate),
+    Skipped(Candidate),
+    NoInstaller(String),
+    Downloading {
+        candidate: Candidate,
+        done: u64,
+        total: u64,
+    },
+    Ready {
+        candidate: Candidate,
+        path: std::path::PathBuf,
+        sha256: String,
+        /// The file matched a checksum the release published.
+        verified: bool,
+    },
+    Failed(String),
+}
+
+/// One short line for the status bar when the phase changes.
+pub fn short_status(phase: &Phase) -> Option<String> {
+    Some(match phase {
+        Phase::Idle | Phase::Checking | Phase::Downloading { .. } => return None,
+        Phase::UpToDate => "You have the newest version.".to_string(),
+        Phase::Available(c) => format!("{} is available.", c.tag),
+        Phase::Skipped(c) => format!("{} is available (skipped).", c.tag),
+        Phase::NoInstaller(_) => {
+            "A newer release exists but has no installer for this PC.".to_string()
+        }
+        Phase::Ready { candidate, .. } => {
+            format!("{} is downloaded. Nothing is installed yet.", candidate.tag)
+        }
+        Phase::Failed(_) => "The update check did not go through. Nothing was changed.".to_string(),
+    })
+}
+
+/// "2.6 MB", "812 KB".
+pub fn format_bytes(bytes: u64) -> String {
+    if bytes >= 1024 * 1024 {
+        format!("{:.1} MB", bytes as f64 / (1024.0 * 1024.0))
+    } else {
+        format!("{} KB", bytes.div_ceil(1024))
+    }
+}
+
+fn kind(preview: bool) -> &'static str {
+    if preview {
+        "preview"
+    } else {
+        "stable"
+    }
+}
+
+/// Lines for the Updates card, in words: what is running, what is known, what happens next.
+/// `current` is the running version text.
+pub fn status_lines(phase: &Phase, current: &str) -> Vec<String> {
+    let now_running = match Version::parse(current) {
+        Some(v) => format!("AllBlack11 {current} ({})", kind(v.is_preview())),
+        None => format!("AllBlack11 {current}"),
+    };
+    let mut lines = vec![now_running];
+    match phase {
+        Phase::Idle => lines.push(
+            "Updates are checked only when you press the button, or once a day if you turn that on."
+                .into(),
+        ),
+        Phase::Checking => lines.push("Checking GitHub…".into()),
+        Phase::UpToDate => lines.push("You have the newest version for this update channel.".into()),
+        Phase::Available(c) => {
+            lines.push(format!(
+                "{} is available ({}). Nothing is downloaded or installed until you choose.",
+                c.tag,
+                kind(c.preview)
+            ));
+            lines.push(format!(
+                "Installer for this PC: {} ({}). {}",
+                c.asset_name,
+                if c.size > 0 { format_bytes(c.size) } else { "size not listed".into() },
+                match c.integrity {
+                    Integrity::Published(_) => "It will be checked against the checksum GitHub publishes.",
+                    Integrity::Unpublished => "This release publishes no checksum, so only its SHA-256 can be shown to you.",
+                }
+            ));
+        }
+        Phase::Skipped(c) => lines.push(format!(
+            "{} ({}) is available, but you chose to skip it.",
+            c.tag,
+            kind(c.preview)
+        )),
+        Phase::NoInstaller(reason) => lines.push(reason.clone()),
+        Phase::Downloading { candidate, done, total } => {
+            let percent = if *total > 0 { (done.saturating_mul(100) / total).min(100) } else { 0 };
+            lines.push(format!(
+                "Downloading {}: {percent}% ({} of {}).",
+                candidate.tag,
+                format_bytes(*done),
+                if *total > 0 { format_bytes(*total) } else { "unknown size".into() }
+            ));
+        }
+        Phase::Ready { candidate, sha256, verified, .. } => {
+            lines.push(format!(
+                "{} is downloaded. {} Nothing has been installed.",
+                candidate.tag,
+                if *verified {
+                    "It matches the checksum GitHub publishes.".to_string()
+                } else {
+                    format!("No checksum was published to compare with. Its SHA-256 is {sha256}.")
+                }
+            ));
+        }
+        Phase::Failed(reason) => lines.push(format!("The update did not go through: {reason} Nothing was changed.")),
+    }
+    lines
+}
+
+// ---------------------------------------------------------------------------------------------
 // Persisted state (a small file next to the config; never part of config.json)
 // ---------------------------------------------------------------------------------------------
 
@@ -599,6 +722,42 @@ pub fn stale_files(files: &[(String, u64)], keep: Option<&str>, keep_days: u64) 
         }
     }
     stale
+}
+
+/// Split an `https://` URL we are willing to request into (host, port, path-and-query). Only the
+/// two GitHub hosts this updater talks to are accepted, only port 443, no user info, no fragment,
+/// and only plain URL characters.
+pub fn split_https(url: &str) -> Option<(String, u16, String)> {
+    let rest = url.strip_prefix("https://")?;
+    let slash = rest.find('/')?;
+    let (host, path) = rest.split_at(slash);
+    if !matches!(host, "api.github.com" | "github.com") {
+        return None;
+    }
+    let plain = path.chars().all(|c| {
+        c.is_ascii_alphanumeric() || matches!(c, '/' | '.' | '-' | '_' | '?' | '=' | '&' | '%')
+    });
+    if !plain || path.len() > 512 || path.contains("..") {
+        return None;
+    }
+    Some((host.to_string(), 443, path.to_string()))
+}
+
+/// Words for a WinHTTP or Win32 error number from a failed request.
+pub fn describe_win_error(code: u32) -> String {
+    match code {
+        12002 => "The request timed out.".into(),
+        12007 | 12157 => "Could not find github.com. Check the network connection.".into(),
+        12029 | 12030 | 12031 | 12152 => {
+            "Could not connect to GitHub. Check the network connection.".into()
+        }
+        12175 | 12038 | 12044 | 12045 | 12169 => {
+            "The secure connection to GitHub could not be verified, so nothing was downloaded."
+                .into()
+        }
+        12178 | 12180 => "The network's proxy settings stopped the request.".into(),
+        _ => format!("The network request failed (error {code})."),
+    }
 }
 
 /// Words for an HTTP status that is not 200.
@@ -1030,5 +1189,124 @@ mod tests {
         assert!(describe_http_status(429).contains("limiting"));
         assert!(describe_http_status(503).contains("its side"));
         assert!(describe_http_status(418).contains("418"));
+    }
+
+    #[test]
+    fn only_the_two_github_hosts_are_requested() {
+        assert_eq!(
+            split_https(&releases_api_url()),
+            Some((
+                "api.github.com".into(),
+                443,
+                "/repos/TH0MSX/AllBlack11/releases?per_page=30".into()
+            ))
+        );
+        assert!(
+            split_https("https://github.com/TH0MSX/AllBlack11/releases/download/v1/a.exe")
+                .is_some()
+        );
+        for bad in [
+            "http://api.github.com/x",
+            "https://evil.example/x",
+            "https://api.github.com.evil.example/x",
+            "https://user@api.github.com/x",
+            "https://api.github.com:8443/x",
+            "https://api.github.com",
+            "https://api.github.com/a/../b",
+            "https://api.github.com/a b",
+            "https://api.github.com/a#frag",
+        ] {
+            assert!(split_https(bad).is_none(), "{bad}");
+        }
+    }
+
+    #[test]
+    fn network_errors_have_words() {
+        assert!(describe_win_error(12002).contains("timed out"));
+        assert!(describe_win_error(12007).contains("network"));
+        assert!(describe_win_error(12175).contains("nothing was downloaded"));
+        assert!(describe_win_error(7).contains("error 7"));
+    }
+
+    fn candidate(preview: bool, integrity: Integrity) -> Candidate {
+        Candidate {
+            tag: "v3.8.0-preview.1".into(),
+            version: v("3.8.0-preview.1"),
+            preview,
+            notes: String::new(),
+            page_url: String::new(),
+            asset_name: "AllBlack11-Setup-arm64.exe".into(),
+            asset_url: String::new(),
+            size: 2_700_000,
+            integrity,
+        }
+    }
+
+    #[test]
+    fn every_phase_has_plain_words_and_says_what_is_not_done() {
+        let c = candidate(true, Integrity::Published("ab".repeat(32)));
+        let all = [
+            Phase::Idle,
+            Phase::Checking,
+            Phase::UpToDate,
+            Phase::Available(c.clone()),
+            Phase::Skipped(c.clone()),
+            Phase::NoInstaller("No installer.".into()),
+            Phase::Downloading {
+                candidate: c.clone(),
+                done: 1_350_000,
+                total: 2_700_000,
+            },
+            Phase::Ready {
+                candidate: c.clone(),
+                path: "x".into(),
+                sha256: "ab".repeat(32),
+                verified: true,
+            },
+            Phase::Failed("The request timed out.".into()),
+        ];
+        for phase in &all {
+            let lines = status_lines(phase, "3.7.0-preview.1");
+            assert!(lines.len() >= 2, "{phase:?}");
+            assert_eq!(lines[0], "AllBlack11 3.7.0-preview.1 (preview)");
+        }
+        let text = |p: &Phase| status_lines(p, "3.7.0-preview.1").join("\n");
+        assert!(text(&all[3]).contains("Nothing is downloaded or installed until you choose"));
+        assert!(
+            text(&all[3]).contains("2.6 MB") && text(&all[3]).contains("checksum GitHub publishes")
+        );
+        assert!(text(&all[6]).contains("50%"), "{}", text(&all[6]));
+        assert!(text(&all[7]).contains("Nothing has been installed"));
+        assert!(text(&all[8]).ends_with("Nothing was changed."));
+        let unpublished = Phase::Ready {
+            candidate: c,
+            path: "x".into(),
+            sha256: "cd".repeat(32),
+            verified: false,
+        };
+        assert!(
+            text(&unpublished).contains("No checksum was published")
+                && text(&unpublished).contains(&"cd".repeat(32))
+        );
+    }
+
+    #[test]
+    fn sizes_and_progress_never_divide_by_zero_or_exceed_a_hundred() {
+        assert_eq!(format_bytes(0), "0 KB");
+        assert_eq!(format_bytes(2_700_000), "2.6 MB");
+        assert_eq!(format_bytes(900_000), "879 KB");
+        let c = candidate(false, Integrity::Unpublished);
+        let odd = Phase::Downloading {
+            candidate: c,
+            done: 9_999,
+            total: 0,
+        };
+        assert!(status_lines(&odd, "3.7.0").join(" ").contains("0%"));
+        let over = Phase::Downloading {
+            candidate: candidate(false, Integrity::Unpublished),
+            done: u64::MAX,
+            total: 10,
+        };
+        assert!(status_lines(&over, "3.7.0").join(" ").contains("100%"));
     }
 }

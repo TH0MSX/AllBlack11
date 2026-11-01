@@ -117,6 +117,8 @@ const TIMER_TRIAL: usize = 5;
 const TIMER_SCHEDULE: usize = 6;
 /// One-shot: has the running config been stable long enough to become the last known good?
 const TIMER_LKG: usize = 7;
+/// One-shot: the optional daily update check. Never armed unless the user turned it on.
+const TIMER_UPDATE: usize = 8;
 const HOTKEY_PALETTE: i32 = 1;
 const TRY_WINDOW_MS: u64 = 20_000;
 
@@ -609,6 +611,8 @@ fn run() -> Result<(), String> {
     if let Some(text) = lkg_candidate {
         app.offer_lkg(text);
     }
+    super::updater::init(hwnd);
+    app.sync_update_timer();
     APP_HWND.store(hwnd as isize, Ordering::Relaxed);
     uxtheme::allow_dark_menus(!app.high_contrast);
     uxtheme::allow_window(hwnd, true);
@@ -944,6 +948,15 @@ unsafe extern "system" fn wndproc(hwnd: HWND, msg: u32, wparam: WPARAM, lparam: 
                 with_app(|app| app.fire_due());
             } else if wparam == TIMER_TRIAL {
                 with_app(|app| app.expire_trials());
+            } else if wparam == TIMER_UPDATE {
+                unsafe { KillTimer(hwnd, TIMER_UPDATE) };
+                with_app(|app| {
+                    if app.config.updates.auto_check {
+                        super::updater::check(false, app.config.updates.channel);
+                        // Next one in a day. The check itself records when it last reached GitHub.
+                        unsafe { SetTimer(app.hwnd, TIMER_UPDATE, 86_400_000, None) };
+                    }
+                });
             } else if wparam == TIMER_LKG {
                 with_app(|app| app.promote_lkg(false));
             } else if wparam == TIMER_SCHEDULE {
@@ -973,6 +986,23 @@ unsafe extern "system" fn wndproc(hwnd: HWND, msg: u32, wparam: WPARAM, lparam: 
         WM_QUERYENDSESSION => return TRUE as LRESULT,
         WM_SETTINGCHANGE => {
             on_setting_change(lparam);
+            return 0;
+        }
+        // The updater found a release the user has not been told about: say so once, quietly.
+        super::updater::WM_UPDATE_FOUND => {
+            with_app(|app| {
+                if let Some((tag, preview)) = super::updater::take_announcement() {
+                    app.balloon(
+                        "AllBlack11 update",
+                        &format!(
+                            "{tag} is available ({}). Open Settings and help to see it. Nothing is downloaded until you choose.",
+                            if preview { "preview" } else { "stable" }
+                        ),
+                        false,
+                    );
+                }
+            });
+            settings::notify_external_change();
             return 0;
         }
         // WM_HOTKEY: the optional Ctrl+Alt+Space for the command palette.
@@ -1621,6 +1651,23 @@ impl App {
         });
     }
 
+    /// Arm or disarm the optional daily update check to match the config. Off means no timer, so
+    /// an idle AllBlack11 with checks off does nothing here.
+    fn sync_update_timer(&mut self) {
+        unsafe {
+            if self.config.updates.auto_check {
+                SetTimer(
+                    self.hwnd,
+                    TIMER_UPDATE,
+                    super::updater::next_check_delay_ms(),
+                    None,
+                );
+            } else {
+                KillTimer(self.hwnd, TIMER_UPDATE);
+            }
+        }
+    }
+
     /// A parsed config is now being applied. It becomes the "last known good" copy only after it
     /// has run (see `lkg::Promotion`); the clock restarts with every new offer.
     fn offer_lkg(&mut self, text: String) {
@@ -1892,10 +1939,14 @@ impl App {
             }
         };
         self.offer_lkg(text.clone());
+        let update_before = self.config.updates.auto_check;
         if !std::mem::take(&mut self.history_kept) {
             self.record_history(&old, &new);
         }
         self.config = new;
+        if update_before != self.config.updates.auto_check {
+            self.sync_update_timer();
+        }
         self.enforce_safe_mode();
         self.refresh_reduce();
         self.config.caption_height = normalize_caption_height(self.config.caption_height);

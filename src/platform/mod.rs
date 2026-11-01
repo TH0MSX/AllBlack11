@@ -15,6 +15,7 @@ mod composition;
 mod demo;
 mod dwm;
 mod helper;
+mod http;
 mod icon;
 mod image;
 mod inspect;
@@ -26,6 +27,7 @@ mod registry;
 mod settings;
 mod shellwin;
 mod sysinfo;
+mod updater;
 mod uxtheme;
 mod wide;
 

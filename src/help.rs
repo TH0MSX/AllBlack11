@@ -187,7 +187,7 @@ pub struct Topic {
     pub body: &'static [&'static str],
 }
 
-pub const TOPICS: [Topic; 8] = [
+pub const TOPICS: [Topic; 9] = [
     Topic {
         title: "Quick start",
         keywords: &["start", "begin", "first", "setup", "how"],
@@ -225,6 +225,15 @@ pub const TOPICS: [Topic; 8] = [
         ],
     },
     Topic {
+        title: "Updates",
+        keywords: &["update", "upgrade", "new version", "download", "preview", "stable", "release", "install", "github", "checksum"],
+        body: &[
+            "Settings and help has an Updates card. Press Check for updates, or turn on the once-a-day check (off by default). AllBlack11 only asks GitHub whether a newer release exists; it sends no information about you.",
+            "Nothing is downloaded or installed until you press a button. A download is checked against the checksum GitHub publishes, and a file that does not match is deleted. Install opens the downloaded Setup and closes AllBlack11 so it can be replaced; your settings are kept.",
+            "Update channel: Automatic offers previews to a preview build and only stable releases to a stable build. Stable only and Include previews override that. Skip this version hides one release until a newer one appears.",
+        ],
+    },
+    Topic {
         title: "Why an app did not change",
         keywords: &["why", "not", "change", "chrome", "edge", "electron", "limit", "opaque", "custom", "title bar"],
         body: &[
@@ -245,7 +254,7 @@ pub const TOPICS: [Topic; 8] = [
         title: "Diagnostics and privacy",
         keywords: &["diagnostics", "privacy", "report", "export", "titles", "log", "data", "telemetry"],
         body: &[
-            "AllBlack11 sends nothing anywhere and has no telemetry.",
+            "AllBlack11 has no telemetry and sends no information about you. The only site it ever contacts is GitHub, and only when you press Check for updates, turn on the daily check, or download an update.",
             "Reports leave out window titles and your user name and profile path unless you turn on Show window titles. Titles are never saved to disk.",
             "Settings, saved looks, accent assignments and notes stay in your AllBlack11 data folder on this PC.",
         ],

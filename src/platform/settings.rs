@@ -263,6 +263,7 @@ enum Toggle {
     IdentityAccents,
     DayNight,
     PaletteHotkey,
+    AutoUpdateCheck,
 }
 
 #[derive(Clone, Copy, PartialEq, Eq)]
@@ -276,6 +277,7 @@ enum Choice {
     DayStarts,
     NightStarts,
     AppAppearance,
+    UpdateChannel,
 }
 
 #[derive(Clone, Copy, PartialEq, Eq)]
@@ -309,6 +311,15 @@ enum Button {
     TestRule,
     TestPicked,
     UndoLook,
+    CheckUpdates,
+    DownloadUpdate,
+    CancelUpdate,
+    InstallUpdate,
+    DiscardUpdate,
+    SkipUpdate,
+    UnskipUpdate,
+    OpenReleasePage,
+    GoUpdates,
     RestoreLkg,
     ClearNotebook,
     ResetAllWindows,
@@ -430,6 +441,10 @@ fn toggle_meta(id: Toggle) -> (&'static str, &'static str) {
             "Identity accents (optional)",
             "Gives each app its own thin border color so windows are easy to tell apart. Only the border changes, and only where no rule sets one. Off by default.",
         ),
+        Toggle::AutoUpdateCheck => (
+            "Check for updates once a day (optional)",
+            "Asks GitHub (api.github.com) at most once a day whether a newer release exists, and tells you once if so. Nothing is downloaded or installed unless you press a button. Off by default. Checking by button always works.",
+        ),
         Toggle::PaletteHotkey => (
             "Command palette hotkey (optional)",
             "Ctrl+Alt+Space opens the command palette from anywhere. It registers one system hotkey and nothing else: no keyboard hook, no input is read. Off by default. The tray item and Ctrl+K in Settings always work.",
@@ -466,6 +481,7 @@ fn choice_desc(ui: &Ui, id: Choice) -> &'static str {
             2 => "A new rule matches the package (Store apps). Falls back to the executable.",
             _ => "A new rule matches only the window class, across every app that uses it.",
         },
+        Choice::UpdateChannel => "Which releases to offer. Automatic follows the kind of build you run: a preview build is offered previews, a stable build only stable releases. Click to change.",
         Choice::AppAppearance => "Changes only AllBlack11's own windows, never the apps it styles. Click to switch between Windows setting, Light and Dark.",
         Choice::DayScene => "Used during the day. Click to step through the scenes and your saved looks.",
         Choice::NightScene => "Used at night. Click to step through the scenes and your saved looks.",
@@ -487,6 +503,7 @@ fn choice_title(id: Choice) -> &'static str {
         Choice::Palette => "Dialog palette",
         Choice::RuleScope => "New rule matches",
         Choice::AppAppearance => "AllBlack11 theme",
+        Choice::UpdateChannel => "Update channel",
         Choice::DayScene => "Day scene",
         Choice::NightScene => "Night scene",
         Choice::DayStarts => "Day starts",
@@ -560,6 +577,15 @@ fn button_meta(id: Button) -> (&'static str, &'static str, &'static str) {
         Button::TryRecipe => ("", "", "Try this look"),
         Button::ImportRecipe => ("", "", "Import…"),
         Button::ExportRecipe => ("", "", "Export current…"),
+        Button::CheckUpdates => ("", "", "Check for updates"),
+        Button::DownloadUpdate => ("", "", "Download"),
+        Button::CancelUpdate => ("", "", "Cancel download"),
+        Button::InstallUpdate => ("", "", "Install (closes AllBlack11)"),
+        Button::DiscardUpdate => ("", "", "Discard download"),
+        Button::SkipUpdate => ("", "", "Skip this version"),
+        Button::UnskipUpdate => ("", "", "Stop skipping"),
+        Button::OpenReleasePage => ("", "", "Release page"),
+        Button::GoUpdates => ("", "", "See the update"),
         Button::UndoLook => (
             "Undo last change",
             "Puts back the look from before the most recent change listed above, then restyles windows from it. Repeat to go further back.",
@@ -1885,6 +1911,7 @@ impl Ui {
             | Toggle::IdentityAccents
             | Toggle::DayNight
             | Toggle::PaletteHotkey
+            | Toggle::AutoUpdateCheck
             | Toggle::ShowTitles => {
                 self.toggle_ext(id);
                 return;
@@ -1912,6 +1939,7 @@ impl Ui {
                 | Choice::DayStarts
                 | Choice::NightStarts
                 | Choice::AppAppearance
+                | Choice::UpdateChannel
         ) {
             self.cycle_ext(id);
             return;
@@ -2987,6 +3015,7 @@ fn toggle_on(ui: &Ui, id: Toggle) -> bool {
         Toggle::IdentityAccents => ui.config.features.identity_accents,
         Toggle::DayNight => ui.config.features.day_night.enabled,
         Toggle::PaletteHotkey => ui.config.features.palette_hotkey,
+        Toggle::AutoUpdateCheck => ui.config.updates.auto_check,
     }
 }
 
@@ -3010,6 +3039,7 @@ fn choice_text(ui: &Ui, id: Choice) -> String {
         }
         .to_string(),
         Choice::AppAppearance => ui.config.ui.appearance.label().to_string(),
+        Choice::UpdateChannel => ui.config.updates.channel.label().to_string(),
         Choice::DayScene => ui.scene_name_for(&day_night.day_scene),
         Choice::NightScene => ui.scene_name_for(&day_night.night_scene),
         Choice::DayStarts => day_night.day_starts.clone(),
