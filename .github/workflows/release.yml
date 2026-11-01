@@ -4,6 +4,15 @@ on:
   push:
     tags:
       - "v*"
+  # Start a release by hand, for when a tag cannot be pushed from where the work was done. It
+  # creates the tag on the commit it runs from, after checking that the tag has the right
+  # shape and matches the version in Cargo.toml.
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: "Tag to create and release, for example v3.7.0-preview.1"
+        required: true
+        type: string
 
 permissions:
   contents: write
@@ -17,6 +26,19 @@ jobs:
         arch: [arm64, x64]
     steps:
       - uses: actions/checkout@v4
+      - name: The tag has the right shape and matches Cargo.toml
+        env:
+          TAG: ${{ inputs.tag || github.ref_name }}
+        run: |
+          if ! printf '%s' "$TAG" | grep -Eq '^v[0-9]+\.[0-9]+\.[0-9]+(-[A-Za-z0-9.]+)?$'; then
+            echo "'$TAG' is not a version tag like v3.7.0-preview.1" >&2
+            exit 1
+          fi
+          version="${TAG#v}"
+          if ! grep -q "^version = \"${version}\"" Cargo.toml; then
+            echo "Cargo.toml does not say version ${version}" >&2
+            exit 1
+          fi
       - uses: dtolnay/rust-toolchain@stable
         with:
           targets: aarch64-pc-windows-msvc,x86_64-pc-windows-msvc
@@ -47,8 +69,10 @@ jobs:
           merge-multiple: true
           path: dist
       - name: Release notes from CHANGELOG
+        env:
+          TAG: ${{ inputs.tag || github.ref_name }}
         run: |
-          version="${GITHUB_REF_NAME#v}"
+          version="${TAG#v}"
           awk -v ver="$version" '
             BEGIN { heading = "## " ver }
             $0 == heading { found = 1 }
@@ -65,8 +89,10 @@ jobs:
             dist/*.exe
             dist/*.zip
           body_path: notes.md
+          tag_name: ${{ inputs.tag || github.ref_name }}
+          target_commitish: ${{ github.sha }}
           # A tag with a suffix (v3.7.0-preview.1) is a pre-release and never becomes "latest".
-          prerelease: ${{ contains(github.ref_name, '-') }}
-          make_latest: ${{ !contains(github.ref_name, '-') }}
+          prerelease: ${{ contains(inputs.tag || github.ref_name, '-') }}
+          make_latest: ${{ !contains(inputs.tag || github.ref_name, '-') }}
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
