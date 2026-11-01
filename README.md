@@ -23,10 +23,11 @@ Windows 11 dark mode still paints gray title bars, a gray taskbar and a tinted S
 | --- | --- | --- |
 | Black title bars, borders, taskbar, Start menu and notification center, plus eight original OLED wallpapers. | Native ARM64 and x64. About 12 MB of RAM on a Snapdragon ZenBook (measured on 3.0 Preview), near-idle CPU, no polling. | Every change is snapshotted and undone from the same place, by Undo, or by uninstalling. |
 
-> [!IMPORTANT]
+> [!IMPORTANT] 
 > **Use 3.8 Preview.** It replaces every older version and keeps your settings. It is a **pre-release**, and this is how far it has been checked: the ARM64 build runs on its author's Windows 11 ARM64 PC (the screenshots on this page are from it); the x64 build is built and unit-tested on a real Windows x64 runner but has **not been run on an x64 PC**; screen readers, the updater against real releases and wallpaper apply have not been tried on hardware. Details: [what is verified](docs/dev/EVIDENCE.md). The binaries are unsigned, so SmartScreen may warn.
-> [! ❤️ SUPPORT]
-> **AllBlack11 is free, MIT-licensed and has no locked features, no ads and no telemetry. If it saves you time and you want to say thanks, a tip is welcome through [PayPal](https://paypal.me/peplinski00). It is never required, and bug reports, screenshots and test results from your own PC help just as much.**
+
+> [!IMPORTANT] 
+> ❤️❤️ **AllBlack11 is free, MIT-licensed and has no locked features, no ads and no telemetry. If it saves you time and you want to say thanks, a tip is welcome through [PayPal](https://paypal.me/peplinski00). It is never required, and bug reports, screenshots and test results from your own PC help just as much.**
 
 
 ### Kept up to date, in the open
