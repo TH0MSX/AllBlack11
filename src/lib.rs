@@ -35,6 +35,7 @@ mod snapshot;
 mod startup;
 mod target;
 mod timefmt;
+mod traytext;
 mod trial;
 mod uitheme;
 mod version;
@@ -137,6 +138,7 @@ pub use startup::{
 };
 pub use target::{classify_target, pe_machine, route, Route, TargetArch};
 pub use timefmt::format_unix_utc;
+pub use traytext::{exit_consequences, tip as tray_tip, TrayState};
 pub use trial::{constrain as constrain_trial, TrialMachine, TRIAL_MS};
 pub use uitheme::{
     accent_on, blend as blend_colors, face_candidates, high_contrast as high_contrast_palette,

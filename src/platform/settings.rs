@@ -106,8 +106,8 @@ const ID_EXCLUDE: u16 = 106;
 
 // Colors are COLORREF (0x00BBGGRR).
 /// Gap between cards, and card inner padding, in logical pixels.
-const GAP: i32 = 4;
-const PAD: i32 = 16;
+const GAP: i32 = crate::ui_metrics::CARD_GAP;
+const PAD: i32 = crate::ui_metrics::CARD_PAD;
 
 // Logical layout.
 const PREVIEW_H: i32 = 176;
@@ -116,7 +116,7 @@ const ID_FILTER: u16 = 107;
 const ID_LOOK: u16 = 108;
 const ID_HELP: u16 = 109;
 const TIMER_UI: usize = 1;
-const MARGIN: i32 = 20;
+const MARGIN: i32 = crate::ui_metrics::PAGE_MARGIN;
 const MIN_W: i32 = 480;
 /// Content stops growing here (logical px); wider windows get margin instead of long lines.
 const MAX_CONTENT: i32 = 880;
@@ -2760,7 +2760,7 @@ fn paint_row(c: &Canvas, ui: &Ui, row: &Laid, top: i32, lw: i32) {
             lw,
             ui.config.rules.iter().map(|rule| rule.label()),
             ui.rule,
-            "No rules yet.",
+            "No rules yet. Add one below or from Fix this app.",
         ),
         Row::ExcludeList => draw_list(
             c,

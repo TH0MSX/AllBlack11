@@ -1986,7 +1986,7 @@ pub fn paint_extra(c: &Canvas, ui: &Ui, row: &Laid, top: i32, lw: i32) {
             let visible = ui.visible_windows();
             if visible.is_empty() {
                 let text = if ui.ext.loaded {
-                    "No matching windows."
+                    "No matching windows. Clear the filter or press Refresh list."
                 } else {
                     "Open this page to list windows."
                 };

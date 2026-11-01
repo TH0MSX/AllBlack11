@@ -254,7 +254,8 @@ pub const TOPICS: [Topic; 8] = [
         title: "Keyboard and accessibility",
         keywords: &["keyboard", "tab", "shortcut", "narrator", "screen reader", "contrast", "text size", "access"],
         body: &[
-            "Tab and Shift+Tab move through controls, arrow keys move within a list or the navigation, Enter or Space activates, Esc closes. Ctrl+K opens the command palette and Ctrl+Tab changes page.",
+            "Tab and Shift+Tab walk one ring: the page list, then the page's controls, then Keep and Revert while a look is being tried. Enter or Space presses the focused control. Esc reverts a look being tried, and otherwise closes Settings.",
+            "F6 and Shift+F6 jump between the page list and the page. In the page list, Up, Down, Home and End choose a page. Left and Right change a slider and move within a row of buttons or a list. Ctrl+Tab and Ctrl+Shift+Tab change page, and Ctrl+K opens the command palette. Page Up, Page Down, Home, End and the mouse wheel scroll the page.",
             "AllBlack11's own windows follow Windows light, dark and high contrast, and the Text size setting. Choose Light or Dark for AllBlack11 itself under Settings and help.",
         ],
     },

@@ -332,7 +332,7 @@ pub mod metrics {
     /// In-page controls and cards: 4 px. Overlays (dialogs, flyouts, teaching tips): 8 px.
     pub const CONTROL_RADIUS: i32 = 4;
     pub const OVERLAY_RADIUS: i32 = 8;
-    pub const PAGE_MARGIN: i32 = 24;
+    pub const PAGE_MARGIN: i32 = 20;
     pub const CARD_PAD: i32 = 16;
     /// Space between cards.
     pub const CARD_GAP: i32 = 4;

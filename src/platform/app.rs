@@ -1396,11 +1396,43 @@ fn on_command(hwnd: HWND, command: u32) {
                 shellwin::broadcast_immersive_color();
             }
         }
-        CMD_EXIT => unsafe {
-            PostMessageW(hwnd, WM_CLOSE, 0, 0);
-        },
+        CMD_EXIT => {
+            // Only ask when quitting would undo or stop something; otherwise just quit.
+            let notes = with_app(|app| {
+                crate::exit_consequences(
+                    app.trial.is_active(),
+                    app.config.experimental_dark_legacy && !app.paused && !app.high_contrast,
+                    crate::platform::helper::is_enabled(),
+                )
+            })
+            .unwrap_or_default();
+            if !notes.is_empty() && !confirm_exit(&notes) {
+                return;
+            }
+            unsafe {
+                PostMessageW(hwnd, WM_CLOSE, 0, 0);
+            }
+        }
         _ => {}
     }
+}
+
+/// Exit is a choice when it would undo or stop something. The default answer is to keep running.
+fn confirm_exit(notes: &[&str]) -> bool {
+    let title = to_wide("Quit AllBlack11?");
+    let text = to_wide(&format!(
+        "Quitting puts every styled window back as Windows draws it.\n\n{}\n\nQuit now?",
+        notes.join("\n")
+    ));
+    let answer = unsafe {
+        MessageBoxW(
+            null_mut(),
+            pcw(&text),
+            pcw(&title),
+            MB_YESNO | MB_ICONQUESTION | MB_DEFBUTTON2 | MB_TOPMOST | MB_SETFOREGROUND,
+        )
+    };
+    answer == IDYES
 }
 
 fn shutdown() {
@@ -1616,21 +1648,18 @@ impl App {
     }
 
     fn tip(&self) -> String {
-        if self.paused {
-            "AllBlack11: paused".into()
-        } else if self.high_contrast {
-            "AllBlack11: paused, high contrast".into()
-        } else if !self.config.enabled {
-            "AllBlack11: off".into()
-        } else {
-            match self.reduce {
-                Some(_) => format!(
-                    "AllBlack11: {} windows (reduced effects)",
-                    self.themed_count()
-                ),
-                None => format!("AllBlack11: {} windows", self.themed_count()),
-            }
-        }
+        crate::tray_tip(&crate::TrayState {
+            enabled: self.config.enabled,
+            paused: self.paused,
+            high_contrast: self.high_contrast,
+            windows: self.themed_count(),
+            reduced_effects: self.reduce.is_some(),
+            safe_mode: self.safe.is_safe(),
+            trying_a_look: self.trial.is_active(),
+            classic_layer: self.config.experimental_dark_legacy
+                && !self.paused
+                && !self.high_contrast,
+        })
     }
 
     fn themed_count(&self) -> usize {
