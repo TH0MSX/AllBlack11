@@ -1157,7 +1157,7 @@ impl Ui {
         b.push(Row::Header("x64 helper (ARM64 only)"));
         b.push(Row::About(vec![super::super::legacy::helper_status()]));
         b.push(Row::Note(
-            "Turn off emulated x64 coverage under Rules and compatibility, or press Turn off experimental features above. Either one asks the helper to stop and ends it if it does not.",
+            "Turn off emulated x64 coverage under Safety > Experimental features, or press Turn off experimental features above. Either one asks the helper to stop and ends it if it does not.",
         ));
         b.push(Row::Link(Page::SafetyExperimental));
         b.out
@@ -1167,14 +1167,17 @@ impl Ui {
         let on = |flag: bool| if flag { "on" } else { "off" };
         vec![
             format!(
-                "Dark classic dialogs: {} (Rules and compatibility)",
+                "Dark classic dialogs: {} (Safety > Experimental features)",
                 on(self.config.experimental_dark_legacy)
             ),
             format!(
-                "Emulated x64 coverage: {} (Rules and compatibility)",
+                "Emulated x64 coverage: {} (Safety > Experimental features)",
                 on(self.config.legacy.emulated_x64)
             ),
-            format!("Focus Look: {} (Appearance)", on(self.config.focus.enabled)),
+            format!(
+                "Focus Look: {} (Appearance > Effects and colors)",
+                on(self.config.focus.enabled)
+            ),
         ]
     }
 }
@@ -2502,8 +2505,9 @@ pub fn paint_extra(c: &Canvas, ui: &Ui, row: &Laid, top: i32, lw: i32) {
                     fonts.body,
                     DT_LEFT | DT_VCENTER | DT_SINGLELINE | DT_END_ELLIPSIS,
                 );
+                // An action is not run from here: its result says where its button is.
                 let place = if result.path.is_empty() {
-                    "Action".to_string()
+                    crate::palette_destination(&result.action).0.path()
                 } else {
                     result.path.clone()
                 };
@@ -3066,10 +3070,16 @@ impl Ui {
             self.rebuild_search_index();
         }
         let found = crate::palette_search(&self.ext.index, &text, 12);
-        self.ext.results = found
+        let mut results: Vec<crate::PaletteCommand> = Vec::new();
+        for command in found
             .into_iter()
             .filter_map(|index| self.ext.index.get(index).cloned())
-            .collect();
+        {
+            if !results.iter().any(|seen| seen.title == command.title) {
+                results.push(command);
+            }
+        }
+        self.ext.results = results;
         if self.page != Page::Search {
             self.ext.search_from = Some(self.page);
             self.set_page(hwnd, Page::Search);

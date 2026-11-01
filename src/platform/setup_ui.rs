@@ -173,7 +173,7 @@ impl Ui {
                 b.push(Row::Toggle(Toggle::PaletteHotkey));
                 b.push(Row::Header("Experimental features"));
                 b.push(Row::Prose(vec![
-                    "Dark classic dialogs and, on ARM64, emulated x64 coverage stay off. They recolor some old dialogs from inside the app and have limits. You can read about them, and turn them on, under Rules and compatibility.".to_string(),
+                    "Dark classic dialogs and, on ARM64, emulated x64 coverage stay off. They recolor some old dialogs from inside the app and have limits. You can read about them, and turn them on, under Safety > Experimental features.".to_string(),
                 ]));
             }
             _ => {

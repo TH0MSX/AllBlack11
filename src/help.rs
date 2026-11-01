@@ -210,7 +210,7 @@ pub const TOPICS: [Topic; 11] = [
         keywords: &["experimental", "legacy", "classic", "dialog", "hook", "x64", "helper", "arm64", "supported"],
         body: &[
             "Supported: frame styling, scenes, rules, the picker and the command palette.",
-            "Experimental, off until you turn it on: dark classic dialogs (Rules and compatibility). On ARM64, emulated x64 coverage uses a small helper program that starts only when needed.",
+            "Experimental, off until you turn it on: dark classic dialogs (Safety > Experimental features). On ARM64, emulated x64 coverage uses a small helper program that starts only when needed.",
             "Optional and off by default: identity accents, Day / Night scenes and the palette hotkey.",
         ],
     },

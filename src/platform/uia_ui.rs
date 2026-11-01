@@ -311,7 +311,7 @@ impl Ui {
                 Row::Result(index) => {
                     if let Some(result) = self.ext.results.get(*index) {
                         let place = if result.path.is_empty() {
-                            "Action".to_string()
+                            crate::palette_destination(&result.action).0.path()
                         } else {
                             result.path.clone()
                         };

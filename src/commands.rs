@@ -328,20 +328,6 @@ pub const SETTINGS: &[Setting] = &[
         "button:UndoLook",
     ),
     setting(
-        "Restore last known good config",
-        "Replace the config with the last one that ran cleanly",
-        "restore reset recovery backup repair broken",
-        Dest::Safety,
-        "button:RestoreLkg",
-    ),
-    setting(
-        "Reset all windows",
-        "Put every styled window back as Windows draws it",
-        "reset restore original undo everything",
-        Dest::Safety,
-        "button:ResetAllWindows",
-    ),
-    setting(
         "Safe mode",
         "Start without applying anything",
         "safe mode shift start recovery",
@@ -585,6 +571,10 @@ pub fn commands(ctx: &Context) -> Vec<Command> {
         ));
     }
     for info in DESTINATIONS.iter().filter(|i| i.dest.searchable()) {
+        // "Customize an app" leads the list as a command already; it is the same destination.
+        if list.iter().any(|c| c.title == info.title) {
+            continue;
+        }
         list.push(plain(
             info.title,
             info.description,
@@ -1080,6 +1070,27 @@ mod tests {
         assert_eq!(
             destination(&Action::RestoreLastKnownGood),
             (Dest::Safety, Some("button:RestoreLkg"))
+        );
+    }
+
+    #[test]
+    fn no_two_entries_have_the_same_title() {
+        let mut c = ctx();
+        c.can_undo_scene = true;
+        let mut titles: Vec<String> = commands(&c).into_iter().map(|c| c.title).collect();
+        titles.sort();
+        let before = titles.len();
+        let all = titles.clone();
+        titles.dedup();
+        let dupes: Vec<&String> = all
+            .windows(2)
+            .filter(|w| w[0] == w[1])
+            .map(|w| &w[0])
+            .collect();
+        assert_eq!(
+            titles.len(),
+            before,
+            "a result would appear twice: {dupes:?}"
         );
     }
 
