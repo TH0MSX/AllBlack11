@@ -94,7 +94,7 @@ A new Settings shell with global search; an updater; compatibility packs (experi
 
 `docs/dev/EVIDENCE.md` says, feature by feature, what was run and what was only built; `docs/dev/SMOKE-TEST.md` is the checklist.
 
-❤️ ## Support
+## ❤️ Support
 
 AllBlack11 is free, MIT-licensed and has no locked features, no ads and no telemetry. If it saves you time and you want to say thanks, a tip is welcome through [PayPal](https://paypal.me/peplinski00). It is never required, and bug reports, screenshots and test results from your own PC help just as much.
 
