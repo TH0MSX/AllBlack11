@@ -117,7 +117,7 @@ impl Ui {
         b.push(Row::PageTitle(heading, state.progress()));
         match state.step {
             0 => {
-                b.push(Row::Lines(vec![
+                b.push(Row::Prose(vec![
                     "AllBlack11 recolors window frames: title bars, borders, corners and optional materials, using Windows' own window attributes.".to_string(),
                     "It cannot recolor everything. Web content, games and many modern apps draw their own surfaces, so some parts stay as they are. AllBlack11 tells you which.".to_string(),
                     "Everything can be undone. This takes about two minutes and changes nothing until you say so.".to_string(),
@@ -136,7 +136,7 @@ impl Ui {
                 b.push(Row::Lines(vec![self.setup_choice_text()]));
             }
             2 => {
-                b.push(Row::Lines(vec![
+                b.push(Row::Prose(vec![
                     "This opens two sample windows that belong to AllBlack11, so it is safe to try anything on them.".to_string(),
                     "The left one is left exactly as Windows draws it. The right one gets the look you chose. Close both windows to undo it.".to_string(),
                     self.setup_choice_text(),
@@ -152,7 +152,7 @@ impl Ui {
             }
             4 => {
                 let has_look = self.setup_choice_look().is_some();
-                b.push(Row::Lines(vec![
+                b.push(Row::Prose(vec![
                     "This is the safety net you will use every time. A bar at the top counts down 15 seconds. Keep saves the look. Revert, or doing nothing, puts everything back. Nothing is written until you press Keep.".to_string(),
                     "If anything ever looks wrong, Pause all styling on Home puts every window back at once, and the Safety page has more.".to_string(),
                 ]));
@@ -171,7 +171,7 @@ impl Ui {
                 b.push(Row::Toggle(Toggle::Autostart));
                 b.push(Row::Toggle(Toggle::PaletteHotkey));
                 b.push(Row::Header("Experimental features"));
-                b.push(Row::Lines(vec![
+                b.push(Row::Prose(vec![
                     "Dark classic dialogs and, on ARM64, emulated x64 coverage stay off. They recolor some old dialogs from inside the app and have limits. You can read about them, and turn them on, under Rules and compatibility.".to_string(),
                 ]));
             }
@@ -190,7 +190,7 @@ impl Ui {
                 summary.push(
                     "Next: pick an app on Fix this app, or open Help for walkthroughs.".to_string(),
                 );
-                b.push(Row::Lines(summary));
+                b.push(Row::Prose(summary));
                 b.push(Row::Buttons(vec![
                     Button::SetupBack,
                     Button::SetupFinish,
@@ -209,6 +209,16 @@ impl Ui {
         b.out
     }
 
+    /// Load what the step about to be shown lists, so it never says "open this page" while it
+    /// is the page: the looks for the starting-look step, the open windows for the picker step.
+    fn setup_entered_step(&mut self) {
+        match self.ext.setup.state.step {
+            1 => self.refresh_looks(),
+            3 => self.refresh_windows(),
+            _ => {}
+        }
+    }
+
     /// Handle the setup, tip and walkthrough buttons. True when the button was one of these.
     pub fn setup_button(&mut self, id: Button) -> bool {
         let hwnd = self.hwnd;
@@ -218,9 +228,7 @@ impl Ui {
                     self.persist_setup();
                     self.scroll = 0;
                     self.ext.focus = None;
-                    if self.ext.setup.state.step == 1 {
-                        self.refresh_looks();
-                    }
+                    self.setup_entered_step();
                 }
             }
             Button::SetupBack => {
@@ -228,6 +236,7 @@ impl Ui {
                     self.persist_setup();
                     self.scroll = 0;
                     self.ext.focus = None;
+                    self.setup_entered_step();
                 }
             }
             Button::SetupSkip => {
@@ -261,6 +270,7 @@ impl Ui {
                 self.refresh_looks();
                 self.scroll = 0;
                 self.ext.focus = None;
+                self.setup_entered_step();
             }
             Button::SetupReplay => {
                 self.ext.setup.state.start();

@@ -195,7 +195,7 @@ impl Ui {
                         None,
                     );
                 }
-                Row::Lines(lines) | Row::About(lines) => {
+                Row::Lines(lines) | Row::About(lines) | Row::Prose(lines) => {
                     b.push(
                         "text",
                         Role::Text,

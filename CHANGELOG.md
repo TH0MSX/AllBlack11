@@ -1,5 +1,34 @@
 # Changelog
 
+## 3.6.0-preview.2
+
+A **pre-release**: the 3.6 feature set with a redesigned interface, guided setup, walkthroughs and a UI Automation provider. **Nothing in it has been run on Windows by the author.** The layout was rendered under Wine on Linux (Wine is not Windows: fonts, DWM, DPI handling and accessibility clients differ), the logic is unit-tested (225 tests on Linux), and it is cross-compiled for ARM64 and x64. Behavior, config format and recovery are unchanged; `docs/dev/UI-GUIDELINES.md` records which Microsoft guidance was followed and every deviation, `docs/dev/EVIDENCE.md` what was checked, and `docs/dev/SMOKE-TEST.md` starts with the UI pass to run on Windows.
+
+**A new Settings window, same features**
+- A left navigation pane with eight task-focused pages: **Home**, **Fix this app**, **Appearance**, **Scenes**, **Rules**, **Safety**, **Diagnostics**, and **Settings & help**. The pane collapses to an icon rail (Segoe Fluent Icons, with tooltips) in a narrow window, and to labels only if no icon font is installed. Nothing was removed; `scripts/check-controls.py` checks that every control still sits on a page.
+- **Home** says whether customization is on, paused, off or in safe mode, which look is active, whether any experimental feature is on, what to do next, and gives Pause or Resume one click away.
+- One design system for AllBlack11's own windows: Segoe UI Variable with a fallback, the Windows 11 type ramp, a 4 px grid, 4 px control and 8 px overlay corners, true-black dark surfaces, light surfaces, and system colors in high contrast. Every text and control color pair is contrast-tested. **Settings & help > AllBlack11 itself** chooses System, Light or Dark for AllBlack11 only; it never changes the looks applied to other apps. The tray menu follows it.
+- Cards are exactly as tall as their text at the current window width and text size (they were estimated before). Windows *Text size* now scales the whole layout.
+- Hover, pressed, focus and disabled states on every button; a primary button per group; inline validation for color fields.
+
+**Guided setup and help**
+- **First-run setup**, shown only on a fresh install and never to someone upgrading: Welcome, Choose a starting look, Try it safely, Pick an app, Keep or revert, Preferences, Ready. Back, Next and Skip on each step; close it and it resumes where it was; nothing is turned on unless you choose it. Replay it from Settings & help.
+- **Six short walkthroughs** (pick and inspect an app; preview, keep or revert; a per-app exception; save or import a recipe; an effect that did not show; pause and recover). Each is an inline tip on the real page with an outline around the real control; nothing blocks input and no step changes anything.
+- **Searchable Help**: quick start, what AllBlack11 changes, supported and experimental, recovery, why an app did not change, Keep and Revert, diagnostics and privacy, keyboard and accessibility.
+
+**Accessibility**
+- The custom-drawn Settings window now exposes **UI Automation** providers: names, roles, states, values, bounding rectangles, Invoke, Toggle, Selection and Value patterns, focus and layout-change events. Navigation items, switches, sliders, buttons, list items, the status line and the trial bar (countdown, **Keep**, **Revert**) are in the tree.
+- **Keep and Revert are reachable from the keyboard**. In 3.6.0-preview.1 Keep needed a mouse and Enter was refused during a trial. Tab now walks the pane, the page, then Keep and Revert; starting a trial from the keyboard puts focus on Keep; Esc still reverts.
+- Tab / Shift+Tab ring, F6 between pane and page, arrows inside the pane and in rows of buttons, Left and Right on sliders, Ctrl+Tab between pages, Ctrl+K for the command palette, a visible focus ring everywhere.
+- Gaps, stated plainly: native edit boxes have no programmatic label, off-screen rows are not flagged off-screen, and **none of this has been run with Narrator or any UI Automation client.** `ALLBLACK11_NO_UIA=1` turns the provider off if it ever misbehaves.
+
+**Fixes found while doing this**
+- `--safe` was documented but rejected as an unknown argument. It now works, and `--open-settings[=N]` is accepted.
+- Keep could not be pressed without a mouse (above).
+- The tray menu ignored AllBlack11's own Light/Dark choice.
+
+**Not changed**: the Setup/uninstall program keeps its native controls and fixed font (it is not on the new design system). System message boxes keep the system look.
+
 ## 3.6.0-preview.1
 
 A **pre-release** continuing the 3.5 preview. **Nothing in it has been run on Windows by the author.** It is unit-tested (197 tests on Linux), cross-compiled for ARM64 and x64, and CI builds it on Windows runners. `docs/dev/EVIDENCE.md` says feature by feature what that does and does not prove, and `docs/dev/SMOKE-TEST.md` starts with the ordered hardware pass.

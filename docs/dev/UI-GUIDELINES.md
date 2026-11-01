@@ -128,9 +128,14 @@ were taken from Wine's `uiautomationcore.idl` and checked in a self-test (see EV
 - Progressive disclosure: Home and Fix this app are plain-language; HRESULTs, hooks, pipes and
   capability tables are on Diagnostics and in the "Full inspector report" row, never the default.
 - Home states: whether customization is on, paused, off or in safe mode; the current look; which
-  experimental features are on; the primary next action; a Pause button that is always visible.
-- Keyboard: Ctrl+Tab and Ctrl+Shift+Tab change page, F6 / Shift+F6 move between the pane and the
-  content (Keyboard), arrows move inside the pane, Ctrl+K opens the command palette.
+  experimental features are on; the primary next action (Fix an app); and Pause or Resume as the
+  second button of the same row. Pause is also on Safety and in the tray menu and command palette.
+- Keyboard: Tab and Shift+Tab walk one ring (pane, the page's controls in reading order, then
+  **Keep and Revert while a trial runs**, then back to the pane); Ctrl+Tab and Ctrl+Shift+Tab change
+  page; F6 / Shift+F6 move between the pane and the content (Keyboard); arrows move inside the pane
+  and inside rows of buttons and lists; Left and Right change a focused slider; Enter and Space
+  activate; Escape reverts a running trial, and otherwise closes Settings; Ctrl+K opens the command
+  palette. A trial that starts from the keyboard puts focus on Keep.
 
 ### Controls
 
@@ -160,10 +165,12 @@ were taken from Wine's `uiautomationcore.idl` and checked in a self-test (see EV
 
 ### Motion and materials
 
-- **There is no animation.** No transitions, no progress spinners, no pulsing. The only timers are
-  the 15-second trial countdown (a number, redrawn once a second) and the day/night scheduler. That
-  satisfies "reduce motion" by construction; no `SPI_GETCLIENTAREAANIMATION` check is needed and
-  none is made.
+- **There is no animation.** No transitions, no progress spinners, no pulsing. Timers exist only to
+  do work: the trial countdown (a number, repainted four times a second while a trial runs), a short
+  re-read of the inspector report after a change, the day/night scheduler and the tray's
+  double-click timer. Nothing moves on its own, so "reduce motion" is satisfied by construction; the
+  Windows animation setting is not read (`SPI_GETCLIENTAREAANIMATION` is not queried) because there
+  is nothing for it to turn off.
 - **No transparency in AllBlack11's own UI**, so the Windows *Transparency effects* setting has
   nothing to turn off. (The reduce-effects feature in Settings is something else: it governs the
   backdrops AllBlack11 *applies to other apps' windows*.)
@@ -188,7 +195,8 @@ were taken from Wine's `uiautomationcore.idl` and checked in a self-test (see EV
   the page with Next tip / Close tip, and an accent outline around the control it is about. The
   outline is painted only: it never captures input, and the control stays focusable and invokable
   from the keyboard and by UI Automation. Steps that need a window picked are replaced by "pick a
-  window" steps when none is, and steps for a feature that is off say how to turn it on.
+  window" steps when none is, and the pause walkthrough starts from whether AllBlack11 is paused
+  (`help::Capabilities`: a picked window, paused). No other optional feature changes a step.
 
 ## UI Automation
 
@@ -214,7 +222,7 @@ WinUI behavior. Each is a known cost, not a hidden one.
 | 1 | Windows apps are WinUI/XAML; controls come with Fluent styling, automation peers and VisualStateManager | Native Win32 + GDI, controls custom drawn, UI Automation written by hand | Keeps the program small, native and dependency-free; a framework migration was out of scope | Rendering differs subtly from WinUI (no animation, GDI text, no per-pixel anti-aliased rounded corners on controls); accessibility rests on hand-written providers that must be validated on Windows |
 | 2 | Dark surfaces are dark gray; the page background is not pure black | **True black** page (`#000000`), cards `#161616`, navigation `#0C0C0C` | OLED-first product identity (the app exists to make frames black) | Looks slightly different from system apps in dark mode; contrast tests still pass |
 | 3 | Use Mica / Acrylic | Opaque surfaces | Needs DWM backdrop plumbing on a custom-drawn window; no benefit for an OLED-black design | None for accessibility (opaque is the transparency fallback) |
-| 4 | NavigationView: expanded ≥ 1008, compact 641 to 1007, minimal ≤ 640; default pane widths are WinUI's | Expanded 216 below 720 compact 48; **no minimal (menu-button) mode**; the window cannot be narrower than the compact pane plus 480 content | The window's minimum size is ~664 logical px, so the minimal mode is never needed and the 1008 threshold would force the compact rail on most laptops | Different breakpoint from the guidance |
+| 4 | NavigationView: expanded ≥ 1008, compact 641 to 1007, minimal ≤ 640; pane widths are WinUI's | Expanded pane (216) at client widths ≥ 720, icon rail (48) below; **no minimal (menu-button) mode**; the window cannot be narrower than the pane plus 480 content (544 logical px with the rail, 664 with the text-only pane) | The window has a hard minimum size, so a menu-only mode is never reached, and a 1008 threshold would force the rail on most laptop windows | Different breakpoint and pane widths from the guidance |
 | 5 | Text size and display scaling are separate (text scales, layout reflows) | One scale factor = display DPI × Windows *Text size* (100 to 225%); the whole layout scales | GDI-drawn rows are sized from their text; scaling only fonts would need every geometry constant to be text-relative | Increasing *Text size* also enlarges non-text parts (switches, buttons). Nothing clips (checked at 150% under Wine). Documented in code (`layout_scale`) |
 | 6 | Segoe UI Variable with continuous optical size | Static instances chosen by family name, `Segoe UI` fallback | GDI cannot drive the font's axes | Slightly different glyph shapes at some sizes |
 | 7 | TeachingTip: a popup with a tail pointing at the target, light-dismiss | An inline card at the top of the page plus a painted outline on the target | A popup covers the control being taught and needs another window and its own keyboard model; the guidance allows explicit-close tips | No tail; the connection is the outline and the step text naming the control |
@@ -251,9 +259,9 @@ WinUI behavior. Each is a known cost, not a hidden one.
 | Walkthroughs (6) and Help search (8 topics) | Same window | New |
 | Command palette (Ctrl+K, tray, optional hotkey) | Own popup window | Uses the shared theme and 8 px corners |
 | Window picker crosshair and inspector report | Picker is the existing native crosshair; report is rows on Fix this app | Report restyled as rows |
-| Recipe import, diff and confirmation | Rows on Scenes and Appearance with a plan table | Restyled, behavior unchanged |
-| Color selection | Native edit box with validation message, quick looks, accent button | Validation message and state added |
-| Trial bar: countdown, Keep, Revert | Pinned bar above content | Rebuilt with the shared button; countdown also readable by UI Automation |
+| Recipe import, diff and confirmation | Recipes list, "It would change" lines and Try / Import / Export buttons on the Scenes page | Restyled, behavior unchanged |
+| Color selection | Native edit boxes (caption, border, text, tint) with an inline validation message, plus Quick looks | Validation message and state added |
+| Trial bar: countdown, Keep, Revert | Bar pinned above the page while a trial runs | Rebuilt on the shared button with hover, pressed and focus states; in the Tab order; exposed to UI Automation; the page and its edit boxes follow it |
 | Errors, warnings, confirmations, empty states | Status line, inline rows, `MessageBox` | Wording and placement unified; message boxes unchanged |
 | Safe mode, emergency pause, helper status | Safety page, Home | Reorganized; behavior unchanged |
 | Demo and comparison windows (materials demo, before/after pair, preview panel) | Owned windows | Not restyled: they are samples of what AllBlack11 applies, not UI |

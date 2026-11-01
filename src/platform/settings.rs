@@ -227,6 +227,8 @@ enum Row {
     AddField(Button),
     About(Vec<String>),
     Lines(Vec<String>),
+    /// Paragraphs in body size, for the text a step or page is mainly about (setup).
+    Prose(Vec<String>),
     Buttons(Vec<Button>),
     WindowList,
     RecipeList,
@@ -769,6 +771,9 @@ fn action_text_w(id: Button, lw: i32) -> i32 {
     l - 16 - (MARGIN + PAD)
 }
 
+/// What the Quick looks card says before a look is chosen.
+const PRESET_HINT: &str = "Pick a starting look. Every option below stays editable afterwards.";
+
 /// Space under the title line of a card before the description, and below it.
 const DESC_TOP: i32 = 30;
 const DESC_BOTTOM: i32 = 12;
@@ -816,7 +821,18 @@ fn row_height(row: &Row) -> i32 {
         Row::Choice(_) => (40 + 16 * 2).max(56) + GAP,
         Row::Slider(_) => 92 + GAP,
         Row::Color(_) => 52 + GAP,
-        Row::Presets => 112 + GAP,
+        Row::Presets => {
+            // The description under the buttons changes with the selected look. The card is
+            // sized for the longest one so choosing a look never moves the page.
+            let longest = PRESETS
+                .iter()
+                .map(|preset| preset.blurb)
+                .chain([PRESET_HINT])
+                .map(|text| wrapped_height(text, Face::Small, card_text_w(lw), 16))
+                .max()
+                .unwrap_or(16);
+            58 + longest + 12 + GAP
+        }
         Row::RuleList | Row::ExcludeList => 0, // sized by the caller from the list length
         Row::Action(id) => {
             let (_, desc, _) = button_meta(*id);
@@ -832,11 +848,20 @@ fn row_height(row: &Row) -> i32 {
         }
         Row::AddField(_) => 52 + GAP,
         Row::Lines(items) => 20 + lines_block_height(items, lw) + GAP,
+        Row::Prose(items) => 24 + prose_heights(items, lw).iter().sum::<i32>() + GAP,
         Row::Buttons(_) => 52 + GAP,
         Row::WindowList | Row::RecipeList | Row::LookList => 0, // sized by the caller
         Row::Filter => 52 + GAP,
         Row::About(lines) => 24 + about_line_heights(lines, lw).iter().sum::<i32>() + GAP,
     }
+}
+
+/// Heights of the paragraphs of a `Prose` card, each followed by a gap.
+fn prose_heights(items: &[String], lw: i32) -> Vec<i32> {
+    items
+        .iter()
+        .map(|line| wrapped_height(line, Face::Body, card_text_w(lw), 20).max(20) + 8)
+        .collect()
 }
 
 /// Height of the paragraphs of a `Lines` card.
@@ -2614,7 +2639,7 @@ fn paint_row(c: &Canvas, ui: &Ui, row: &Laid, top: i32, lw: i32) {
             let blurb = ui
                 .preset_sel
                 .map(|index| PRESETS[index].blurb)
-                .unwrap_or("Pick a starting look. Every option below stays editable afterwards.");
+                .unwrap_or(PRESET_HINT);
             c.text(
                 left,
                 top + 58,
@@ -2701,6 +2726,23 @@ fn paint_row(c: &Canvas, ui: &Ui, row: &Laid, top: i32, lw: i32) {
         | Row::SearchField
         | Row::Filter => {
             pages::paint_extra(c, ui, row, top, lw);
+        }
+        Row::Prose(lines) => {
+            card(c, top, row.h, lw);
+            let mut y = top + 12;
+            for (line, height) in lines.iter().zip(prose_heights(lines, lw)) {
+                c.text(
+                    left,
+                    y,
+                    right,
+                    y + height,
+                    line,
+                    th().text,
+                    fonts.body,
+                    DT_LEFT | DT_WORDBREAK,
+                );
+                y += height;
+            }
         }
         Row::About(lines) => {
             card(c, top, row.h, lw);

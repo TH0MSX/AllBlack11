@@ -1,12 +1,18 @@
-# Evidence for 3.6.0-preview.1
+# Evidence for 3.6.0-preview.2
 
 What was actually done to each feature. Categories, strongest last:
 
 - **Static review**: read and reasoned about, nothing executed.
-- **Unit-tested**: pure logic covered by `cargo test --lib` (197 tests, run on Linux). These test
+- **Unit-tested**: pure logic covered by `cargo test --lib` (225 tests, run on Linux). These test
   decisions, parsers and state machines, never a window.
 - **Cross-compiled**: type-checked and linked for ARM64 and x64 from Linux (`./build.sh`). This
   proves it builds. It proves nothing about behavior.
+- **Wine-rendered** (new in preview.2): the real x64 `AllBlack11.exe` was run under Wine 9.0 on Linux
+  with a virtual display, and screenshots and synthetic clicks and keys were used to look at layout
+  and basic interaction. **Wine is not Windows**: its font substitution, DWM, DPI handling,
+  theming and UI Automation client support are all different, so this proves the layout code
+  places things sensibly and the key flows do not crash, and nothing about how Windows draws or
+  announces them.
 - **Runtime ARM64**: run on a Snapdragon Windows 11 ARM64 laptop (the owner's).
 - **Runtime x64-emulated**: an x64 build run on that laptop under emulation.
 - **Runtime native x64**: run on a real x64 PC.
@@ -70,7 +76,50 @@ the build script needs).
 | Command palette: command list, ranked search (`commands.rs`) | yes (11 tests) | yes | not tested | n/a | n/a |
 | Command palette window, Ctrl+K, tray item, optional `RegisterHotKey` | no | yes | not tested | n/a | n/a |
 | Before / after pair of owned windows | no | yes | not tested | n/a | n/a |
-| Settings control inventory (`scripts/check-controls.py`): no control dropped by the page split | yes (static check, 76 controls) | n/a | not tested | n/a | n/a |
+| Settings control inventory (`scripts/check-controls.py`): no control dropped by the page split | yes (static check, 94 controls) | n/a | not tested | n/a | n/a |
+
+## Added in preview.2 (UI pass)
+
+| Area | Unit-tested | Cross-compiled | Wine-rendered | Runtime ARM64 / x64 |
+| --- | --- | --- | --- | --- |
+| Palettes, contrast (text 4.5:1 and control edges 3:1 on every surface, accent adjustment, status colors never the only signal, high contrast = system colors), type ramp, 4 px grid, scale bounds (`uitheme.rs`, 11 tests) | yes | yes | n/a | not tested |
+| Onboarding state machine: fresh vs upgrade, resume, skip/finish, hostile files (`onboarding.rs`, 9 tests) | yes | yes | n/a | not tested |
+| Help topics, search, walkthrough content: every step names a real page and control, adapts to "picked a window / paused", asks for nothing destructive (`help.rs`, 7 tests) | yes | yes | n/a | not tested |
+| Navigation pane, Home, page titles, eight pages, rows measured to their text | no | yes | yes (1100x800, 690x700 minimum, 1300x900 at 150% *Text size*) | not tested |
+| Guided setup screens | state machine yes; screens no | yes | partly: wizard rows seen under Wine; every step not captured | not tested |
+| Walkthrough tip and highlight ring (Pick and inspect, step 1) | content yes | yes | yes, one walkthrough | not tested |
+| Keep / Revert from the keyboard; trial bar layout; edit boxes follow it | no | yes | yes (Enter focuses Keep, Tab to Revert, Enter reverts; trial started with the mouse) | not tested |
+| Shared button, focus ring, hover/pressed states | no | yes | static states only; hover and pressed need a real pointer | not tested |
+| UI Automation provider (hand-written COM: simple/fragment/root, Invoke, Toggle, SelectionItem, Value, focus and layout events) | no | yes | **in-process vtable self-test passed under Wine** (`ALLBLACK11_UIA_SELFTEST=1`); IIDs checked against Wine's `uiautomationcore.idl` | **no UI Automation client has ever queried it; Narrator not run** |
+| Tray menu follows AllBlack11's appearance choice | no | yes | not shown (tray not drivable under Wine) | not tested |
+| `--safe` and `--open-settings` arguments | no | yes | yes (`--open-settings` drives every screenshot) | not tested |
+| High-contrast rendering | palette rule yes | yes | no | not tested |
+| Multi-monitor DPI change | no | yes | no (Wine did not apply a DPI change) | not tested |
+
+### Defects found and fixed during this pass
+
+1. **Keep needed a mouse.** The trial bar was not in the Tab order, Enter and Space were refused
+   during a trial, and the bar was invisible to UI Automation. (Present since 3.6.0-preview.1.)
+2. **`--safe` was rejected** as an unknown argument although documented.
+3. **Native edit boxes were not repositioned** when the trial bar appeared or went away (found in a
+   Wine screenshot: the Save look box overlapped the text above it).
+4. **Row heights were guessed** from character counts for the narrowest window, leaving large empty
+   cards at normal widths and risking clipped text for long or translated strings. They are now
+   measured with the painting font, width and flags.
+5. **The tray menu ignored AllBlack11's own Light/Dark choice.**
+6. **Comments cited Microsoft pages and numbers that the pages do not contain** (a "Layout metrics
+   and spacing" page, "50 to 60 characters", "40 px for touch"). Corrected; `UI-GUIDELINES.md` lists
+   what each source actually says.
+
+### Wine observations that are *not* verified as defects
+
+- Zeros in Wine's fallback font are drawn slashed (`#000000` looks struck through). A font
+  substitution artifact, not seen as a layout problem.
+- At the minimum window width one description lost its trailing period at a wrap boundary in a
+  screenshot. Measuring and painting use the same function, font, flags and width, so this is
+  probably Wine's `DrawText`; unconfirmed. Check on Windows.
+- "AllBlack11 did not exit cleanly the last N times": the safe-start marker doing its job, because
+  the test harness kills the process between screenshots.
 
 ## Audit findings fixed in 3.6 (all were real in 3.5)
 
@@ -91,10 +140,14 @@ the build script needs).
 
 ## Known gaps, stated plainly
 
-- Screen readers: the Settings window is custom drawn. Native edit boxes are accessible; the
-  cards, switches and lists are not exposed to UI Automation. Keyboard access exists
-  (Tab, arrows, Space/Enter, Ctrl+Tab, Esc). This is a real accessibility gap.
-- DPI: layout is logical-pixel based and scales per monitor. 100–200% has not been looked at.
+- Screen readers: the Settings window is custom drawn. Preview.2 adds a hand-written UI Automation
+  provider (names, roles, states, values, patterns, focus events) that passed an in-process
+  self-test under Wine. **No screen reader or UI Automation client has been run against it.**
+  Known gaps: native edit boxes have no programmatic label; rows scrolled out of view are not
+  flagged off-screen; whether Narrator reads a switch as a "switch" or a "check box" is unknown.
+  Keyboard access covers every control including Keep and Revert.
+- DPI: layout is logical-pixel based and scales per monitor. 100–200% has not been looked at on
+  Windows; 100% and 150% *Text size* were looked at under Wine.
 - Whole-window opacity is not offered: changing another app's window style is invasive, and
   the tint-opacity slider is clearly labeled as material tint only.
 - The x64 helper has never been started. Treat it as unproven until `SMOKE-TEST.md` step 6

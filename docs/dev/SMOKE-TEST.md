@@ -1,9 +1,89 @@
 # Hardware smoke test
 
-**Nothing in 3.6.0-preview.1 has been run on Windows by the author.** It is unit-tested on Linux
-(197 tests), cross-compiled for ARM64 and x64, and checked on Windows runners in CI for
-compilation only. Every item below is therefore **unverified until you tick it**. Mark each line
-pass or fail and attach the diagnostics report (Settings > Safety > Write report) to any failure.
+**Nothing in 3.6.0-preview.2 has been run on Windows by the author.** It is unit-tested on Linux
+(225 tests), cross-compiled for ARM64 and x64, rendered under Wine for layout (Wine is not
+Windows), and checked on a Windows ARM64 runner in CI for compilation only. Every item below is
+therefore **unverified until you tick it**. Mark each line pass or fail and attach the diagnostics
+report (Settings > Diagnostics > Write report) to any failure.
+
+Do **section U first** (about 25 minutes): it covers the interface redesign and is where a
+screen, a keyboard or a screen reader will disagree with what was rendered under Wine. Then the
+3.6 pass below. In preview.2 the six old tabs became eight pages: Overview is **Home**; Effects is
+**Appearance**; Apps is **Fix this app** (pick and inspect) and **Rules** (rules, exclusions,
+notebook, classic dialogs); Scenes is **Scenes**; Legacy moved into **Rules**; Safety is
+**Safety**; the report, support table and tools are on **Diagnostics**; About and the
+command palette are on **Settings & help**. Steps below that say "tab" mean "page".
+
+## U. The UI pass (preview.2)
+
+1. **Home and the vertical slice**
+   - [ ] Delete `%APPDATA%\AllBlack11\onboarding.json` and the config (or use a fresh account) and
+         start AllBlack11: Settings opens on the guided setup, not Home. An *upgrade* (existing
+         config, no onboarding file) must **not** show setup.
+   - [ ] Setup, seven steps, Back / Next / Skip each work; close Settings on step 3 and reopen: it
+         resumes on step 3. Nothing is enabled that you did not choose (startup stays off).
+   - [ ] On "Pick an app", drag the crosshair onto Notepad; on "Keep or revert" press **Try**; a bar
+         with a countdown, **Keep** and **Revert** appears above the page; the page and the edit
+         boxes shift down together (no box overlapping text).
+   - [ ] **With the keyboard only**: Tab reaches Keep, then Revert; Enter on Keep saves; Esc
+         reverts. Starting a trial with Enter on **Try** puts focus on **Keep**.
+   - [ ] Home afterwards says customization is on, names the look, and lists any experimental
+         feature that is on.
+2. **Navigation and appearance**
+   - [ ] All eight pages open and none is blank or overlapping. Narrow the window to its minimum:
+         the pane becomes an icon rail with tooltips, nothing is clipped, no horizontal scrolling.
+   - [ ] Settings & help > AllBlack11 itself: System, Light and Dark each recolor Settings and the
+         tray menu; none of them changes how Notepad looks.
+   - [ ] Turn Windows between light and dark while Settings is open (Choice = System): it follows.
+   - [ ] The title bar of Settings follows the choice.
+3. **DPI and text size**
+   - [ ] Display scaling 100%, 125%, 150%, 200%: every card is as tall as its text, no clipped
+         text, no overlapping controls, edit boxes inside their cards, focus ring never cut off.
+   - [ ] Settings > Accessibility > Text size at 150% and 225%: same.
+   - [ ] Drag Settings between two monitors of different scaling: the layout re-flows once, text is
+         sharp, hit regions match what is drawn (click the right edge of a button).
+   - [ ] A long name: pick a window with a long title or path; text wraps or ends in an ellipsis,
+         never over a neighboring control.
+4. **High contrast and reduced effects**
+   - [ ] Windows contrast theme "Night sky" and "Aquatic": every page readable, the selected page
+         and focus ring distinct, nothing relies on a color you cannot see; switch back and
+         Settings repaints without restarting.
+   - [ ] Transparency effects off, animation effects off: nothing changes (nothing in the UI uses
+         either).
+5. **Keyboard (no mouse)**
+   - [ ] Tab / Shift+Tab visits the pane once, every control of the page in reading order, and Keep
+         and Revert during a trial; focus never disappears; Shift+Tab reverses.
+   - [ ] F6 moves between pane and page; Up/Down/Home/End choose pages in the pane; Ctrl+Tab and
+         Ctrl+Shift+Tab change page; Ctrl+K opens the palette.
+   - [ ] Enter and Space operate every button and switch; Left/Right moves a slider and the
+         selection in a row of buttons or in the Scenes list.
+   - [ ] After a dialog closes (Import recipe, Choose picture), focus returns to a sensible
+         control on the same page.
+6. **Narrator and UI Automation** (the part most likely to need fixing)
+   - [ ] Turn Narrator on (Win+Ctrl+Enter). Tab through Home: each stop is announced with a name
+         and a role (button, switch with On/Off, slider with a value, navigation item as selected).
+   - [ ] Toggle a switch with Space: the new state is announced. Move a slider: the value.
+   - [ ] Start a trial: Narrator announces Keep; it can press it.
+   - [ ] **Edit boxes**: focus the color box on Appearance. Is a label announced? (Known gap: it may
+         say "edit" only.) Note exactly what you hear.
+   - [ ] Scroll a long page with Narrator on: does it announce rows that are off screen? (Known
+         gap: rows scrolled out of view are not marked off-screen.)
+   - [ ] Run Accessibility Insights for Windows (FastPass) on Settings; save the result. Expect
+         findings on the edit boxes; anything else is new information.
+   - [ ] If Settings misbehaves with a screen reader running: start AllBlack11 with environment
+         variable `ALLBLACK11_NO_UIA=1` and note whether the problem disappears.
+7. **Walkthroughs and Help**
+   - [ ] Settings & help > each of the six walkthroughs: the tip appears on the right page, the
+         outlined control is the one described, Next tip and Close tip work from the keyboard, and
+         the outlined control still works. Run **Pick and inspect** with no window picked: the
+         first step asks you to pick one.
+   - [ ] Help search: type "revert", "privacy", "why": each finds a topic. Clear the box: all topics.
+8. **Tray menu**
+   - [ ] Right-click the tray icon with AllBlack11 set to Light, then Dark, while Windows is the
+         opposite: the menu follows the AllBlack11 choice. Every row has its own text.
+9. **Setup program** (unchanged, but look at it)
+   - [ ] Run Setup: it still works and is legible at 150% scaling and in a contrast theme. It does
+         not follow the new design system (documented gap).
 
 ## The ordered 3.6 pass (about 35 minutes, Snapdragon ARM64 laptop)
 
