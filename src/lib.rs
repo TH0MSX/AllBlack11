@@ -136,7 +136,8 @@ pub use policy::{
 pub use presets::{apply as apply_preset, Preset, PRESETS};
 pub use recipes::{
     apply as apply_recipe, bundled as bundled_recipes, export_current as export_recipe,
-    parse_recipe, preview as preview_recipe, Change, Recipe, Trust,
+    parse_recipe, preview as preview_recipe, remix as remix_recipes, Change, Recipe, RemixPart,
+    Trust,
 };
 pub use report::{redact, render as render_report, source_text, Attempt, LegacyView, Report};
 pub use rules::{

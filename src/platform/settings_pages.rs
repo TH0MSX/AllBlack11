@@ -40,6 +40,8 @@ pub struct Ext {
     pub packs: Vec<(crate::Pack, bool)>,
     pub pack_sel: usize,
     pub class_sel: usize,
+    pub remix_with: usize,
+    pub remix_part: crate::RemixPart,
     /// The wallpaper gallery: the catalog, which one is selected, the preview bitmaps, what is
     /// remembered, and the display Apply targets (0 = all displays).
     pub walls: Vec<crate::wallpaper::Entry>,
@@ -868,6 +870,40 @@ impl Ui {
             Button::ImportRecipe,
             Button::ExportRecipe,
         ]));
+        b.push(Row::Header("Remix two recipes"));
+        b.push(Row::Note(
+            "Take one group of fields (frame colors, material, or dark title bar and corners) from another recipe and keep the rest of the recipe picked above. The mix is checked like an imported file, and refused if the title text would be hard to read. Try runs it for 15 seconds; nothing is saved until you press Keep.",
+        ));
+        if self.remix_donor().is_some() && self.ext.recipe_sel.is_some() {
+            b.push(Row::Choice(Choice::RemixWith));
+            b.push(Row::Choice(Choice::RemixPart));
+            let lines = match self.current_remix() {
+                Some(Ok(recipe)) => {
+                    let diff = crate::preview_recipe(&self.config, &recipe);
+                    let mut lines = vec![format!("Result: {}", recipe.name)];
+                    if diff.is_empty() {
+                        lines.push(
+                            "It would change nothing: your look already matches.".to_string(),
+                        );
+                    } else {
+                        lines.push("It would change:".to_string());
+                        lines.extend(
+                            diff.iter()
+                                .map(|c| format!("  {}: {} → {}", c.field, c.from, c.to)),
+                        );
+                    }
+                    lines
+                }
+                Some(Err(reason)) => vec![reason],
+                None => vec!["Pick a recipe above first.".to_string()],
+            };
+            b.push(Row::Lines(lines));
+            b.push(Row::Buttons(vec![Button::TryRemix, Button::SaveRemix]));
+        } else {
+            b.push(Row::Note(
+                "Pick a recipe in the list above to remix it with another.",
+            ));
+        }
         b.out
     }
 
@@ -2527,6 +2563,69 @@ impl Ui {
         ));
     }
 
+    // ---- recipe remix --------------------------------------------------------------------
+
+    /// Index of the recipe the remix takes from: never the one picked in the list.
+    pub fn remix_donor(&self) -> Option<usize> {
+        let count = self.ext.recipes.len();
+        let base = self.ext.recipe_sel?;
+        if count < 2 {
+            return None;
+        }
+        let candidate = self.ext.remix_with % count;
+        Some(if candidate == base {
+            (candidate + 1) % count
+        } else {
+            candidate
+        })
+    }
+
+    fn current_remix(&self) -> Option<Result<Recipe, String>> {
+        let base = &self.ext.recipes.get(self.ext.recipe_sel?)?.0;
+        let donor = &self.ext.recipes.get(self.remix_donor()?)?.0;
+        Some(crate::remix_recipes(base, donor, self.ext.remix_part))
+    }
+
+    fn try_remix(&mut self) {
+        match self.current_remix() {
+            Some(Ok(recipe)) => {
+                let mut next = self.config.clone();
+                crate::apply_recipe(&mut next, &recipe);
+                self.begin_trial(&recipe.name, next);
+            }
+            Some(Err(reason)) => self.status = reason,
+            None => self.status = "Pick a recipe first.".into(),
+        }
+    }
+
+    fn save_remix(&mut self) {
+        let recipe = match self.current_remix() {
+            Some(Ok(recipe)) => recipe,
+            Some(Err(reason)) => {
+                self.status = reason;
+                return;
+            }
+            None => {
+                self.status = "Pick a recipe first.".into();
+                return;
+            }
+        };
+        let dir = recipes_dir();
+        let target = dir.join(format!("{}.json", recipe.id));
+        let result = std::fs::create_dir_all(&dir)
+            .map_err(|e| e.to_string())
+            .and_then(|_| write_atomic(&target, &format!("{}\n", recipe.to_json())));
+        match result {
+            Ok(()) => {
+                self.status = format!("Saved “{}” with your recipes.", recipe.name);
+                self.refresh_recipes();
+                self.ext.recipe_sel = self.ext.recipes.iter().position(|(r, _)| r.id == recipe.id);
+                self.update_recipe_diff();
+            }
+            Err(err) => self.status = format!("Could not save the remix: {err}"),
+        }
+    }
+
     // ---- wallpaper gallery ---------------------------------------------------------------
 
     /// First open of the Wallpapers page: the catalog, what is remembered, the preview pictures,
@@ -3020,6 +3119,15 @@ impl Ui {
                     self.ext.class_sel = (self.ext.class_sel + 1) % count;
                 }
             }
+            Choice::RemixWith => {
+                let count = self.ext.recipes.len().max(1);
+                let current = self.remix_donor().unwrap_or(0);
+                self.ext.remix_with = (current + 1) % count;
+                if Some(self.ext.remix_with) == self.ext.recipe_sel {
+                    self.ext.remix_with = (self.ext.remix_with + 1) % count;
+                }
+            }
+            Choice::RemixPart => self.ext.remix_part = self.ext.remix_part.next(),
             Choice::WallDisplay => {
                 let count = super::super::gallery::displays().len() + 1;
                 self.ext.wall_display = (self.ext.wall_display + 1) % count;
@@ -3212,6 +3320,8 @@ impl Ui {
             | Button::WallPreview
             | Button::WallOpenFolder
             | Button::WallPutBack => self.wall_action(id),
+            Button::TryRemix => self.try_remix(),
+            Button::SaveRemix => self.save_remix(),
             Button::PackInstall => self.install_selected_pack(),
             Button::PackRemove => self.remove_selected_pack(),
             Button::ImportPack => self.import_pack(),

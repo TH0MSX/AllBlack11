@@ -291,6 +291,10 @@ enum Choice {
     WallDisplay,
     /// How the selected wallpaper sits on a display.
     WallFit,
+    /// The recipe a remix takes a group of fields from.
+    RemixWith,
+    /// Which group of fields a remix takes.
+    RemixPart,
 }
 
 #[derive(Clone, Copy, PartialEq, Eq)]
@@ -331,6 +335,8 @@ enum Button {
     WallPreview,
     WallOpenFolder,
     WallPutBack,
+    TryRemix,
+    SaveRemix,
     TestRule,
     TestPicked,
     UndoLook,
@@ -504,6 +510,8 @@ fn choice_desc(ui: &Ui, id: Choice) -> &'static str {
             2 => "A new rule matches the package (Store apps). Falls back to the executable.",
             _ => "A new rule matches only the window class, across every app that uses it.",
         },
+        Choice::RemixWith => "The recipe to take a group of fields from. The recipe picked in the list above supplies everything else. Click to step through the recipes.",
+        Choice::RemixPart => "Which group of fields to take from the other recipe. Click to step through the groups.",
         Choice::WallDisplay => "Where the wallpaper goes. Click to step through your displays. Windows keeps one fit for all displays, so changing the fit changes it everywhere.",
         Choice::WallFit => "How the picture sits on a display. These wallpapers are black at the edges, so Fit leaves no visible bars. Click to step through the choices.",
         Choice::ExcludedClass => "Window classes you told AllBlack11 to leave alone in every app. Click to step through them, then Remove. To add one, type class=Name in the box above and press Add.",
@@ -534,6 +542,8 @@ fn choice_title(id: Choice) -> &'static str {
         Choice::Pack => "Pack",
         Choice::ExcludedClass => "Excluded window class",
         Choice::WallDisplay => "Apply to",
+        Choice::RemixWith => "Take from",
+        Choice::RemixPart => "Take",
         Choice::WallFit => "Fit",
         Choice::DayScene => "Day scene",
         Choice::NightScene => "Night scene",
@@ -617,6 +627,8 @@ fn button_meta(id: Button) -> (&'static str, &'static str, &'static str) {
         Button::WallPreview => ("", "", "Preview full screen"),
         Button::WallOpenFolder => ("", "", "Open file location"),
         Button::WallPutBack => ("", "", "Put back previous"),
+        Button::TryRemix => ("", "", "Try remix (15 s)"),
+        Button::SaveRemix => ("", "", "Save remix"),
         Button::ExportRecipe => ("", "", "Export current…"),
         Button::CheckUpdates => ("", "", "Check for updates"),
         Button::DownloadUpdate => ("", "", "Download"),
@@ -2002,6 +2014,8 @@ impl Ui {
                 | Choice::Pack
                 | Choice::ExcludedClass
                 | Choice::WallDisplay
+                | Choice::RemixWith
+                | Choice::RemixPart
                 | Choice::WallFit
         ) {
             self.cycle_ext(id);
@@ -3172,6 +3186,12 @@ fn choice_text(ui: &Ui, id: Choice) -> String {
         .to_string(),
         Choice::AppAppearance => ui.config.ui.appearance.label().to_string(),
         Choice::UpdateChannel => ui.config.updates.channel.label().to_string(),
+        Choice::RemixWith => ui
+            .remix_donor()
+            .and_then(|index| ui.ext.recipes.get(index))
+            .map(|(recipe, _)| recipe.name.clone())
+            .unwrap_or_else(|| "None".to_string()),
+        Choice::RemixPart => ui.ext.remix_part.label().to_string(),
         Choice::WallDisplay => match ui.ext.wall_display {
             0 => "All displays".to_string(),
             n => super::gallery::displays()

@@ -47,6 +47,10 @@ the 3.7.0-preview.1 build installed, or the reverse for "up to date").
 19. [ ] Type `class=Notepad` in the "Never theme" box and press Add. *"Windows of class Notepad are now left alone"; Notepad (if styled) returns to normal after a refresh; the class shows in the list; Remove class takes it away.* Try `class=Shell_TrayWnd` (*already protected*) and `class=a*b` (*refused*).
 20. [ ] Narrator, Tab to each text box on Fix this app, Appearance, Rules, Scenes and Help. *Each says its name ("Filter windows", "Title bar color", "New rule or test", "App to leave alone", "Look name", "Search help") and role. Record any box that is announced as just "edit".* Check with NVDA and Accessibility Insights if available. If names are missing, the property service did not apply: report it, do not assume it works.
 
+**C2. Recipe Remixer (Scenes > Recipes)**
+- [ ] Pick Graphite, then under **Remix two recipes** set Take from = Black frames, Take = Frame colors. *"Result: Graphite + Black frames (frame colors)" and a list of what would change.* Press **Try remix (15 s)**. *Windows change for 15 seconds, then Keep or Revert; look history shows it only after Keep.* Press **Save remix**. *A new recipe appears in the list and survives a restart.*
+- [ ] Try a mix that makes the title text hard to read (take a light title bar into a recipe with light text, if you have one imported). *A plain refusal naming the contrast ratio; nothing is applied.*
+
 **D. Wallpapers**
 21. [ ] Open **Wallpapers**. *Eight tiles with names and "Download N KB/MB"; arrow keys and Tab move between tiles; Narrator reads "Eclipse, Download 633 KB".*
 22. [ ] Select one, press **Preview full screen**. *A black window covers this display and shows the picture; the hint says "Preview from the small picture" until downloaded. Esc closes; clicking closes; switching to another window closes it.*

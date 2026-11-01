@@ -349,6 +349,140 @@ pub fn export_current(config: &Config, id: &str, name: &str) -> Recipe {
     }
 }
 
+/// A group of look fields that a remix takes from the second recipe.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub enum RemixPart {
+    /// Title bar, border and title text colors.
+    #[default]
+    Frame,
+    /// Backdrop and the acrylic tint, opacity and drag fallback.
+    Material,
+    /// Dark title bar and corner style.
+    Shape,
+}
+
+impl RemixPart {
+    pub fn label(self) -> &'static str {
+        match self {
+            RemixPart::Frame => "Frame colors",
+            RemixPart::Material => "Material",
+            RemixPart::Shape => "Dark title bar and corners",
+        }
+    }
+
+    pub fn next(self) -> RemixPart {
+        match self {
+            RemixPart::Frame => RemixPart::Material,
+            RemixPart::Material => RemixPart::Shape,
+            RemixPart::Shape => RemixPart::Frame,
+        }
+    }
+
+    fn slug(self) -> &'static str {
+        match self {
+            RemixPart::Frame => "frame",
+            RemixPart::Material => "material",
+            RemixPart::Shape => "shape",
+        }
+    }
+}
+
+/// Title bar text on the title bar must stay readable in anything AllBlack11 makes.
+const REMIX_MIN_CONTRAST: f64 = 4.5;
+
+/// Combine two recipes: everything of `base`, except one group of fields taken from `donor`.
+/// Pure; nothing is applied. The result is an ordinary recipe (it goes through the same
+/// validation as an imported file), and it is refused if the combination would make the title
+/// text hard to read or if the two recipes target different apps.
+pub fn remix(base: &Recipe, donor: &Recipe, part: RemixPart) -> Result<Recipe, String> {
+    if base.matcher != donor.matcher {
+        return Err(
+            "These two recipes are for different apps, so they cannot be mixed.".to_string(),
+        );
+    }
+    let mut look = base.look.clone();
+    let mut taken = 0;
+    macro_rules! take {
+        ($($field:ident),*) => {$(
+            if donor.look.$field.is_some() {
+                look.$field = donor.look.$field;
+                taken += 1;
+            }
+        )*};
+    }
+    match part {
+        RemixPart::Frame => {
+            take!(caption_color, border_color, text_color);
+        }
+        RemixPart::Material => {
+            take!(
+                backdrop,
+                acrylic_tint,
+                acrylic_opacity,
+                tinted_acrylic_on_move_fallback
+            );
+        }
+        RemixPart::Shape => {
+            take!(dark_mode, corners);
+        }
+    }
+    if taken == 0 {
+        return Err(format!(
+            "{} sets no {}, so there is nothing to take from it.",
+            donor.name,
+            part.label().to_lowercase()
+        ));
+    }
+    let resolved = look.merge_onto(base_style());
+    if let (Some(caption), Some(text)) =
+        (resolved.caption.components(0), resolved.text.components(0))
+    {
+        let pack =
+            |(r, g, b): (u8, u8, u8)| u32::from(r) | (u32::from(g) << 8) | (u32::from(b) << 16);
+        let ratio = crate::legacy_policy::contrast_ratio(pack(caption), pack(text));
+        if ratio < REMIX_MIN_CONTRAST {
+            return Err(format!(
+                "That mix would make the title text hard to read (contrast {ratio:.1}:1, needs {REMIX_MIN_CONTRAST}:1). Try a different part."
+            ));
+        }
+    }
+    let mut id = format!("remix-{}-{}-{}", base.id, donor.id, part.slug());
+    id.truncate(48);
+    while id.ends_with(['-', '_', '.']) {
+        id.pop();
+    }
+    let mut name = format!(
+        "{} + {} ({})",
+        base.name,
+        donor.name,
+        part.label().to_lowercase()
+    );
+    if name.chars().count() > 60 {
+        name = name.chars().take(59).collect::<String>() + "…";
+    }
+    let remixed = Recipe {
+        schema: SCHEMA,
+        id,
+        name,
+        description: format!(
+            "{} from {}, everything else from {}.",
+            part.label(),
+            donor.name,
+            base.name
+        ),
+        author: String::new(),
+        min_build: base.min_build.max(donor.min_build),
+        look,
+        matcher: base.matcher.clone(),
+        notes: vec![format!(
+            "Remixed on this PC from {} and {}.",
+            base.name, donor.name
+        )],
+    };
+    // The remix is held to exactly what an imported file is held to.
+    parse_recipe(&remixed.to_json()).map_err(|err| format!("The mix is not a valid recipe: {err}"))
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -515,5 +649,115 @@ mod tests {
         let back = parse_recipe(&text).expect("an exported recipe must import");
         assert_eq!(back.id, "mine");
         assert_eq!(back.look.backdrop, exported.look.backdrop);
+    }
+
+    fn recipe(id: &str, look: &str, matcher: &str) -> Recipe {
+        parse_recipe(&format!(
+            r#"{{"schema":1,"id":"{id}","name":"{id}","look":{{{look}}}{matcher}}}"#
+        ))
+        .unwrap()
+    }
+
+    #[test]
+    fn a_remix_takes_one_group_from_the_donor_and_keeps_the_rest() {
+        let a = recipe(
+            "a",
+            r##""captionColor":"#000000","textColor":"#FFFFFF","backdrop":"mica","corners":"round""##,
+            "",
+        );
+        let b = recipe(
+            "b",
+            r##""captionColor":"#101820","backdrop":"acrylic","corners":"square""##,
+            "",
+        );
+        let frame = remix(&a, &b, RemixPart::Frame).unwrap();
+        assert_eq!(
+            frame.look.caption_color, b.look.caption_color,
+            "frame comes from b"
+        );
+        assert_eq!(
+            frame.look.text_color, a.look.text_color,
+            "b sets no text color, so a's stays"
+        );
+        assert_eq!(frame.look.backdrop, a.look.backdrop, "material stays a's");
+        assert_eq!(frame.look.corners, a.look.corners);
+        let material = remix(&a, &b, RemixPart::Material).unwrap();
+        assert_eq!(material.look.backdrop, b.look.backdrop);
+        assert_eq!(material.look.caption_color, a.look.caption_color);
+        let shape = remix(&a, &b, RemixPart::Shape).unwrap();
+        assert_eq!(shape.look.corners, b.look.corners);
+        assert!(shape.id.starts_with("remix-a-b-") && crate::recipes::valid_id(&shape.id));
+        assert!(
+            shape.description.contains("from b") && shape.notes[0].contains("Remixed on this PC")
+        );
+        // The result is an ordinary recipe: it round-trips through the strict parser.
+        assert!(parse_recipe(&shape.to_json()).is_ok());
+        assert_eq!(
+            a.look.corners,
+            Some(crate::config::Corners::Round),
+            "inputs are not changed"
+        );
+    }
+
+    #[test]
+    fn a_remix_that_would_hide_the_title_text_is_refused_with_the_ratio() {
+        let a = recipe(
+            "a",
+            r##""captionColor":"#000000","textColor":"#FFFFFF""##,
+            "",
+        );
+        let b = recipe("b", r##""captionColor":"#FFFFFF""##, "");
+        let err = remix(&a, &b, RemixPart::Frame).unwrap_err();
+        assert!(
+            err.contains("hard to read") && err.contains("1.0:1"),
+            "{err}"
+        );
+    }
+
+    #[test]
+    fn a_remix_needs_something_to_take_and_the_same_target() {
+        let a = recipe("a", r##""captionColor":"#000000""##, "");
+        let b = recipe("b", r##""captionColor":"#101010""##, "");
+        assert!(remix(&a, &b, RemixPart::Material)
+            .unwrap_err()
+            .contains("nothing to take"));
+        let per_app = recipe(
+            "c",
+            r##""captionColor":"#101010""##,
+            r#","match":{"process":"notepad.exe"}"#,
+        );
+        assert!(remix(&a, &per_app, RemixPart::Frame)
+            .unwrap_err()
+            .contains("different apps"));
+        let other_app = recipe(
+            "d",
+            r##""captionColor":"#202020""##,
+            r#","match":{"process":"code.exe"}"#,
+        );
+        assert!(remix(&per_app, &other_app, RemixPart::Frame).is_err());
+        assert!(
+            remix(&per_app, &per_app, RemixPart::Frame).is_ok(),
+            "same target is fine"
+        );
+    }
+
+    #[test]
+    fn every_pair_of_bundled_recipes_either_remixes_validly_or_says_why_not() {
+        let all = bundled();
+        let mut made = 0;
+        for a in &all {
+            for b in &all {
+                for part in [RemixPart::Frame, RemixPart::Material, RemixPart::Shape] {
+                    match remix(a, b, part) {
+                        Ok(result) => {
+                            made += 1;
+                            assert!(parse_recipe(&result.to_json()).is_ok());
+                        }
+                        Err(reason) => assert!(!reason.is_empty()),
+                    }
+                }
+            }
+        }
+        assert!(made > 0);
     }
 }

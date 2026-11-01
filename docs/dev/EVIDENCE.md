@@ -225,6 +225,7 @@ exe was run under Wine for layout and basic interaction only.
 | Look history names pack install/remove (`history.rs`) | yes | yes | n/a | not tested |
 | Exclusion manager (`exclusions.rs`: layers agree with `policy::exclusion_for`, class list validation) | yes | yes | section rendered | not tested |
 | Text-box names (`labels.rs` table; `accname.rs` `IAccPropServices::SetHwndPropStr`, vtable checked against the SDK `oleacc.idl`) | table only | yes | the service is absent under Wine, so 0 of 9 were named and the quiet failure path ran | **not verified with Narrator, NVDA or Accessibility Insights** |
+| Recipe Remixer (`recipes::remix`: parts, contrast refusal, target mismatch, round-trip through the strict parser, every bundled pair) | yes (4 tests) | yes | section rendered; result and diff shown for Graphite + Black frames | not tested |
 | Wallpaper generator (`generate.py`: deterministic, OLED rules checked) and manifest | yes (manifest, recorded stats, sizes, SHA-256 format) | n/a | contact sheet viewed | n/a |
 | Gallery logic (`wallpaper.rs`: manifest validation, URL allowlist, fit/position, state, placement) | yes (8 tests) | yes | page, tile selection, full-screen preview and the "not attached yet" download message seen | not tested |
 | `IDesktopWallpaper` apply, put back, display list (`gallery.rs`, vtable checked against `shobjidl_core.idl`) | no | yes | the service is absent under Wine (error shown); apply never ran | not tested |

@@ -25,7 +25,10 @@ A **pre-release** on top of 3.7.0-preview.1: an in-app updater, two compatibilit
 - Shows every reason a window is left alone, in the order they are checked, what is fixed, what is yours, and which of your rules switch styling off. Type `class=Name` in the exclusion box to leave a window class alone in every app; remove classes from the list.
 - Every Settings text box now has an accessible name and description (Windows accessibility property service). Not yet checked with Narrator or NVDA.
 
-**Not in this version** (deferred, not stubbed): Window Anatomy, Display-Aware Scenes, Recipe Remixer, the wizards, and everything on the 3.7 deferred list that was not listed above.
+**Recipe Remixer (Scenes)**
+- Pick a recipe, pick another to **take from**, choose what to take (frame colors, material, or dark title bar and corners). The mix is checked like an imported file and refused if the title text would be hard to read or the recipes target different apps. **Try remix** runs it as a 15 second trial (Keep or Revert); **Save remix** keeps it with your recipes.
+
+**Not in this version** (deferred, not stubbed): Window Anatomy, Display-Aware Scenes, the wizards, and everything on the 3.7 deferred list that was not listed above.
 
 ## 3.7.0-preview.1
 

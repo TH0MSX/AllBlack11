@@ -44,13 +44,13 @@ Channels: Automatic, Stable only, Include previews. The daily check is off by de
 | --- | --- | --- |
 | C1 Window Anatomy (F01) | **deferred** | still no safe Wine-testable path; planned as an owned preview first |
 | C2 Display-aware scenes (F03) | **deferred** | needs stable monitor identity and hot-plug handling |
-| C3 Recipe Remixer (F05) | **deferred** | |
+| C3 Recipe Remixer (F05) | **done in code** | `recipes::remix`; section on Scenes. Takes one group (frame colors, material, or dark title bar and corners) from a second recipe; refused if the recipes target different apps, if the donor sets nothing in that group, or if title text contrast would fall under 4.5:1; the result is re-validated like an imported file; Try (15 s trial, Keep/Revert) or Save. Locking and boards (F08) are still deferred |
 | C4 Exclusion manager (F18) | **done in code** | `exclusions.rs`; section on Rules; `class=Name` adds a window class; precedence text is tied to `policy::exclusion_for` by a test |
 | C5 Wizards W01, W02 | **deferred** | W01 needs F16/F17; W02 needs palette locking |
 | C6 UI Automation labels for native edit boxes (Q01) | **done in code, unverified** | `labels.rs`, `platform/accname.rs`; vtable checked against the SDK IDL; needs Narrator/NVDA/Accessibility Insights |
 
 Order of work: C6 and C4 first (the 3.7 inventory ranked them highest and both are testable without
-new platform surface), then the wallpaper gallery; C1, C2, C3 and C5 were not started.
+new platform surface), then the wallpaper gallery, then C3; C1, C2 and C5 were not started.
 
 ## D. Wallpaper gallery: done in code; Windows service calls unverified
 
@@ -79,5 +79,5 @@ troubleshooter, adapter test mode, CLI, the remaining wizards.
    Store window?) and step 20 (are the text boxes named?). Those two decide whether two features
    keep their wording.
 2. Publish 3.8.0-preview.1 **as a pre-release** and attach the eight wallpaper PNGs.
-3. Then F05 Recipe Remixer and palette locking (pure color math with the contrast lab as its safety
-   check), then F03 with real monitor identity, then F01 on the owned preview.
+3. Then palette locking and boards (F08, building on the remixer), W02, then F03 with real monitor
+   identity, then F01 on the owned preview.
