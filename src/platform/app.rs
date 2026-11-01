@@ -2151,7 +2151,12 @@ impl App {
             .iter()
             .any(|rule| rule.path.is_some() || rule.package.is_some());
         let needs_package = self.config.rules.iter().any(|rule| rule.package.is_some());
-        let (path, package) = if needs_path {
+        let (path, package) = if needs_path && exe.eq_ignore_ascii_case("ApplicationFrameHost.exe")
+        {
+            // One host process serves every UWP frame, so the answer depends on the window and
+            // must not be cached by process.
+            super::procinfo::path_and_package_of_window(hwnd, pid, &exe, needs_package)
+        } else if needs_path {
             let key = (pid, create);
             if self.path_cache.len() > 512 {
                 self.path_cache.clear();
@@ -3096,7 +3101,7 @@ impl App {
             return None;
         }
         let (pid, create, exe) = self.identity(hwnd)?;
-        let (path, package) = super::procinfo::path_and_package(pid, true);
+        let (path, package) = super::procinfo::path_and_package_of_window(hwnd, pid, &exe, true);
         let title = super::procinfo::window_title(hwnd);
         let mut facts = collect_facts(hwnd, &exe, pid);
         facts.path = path.clone();

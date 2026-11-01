@@ -49,7 +49,7 @@ use super::cfgio;
 use super::registry;
 use super::sysinfo;
 use super::uxtheme;
-use super::wide::{config_dir, log_path, pcw, recipes_dir, to_wide, write_atomic};
+use super::wide::{config_dir, log_path, packs_dir, pcw, recipes_dir, to_wide, write_atomic};
 use windows_sys::Win32::UI::WindowsAndMessaging::WM_TIMER;
 
 #[path = "controls.rs"]
@@ -278,6 +278,8 @@ enum Choice {
     NightStarts,
     AppAppearance,
     UpdateChannel,
+    /// Which compatibility pack the buttons below act on.
+    Pack,
 }
 
 #[derive(Clone, Copy, PartialEq, Eq)]
@@ -308,6 +310,9 @@ enum Button {
     TryRecipe,
     ImportRecipe,
     ExportRecipe,
+    PackInstall,
+    PackRemove,
+    ImportPack,
     TestRule,
     TestPicked,
     UndoLook,
@@ -481,6 +486,7 @@ fn choice_desc(ui: &Ui, id: Choice) -> &'static str {
             2 => "A new rule matches the package (Store apps). Falls back to the executable.",
             _ => "A new rule matches only the window class, across every app that uses it.",
         },
+        Choice::Pack => "Pick a compatibility pack, read what it can and cannot do below, then Install. A pack adds ordinary rules named \"Pack: …\" that your own rules override. Click to step to the next pack.",
         Choice::UpdateChannel => "Which releases to offer. Automatic follows the kind of build you run: a preview build is offered previews, a stable build only stable releases. Click to change.",
         Choice::AppAppearance => "Changes only AllBlack11's own windows, never the apps it styles. Click to switch between Windows setting, Light and Dark.",
         Choice::DayScene => "Used during the day. Click to step through the scenes and your saved looks.",
@@ -504,6 +510,7 @@ fn choice_title(id: Choice) -> &'static str {
         Choice::RuleScope => "New rule matches",
         Choice::AppAppearance => "AllBlack11 theme",
         Choice::UpdateChannel => "Update channel",
+        Choice::Pack => "Pack",
         Choice::DayScene => "Day scene",
         Choice::NightScene => "Night scene",
         Choice::DayStarts => "Day starts",
@@ -576,6 +583,9 @@ fn button_meta(id: Button) -> (&'static str, &'static str, &'static str) {
         ),
         Button::TryRecipe => ("", "", "Try this look"),
         Button::ImportRecipe => ("", "", "Import…"),
+        Button::PackInstall => ("", "", "Install pack"),
+        Button::PackRemove => ("", "", "Remove pack"),
+        Button::ImportPack => ("", "", "Import pack…"),
         Button::ExportRecipe => ("", "", "Export current…"),
         Button::CheckUpdates => ("", "", "Check for updates"),
         Button::DownloadUpdate => ("", "", "Download"),
@@ -1483,6 +1493,7 @@ impl Ui {
             arch: sysinfo::arch_status(),
         };
         ui.push_colors_to_edits();
+        ui.refresh_packs();
         ui.init_onboarding();
         ui
     }
@@ -1940,6 +1951,7 @@ impl Ui {
                 | Choice::NightStarts
                 | Choice::AppAppearance
                 | Choice::UpdateChannel
+                | Choice::Pack
         ) {
             self.cycle_ext(id);
             return;
@@ -3040,6 +3052,18 @@ fn choice_text(ui: &Ui, id: Choice) -> String {
         .to_string(),
         Choice::AppAppearance => ui.config.ui.appearance.label().to_string(),
         Choice::UpdateChannel => ui.config.updates.channel.label().to_string(),
+        Choice::Pack => ui
+            .ext
+            .packs
+            .get(ui.ext.pack_sel)
+            .map(|(pack, imported)| {
+                if *imported {
+                    format!("{} (imported)", pack.name)
+                } else {
+                    pack.name.clone()
+                }
+            })
+            .unwrap_or_else(|| "No packs".to_string()),
         Choice::DayScene => ui.scene_name_for(&day_night.day_scene),
         Choice::NightScene => ui.scene_name_for(&day_night.night_scene),
         Choice::DayStarts => day_night.day_starts.clone(),

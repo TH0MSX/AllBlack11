@@ -36,6 +36,11 @@ pub struct Ext {
     pub filter: String,
     pub recipes: Vec<(Recipe, Trust)>,
     pub recipe_sel: Option<usize>,
+    /// Compatibility packs: the built-in catalog first, then valid imported files (true).
+    pub packs: Vec<(crate::Pack, bool)>,
+    pub pack_sel: usize,
+    /// What the last pack install or removal did, in plain lines. Never saved.
+    pub pack_report: Vec<String>,
     pub recipe_diff: Vec<String>,
     /// 0 executable, 1 executable + class, 2 package, 3 class only.
     pub rule_scope: u8,
@@ -618,6 +623,7 @@ impl Ui {
         b.push_h(Row::ExcludeList, list_height(self.config.exclude.len()));
         b.push(Row::AddField(Button::AddExclude));
         b.push(Row::Action(Button::RemoveExclude));
+        self.push_packs(&mut b);
         self.push_notebook(&mut b);
         self.push_legacy(&mut b);
         b.out
@@ -2303,6 +2309,219 @@ impl Ui {
         }
     }
 
+    /// Compatibility packs: pick one, read what it does and what it cannot, install or remove it.
+    fn push_packs(&self, b: &mut Builder) {
+        b.push(Row::Header("Compatibility packs"));
+        b.push(Row::Note(
+            "A pack is a small data file that tells AllBlack11 how to treat one app, and says plainly what it cannot do. It adds ordinary rules; it runs nothing. Your own rules always win over a pack.",
+        ));
+        b.push(Row::Choice(Choice::Pack));
+        if let Some((pack, imported)) = self.ext.packs.get(self.ext.pack_sel) {
+            let installed = crate::pack_is_installed(&self.config, pack);
+            let mut lines = vec![
+                format!(
+                    "{} {} · {} · {}",
+                    pack.name,
+                    pack.version,
+                    pack.verdict.label(),
+                    if installed {
+                        "installed"
+                    } else {
+                        "not installed"
+                    }
+                ),
+                format!(
+                    "Source: {}",
+                    if *imported {
+                        "imported from a file on this PC"
+                    } else {
+                        "built into AllBlack11"
+                    }
+                ),
+                format!("Applies to: {}", crate::pack_scope_text(pack)),
+            ];
+            if !pack.description.is_empty() {
+                lines.push(pack.description.clone());
+            }
+            if !pack.reason.is_empty() {
+                lines.push(pack.reason.clone());
+            }
+            let actions = crate::pack_look_actions(&pack.look);
+            if actions.is_empty() {
+                lines.push("Changes: nothing.".to_string());
+            } else {
+                lines.push(format!("Changes: {}.", actions.join(", ")));
+            }
+            for limit in &pack.limits {
+                lines.push(format!("Limit: {limit}"));
+            }
+            for note in &pack.notes {
+                lines.push(format!("Note: {note}"));
+            }
+            for tested in &pack.tested {
+                lines.push(format!("Tested: {tested}"));
+            }
+            if let Some(reason) = crate::pack_unavailable(pack, self.build) {
+                lines.push(format!("Unavailable: {reason}"));
+            }
+            b.push(Row::Lines(lines));
+        } else {
+            b.push(Row::Note("No packs are available."));
+        }
+        if !self.ext.pack_report.is_empty() {
+            b.push(Row::Lines(self.ext.pack_report.clone()));
+        }
+        b.push(Row::Buttons(vec![
+            Button::PackInstall,
+            Button::PackRemove,
+            Button::ImportPack,
+        ]));
+        b.push(Row::Note(
+            "Install and Remove are saved like any other change. They appear under Look history and Undo takes them back.",
+        ));
+    }
+
+    /// Built-in packs first, then valid files from the packs folder. A file that fails the same
+    /// validation the built-ins pass is left out, never half-used.
+    pub fn refresh_packs(&mut self) {
+        let mut list: Vec<(crate::Pack, bool)> = crate::pack_catalog()
+            .into_iter()
+            .map(|pack| (pack, false))
+            .collect();
+        if let Ok(entries) = std::fs::read_dir(packs_dir()) {
+            for entry in entries.flatten().take(40) {
+                let path = entry.path();
+                if path.extension().and_then(|e| e.to_str()) != Some("json") {
+                    continue;
+                }
+                let Ok(text) = std::fs::read_to_string(&path) else {
+                    continue;
+                };
+                if let Ok(pack) = crate::parse_pack(&text) {
+                    if !list.iter().any(|(existing, _)| existing.id == pack.id) {
+                        list.push((pack, true));
+                    }
+                }
+            }
+        }
+        self.ext.packs = list;
+        if self.ext.pack_sel >= self.ext.packs.len() {
+            self.ext.pack_sel = 0;
+        }
+    }
+
+    fn install_selected_pack(&mut self) {
+        if self.trial_active() {
+            self.status = "Keep or revert the trial look first.".into();
+            return;
+        }
+        let Some((pack, _)) = self.ext.packs.get(self.ext.pack_sel).cloned() else {
+            self.status = "No pack is selected.".into();
+            return;
+        };
+        match crate::install_pack(&mut self.config, &pack, self.build) {
+            Ok(lines) => {
+                self.ext.pack_report = lines;
+                self.rule = None;
+                self.status = format!("Installed the {} pack. Undo takes it back.", pack.name);
+                self.commit();
+            }
+            Err(reason) => {
+                self.ext.pack_report = vec![reason.clone()];
+                self.status = format!("{} was not installed. {reason}", pack.name);
+            }
+        }
+    }
+
+    /// Remove a pack's rules; for an imported pack that is not installed, forget the file instead.
+    fn remove_selected_pack(&mut self) {
+        if self.trial_active() {
+            self.status = "Keep or revert the trial look first.".into();
+            return;
+        }
+        let Some((pack, imported)) = self.ext.packs.get(self.ext.pack_sel).cloned() else {
+            self.status = "No pack is selected.".into();
+            return;
+        };
+        let removed = crate::remove_pack(&mut self.config, &pack.name);
+        if removed > 0 {
+            self.ext.pack_report = vec![format!(
+                "Removed the {removed} rule(s) added by the {} pack. Your own rules were not touched.",
+                pack.name
+            )];
+            self.rule = None;
+            self.status = format!("Removed the {} pack. Undo takes it back.", pack.name);
+            self.commit();
+        } else if imported {
+            let file = packs_dir().join(format!("{}.json", pack.id));
+            self.status = match std::fs::remove_file(&file) {
+                Ok(()) => format!("Deleted the imported {} pack file.", pack.name),
+                Err(err) => format!("Could not delete the pack file: {err}"),
+            };
+            self.ext.pack_report.clear();
+            self.refresh_packs();
+        } else {
+            self.status = format!("The {} pack is not installed.", pack.name);
+        }
+    }
+
+    fn import_pack(&mut self) {
+        let Some(path) = file_dialog(self.hwnd, false, "Import a compatibility pack", "pack.json")
+        else {
+            return;
+        };
+        let text = match std::fs::metadata(&path) {
+            Ok(meta) if meta.len() as usize > crate::PACK_MAX_BYTES => {
+                self.status = format!(
+                    "That file is larger than {} KB, which is more than any pack needs.",
+                    crate::PACK_MAX_BYTES / 1024
+                );
+                return;
+            }
+            Ok(_) => match std::fs::read_to_string(&path) {
+                Ok(text) => text,
+                Err(err) => {
+                    self.status = format!("Could not read the file: {err}");
+                    return;
+                }
+            },
+            Err(err) => {
+                self.status = format!("Could not read the file: {err}");
+                return;
+            }
+        };
+        match crate::parse_pack(&text) {
+            Ok(pack) => {
+                let dir = packs_dir();
+                let target = dir.join(format!("{}.json", pack.id));
+                let body = serde_json::to_string_pretty(&pack).unwrap_or_default();
+                let result = std::fs::create_dir_all(&dir)
+                    .map_err(|e| e.to_string())
+                    .and_then(|_| write_atomic(&target, &format!("{body}\n")));
+                match result {
+                    Ok(()) => {
+                        self.refresh_packs();
+                        if let Some(index) =
+                            self.ext.packs.iter().position(|(p, _)| p.id == pack.id)
+                        {
+                            self.ext.pack_sel = index;
+                        }
+                        let preview = crate::preview_pack(&self.config, &pack, self.build);
+                        self.ext.pack_report = std::iter::once(
+                            "Imported. Nothing is installed yet. Installing would:".to_string(),
+                        )
+                        .chain(preview)
+                        .collect();
+                        self.status =
+                            format!("Imported the {} pack. Review it, then Install.", pack.name);
+                    }
+                    Err(err) => self.status = format!("Could not save the pack: {err}"),
+                }
+            }
+            Err(err) => self.status = format!("Not a valid pack: {err}"),
+        }
+    }
+
     /// The Updates card: what is running, what is known, and the few things the user can do.
     fn push_updates(&self, b: &mut Builder) {
         let phase = updater::phase();
@@ -2473,6 +2692,12 @@ impl Ui {
             Choice::RuleScope => {
                 self.ext.rule_scope = (self.ext.rule_scope + 1) % 4;
             }
+            Choice::Pack => {
+                if !self.ext.packs.is_empty() {
+                    self.ext.pack_sel = (self.ext.pack_sel + 1) % self.ext.packs.len();
+                }
+                self.ext.pack_report.clear();
+            }
             Choice::UpdateChannel => {
                 self.config.updates.channel = self.config.updates.channel.next();
                 self.status = format!("Update channel: {}.", self.config.updates.channel.label());
@@ -2631,6 +2856,9 @@ impl Ui {
             Button::PreferAppDefaults => self.prefer_app_defaults(),
             Button::TryRecipe => self.try_recipe(),
             Button::ImportRecipe => self.import_recipe(),
+            Button::PackInstall => self.install_selected_pack(),
+            Button::PackRemove => self.remove_selected_pack(),
+            Button::ImportPack => self.import_pack(),
             Button::ExportRecipe => self.export_recipe(),
             Button::UndoLook => self.undo_look(),
             Button::CheckUpdates => {

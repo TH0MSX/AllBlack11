@@ -23,6 +23,7 @@ mod legacy_policy;
 mod lkg;
 mod menu_model;
 mod onboarding;
+mod packs;
 mod palette;
 mod playground;
 mod policy;
@@ -104,6 +105,12 @@ pub use onboarding::{
     initial as onboarding_initial, parse as onboarding_parse, to_json as onboarding_json,
     State as OnboardingState, Status as OnboardingStatus, LAST_STEP as SETUP_LAST_STEP,
     STEP_TITLES as SETUP_STEP_TITLES,
+};
+pub use packs::{
+    catalog as pack_catalog, install as install_pack, installed as installed_packs,
+    is_installed as pack_is_installed, look_actions as pack_look_actions, parse_pack,
+    preview as preview_pack, remove as remove_pack, scope_text as pack_scope_text,
+    unavailable as pack_unavailable, Pack, Verdict as PackVerdict, MAX_BYTES as PACK_MAX_BYTES,
 };
 pub use palette::{
     check_image, derive as derive_palette, sample_points, to_scene as palette_scene,

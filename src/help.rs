@@ -187,7 +187,7 @@ pub struct Topic {
     pub body: &'static [&'static str],
 }
 
-pub const TOPICS: [Topic; 9] = [
+pub const TOPICS: [Topic; 10] = [
     Topic {
         title: "Quick start",
         keywords: &["start", "begin", "first", "setup", "how"],
@@ -231,6 +231,15 @@ pub const TOPICS: [Topic; 9] = [
             "Settings and help has an Updates card. Press Check for updates, or turn on the once-a-day check (off by default). AllBlack11 only asks GitHub whether a newer release exists; it sends no information about you.",
             "Nothing is downloaded or installed until you press a button. A download is checked against the checksum GitHub publishes, and a file that does not match is deleted. Install opens the downloaded Setup and closes AllBlack11 so it can be replaced; your settings are kept.",
             "Update channel: Automatic offers previews to a preview build and only stable releases to a stable build. Stable only and Include previews override that. Skip this version hides one release until a newer one appears.",
+        ],
+    },
+    Topic {
+        title: "Compatibility packs",
+        keywords: &["pack", "packs", "store", "calculator", "microsoft store", "uwp", "compatibility", "import"],
+        body: &[
+            "Rules has a Compatibility packs section. A pack is a small data file that says how to style one app and what cannot be styled. Install adds ordinary rules named Pack: followed by the app; it runs nothing. Remove deletes exactly those rules.",
+            "The Microsoft Store and Calculator packs change only the window frame: the title bar and border. What the app draws inside its window is drawn by the app itself and cannot be recolored from outside.",
+            "Your own rules always win over a pack. Install and Remove appear in Look history, and Undo takes them back. Import pack reads a file from this PC, checks it strictly and refuses anything that is not plain data.",
         ],
     },
     Topic {

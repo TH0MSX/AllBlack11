@@ -17,7 +17,7 @@ const MAX_NAME: usize = 60;
 const MAX_TEXT: usize = 240;
 const MAX_NOTES: usize = 8;
 
-const LOOK_KEYS: [&str; 9] = [
+pub(crate) const LOOK_KEYS: [&str; 9] = [
     "darkMode",
     "backdrop",
     "captionColor",
@@ -69,7 +69,7 @@ pub struct Recipe {
     pub notes: Vec<String>,
 }
 
-fn plain(text: &str, max: usize, what: &str) -> Result<(), String> {
+pub(crate) fn plain(text: &str, max: usize, what: &str) -> Result<(), String> {
     if text.chars().count() > max {
         return Err(format!("{what} is longer than {max} characters"));
     }
@@ -79,7 +79,7 @@ fn plain(text: &str, max: usize, what: &str) -> Result<(), String> {
     Ok(())
 }
 
-fn valid_id(id: &str) -> bool {
+pub(crate) fn valid_id(id: &str) -> bool {
     !id.is_empty()
         && id.len() <= 48
         && id
