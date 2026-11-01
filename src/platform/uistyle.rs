@@ -8,7 +8,7 @@
 //! Fluent Icons, dark/light switching, high contrast and text scaling are unverified on
 //! Windows.
 
-use std::cell::Cell;
+use std::cell::{Cell, RefCell};
 use std::collections::HashMap;
 use std::sync::Mutex;
 
@@ -190,4 +190,47 @@ pub mod glyph {
     pub const SHIELD: char = '\u{EA18}';
     pub const PHOTO: char = '\u{E91B}';
     pub const TAG: char = '\u{E8EC}';
+}
+
+thread_local! {
+    static ICONS: RefCell<Vec<(usize, i32, windows_sys::Win32::UI::WindowsAndMessaging::HICON)>> =
+        const { RefCell::new(Vec::new()) };
+}
+
+/// An icon resource at a pixel size, loaded once and kept for the life of the window (the set of
+/// sizes is tiny). Null when the resource is missing.
+pub fn cached_icon(id: usize, px: i32) -> windows_sys::Win32::UI::WindowsAndMessaging::HICON {
+    ICONS.with(|cache| {
+        let mut cache = cache.borrow_mut();
+        if let Some((_, _, handle)) = cache.iter().find(|(i, p, _)| *i == id && *p == px) {
+            return *handle;
+        }
+        let instance = unsafe {
+            windows_sys::Win32::System::LibraryLoader::GetModuleHandleW(std::ptr::null())
+        };
+        let handle = super::super::icon::load_resource(instance, id, px);
+        cache.push((id, px, handle));
+        handle
+    })
+}
+
+/// The one-color brand mark that matches this theme: white on dark surfaces, near-black on light
+/// ones. None under a contrast theme, where decoration gives way to the system colors.
+pub fn brand_mark(px: i32) -> Option<windows_sys::Win32::UI::WindowsAndMessaging::HICON> {
+    let id = match mode() {
+        UiMode::Dark => 10,
+        UiMode::Light => 12,
+        UiMode::HighContrast => return None,
+    };
+    let handle = cached_icon(id, px);
+    (!handle.is_null()).then_some(handle)
+}
+
+/// The full-color app icon for the Home header. None in high contrast.
+pub fn brand_icon(px: i32) -> Option<windows_sys::Win32::UI::WindowsAndMessaging::HICON> {
+    if mode() == UiMode::HighContrast {
+        return None;
+    }
+    let handle = cached_icon(1, px);
+    (!handle.is_null()).then_some(handle)
 }

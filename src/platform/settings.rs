@@ -229,6 +229,10 @@ enum Row {
     Lines(Vec<String>),
     /// Paragraphs in body size, for the text a step or page is mainly about (setup).
     Prose(Vec<String>),
+    /// The brand header: the mark, the name and one line of what AllBlack11 does.
+    Brand,
+    /// The creator credit with its link. One keyboard stop; the link is the control.
+    Credit,
     Buttons(Vec<Button>),
     WindowList,
     RecipeList,
@@ -796,6 +800,61 @@ fn about_line_heights(lines: &[String], lw: i32) -> Vec<i32> {
         .collect()
 }
 
+/// Width in logical pixels of one line of `text`, measured with the painting font. Falls back
+/// to an estimate when there is no measuring context.
+fn text_width(text: &str, face: Face) -> i32 {
+    MEASURE.with(|cell| match cell.get() {
+        Some(m) if !m.dc.is_null() => unsafe {
+            let font = if face == Face::Body { m.body } else { m.small };
+            let old = SelectObject(m.dc, font);
+            let wide: Vec<u16> = text.encode_utf16().collect();
+            let mut size = windows_sys::Win32::Foundation::SIZE { cx: 0, cy: 0 };
+            windows_sys::Win32::Graphics::Gdi::GetTextExtentPoint32W(
+                m.dc,
+                wide.as_ptr(),
+                wide.len() as i32,
+                &mut size,
+            );
+            SelectObject(m.dc, old);
+            (size.cx as f32 / m.k).ceil() as i32
+        },
+        _ => text.chars().count() as i32 * 8,
+    })
+}
+
+/// Where the credit's words and its link sit (content coordinates, relative to the row's top)
+/// and how tall the row is. On a narrow page the link drops to a second line instead of being
+/// clipped or overlapping anything.
+struct CreditLayout {
+    prefix: (i32, i32, i32, i32),
+    link: (i32, i32, i32, i32),
+    height: i32,
+}
+
+fn credit_layout(lw: i32) -> CreditLayout {
+    let x0 = MARGIN + 2;
+    let prefix_w = text_width(crate::CREDIT_PREFIX, Face::Body);
+    let link_w = text_width(crate::CREATOR, Face::Body);
+    if x0 + prefix_w + link_w <= lw - MARGIN {
+        CreditLayout {
+            prefix: (x0, 8, x0 + prefix_w, 28),
+            link: (x0 + prefix_w, 8, x0 + prefix_w + link_w, 28),
+            height: 36 + GAP,
+        }
+    } else {
+        CreditLayout {
+            prefix: (x0, 8, x0 + prefix_w, 28),
+            link: (x0, 30, x0 + link_w, 50),
+            height: 58 + GAP,
+        }
+    }
+}
+
+/// Height of the brand header: the mark is 56 logical pixels, the text wraps beside it.
+fn brand_text_w(lw: i32) -> i32 {
+    lw - 2 * MARGIN - 56 - 16
+}
+
 /// Rows include the gap under their card.
 fn row_height(row: &Row) -> i32 {
     let lw = layout_width();
@@ -849,6 +908,12 @@ fn row_height(row: &Row) -> i32 {
         Row::AddField(_) => 52 + GAP,
         Row::Lines(items) => 20 + lines_block_height(items, lw) + GAP,
         Row::Prose(items) => 24 + prose_heights(items, lw).iter().sum::<i32>() + GAP,
+        Row::Brand => {
+            let text =
+                36 + 4 + wrapped_height(crate::BRAND_TAGLINE, Face::Body, brand_text_w(lw), 20);
+            8 + text.max(56) + 16
+        }
+        Row::Credit => credit_layout(lw).height,
         Row::Buttons(_) => 52 + GAP,
         Row::WindowList | Row::RecipeList | Row::LookList => 0, // sized by the caller
         Row::Filter => 52 + GAP,
@@ -929,6 +994,8 @@ fn register(instance: windows_sys::Win32::Foundation::HINSTANCE) {
         info.lpfnWndProc = Some(wndproc);
         info.hInstance = instance;
         info.hCursor = LoadCursorW(std::ptr::null_mut(), IDC_ARROW);
+        info.hIcon = super::icon::window_icon(instance, true);
+        info.hIconSm = super::icon::window_icon(instance, false);
         info.lpszClassName = pcw(&class);
         RegisterClassExW(&info);
     });
@@ -1690,6 +1757,7 @@ impl Ui {
 
     fn click(&mut self, hwnd: HWND, lx: i32, cy: i32) {
         let lw = self.lw(hwnd);
+        let _measure = MeasureScope::new(self, None, lw);
         if self.trial_active() {
             self.status = "Keep or revert the trial look first (the buttons above).".into();
             return;
@@ -1720,6 +1788,12 @@ impl Ui {
                     }
                 }
                 Row::Buttons(list) => self.click_buttons(lw, lx, local, list.clone(), row.h),
+                Row::Credit => {
+                    let (l, t, r, b) = credit_layout(lw).link;
+                    if lx >= l - 2 && lx < r + 2 && local >= t - 2 && local < b + 2 {
+                        self.open_credit();
+                    }
+                }
                 Row::WindowList => self.click_window_list((local - 8) / LIST_LINE),
                 Row::RecipeList => self.click_recipe_list((local - 8) / LIST_LINE),
                 Row::LookList => self.click_look_list((local - 8) / LIST_LINE),
@@ -2161,6 +2235,29 @@ const DT_END_ELLIPSIS: u32 = 0x8000;
 impl Canvas {
     fn px(&self, v: i32) -> i32 {
         (v as f32 * self.k).round() as i32
+    }
+
+    /// Draw an icon, `size` logical pixels square, at a logical position.
+    fn icon(
+        &self,
+        icon: windows_sys::Win32::UI::WindowsAndMessaging::HICON,
+        x: i32,
+        y: i32,
+        size: i32,
+    ) {
+        unsafe {
+            windows_sys::Win32::UI::WindowsAndMessaging::DrawIconEx(
+                self.dc,
+                self.px(x),
+                self.px(y),
+                icon,
+                self.px(size),
+                self.px(size),
+                0,
+                std::ptr::null_mut(),
+                windows_sys::Win32::UI::WindowsAndMessaging::DI_NORMAL,
+            );
+        }
     }
 
     fn rect(&self, l: i32, t: i32, r: i32, b: i32) -> RECT {
@@ -2726,6 +2823,73 @@ fn paint_row(c: &Canvas, ui: &Ui, row: &Laid, top: i32, lw: i32) {
         | Row::SearchField
         | Row::Filter => {
             pages::paint_extra(c, ui, row, top, lw);
+        }
+        Row::Brand => {
+            // The mark is decoration: under a contrast theme it is left out and the words move
+            // to the margin, so nothing depends on it.
+            let mark = uistyle::brand_icon(c.px(56));
+            let text_left = if mark.is_some() {
+                MARGIN + 56 + 16
+            } else {
+                MARGIN
+            };
+            if let Some(icon) = mark {
+                c.icon(icon, MARGIN, top + 8, 56);
+            }
+            c.text(
+                text_left,
+                top + 8,
+                lw - MARGIN,
+                top + 44,
+                crate::BRAND_NAME,
+                th().text,
+                fonts.title,
+                DT_LEFT | DT_VCENTER | DT_SINGLELINE | DT_END_ELLIPSIS,
+            );
+            c.text(
+                text_left,
+                top + 48,
+                lw - MARGIN,
+                top + row.h,
+                crate::BRAND_TAGLINE,
+                th().muted,
+                fonts.body,
+                DT_LEFT | DT_WORDBREAK,
+            );
+        }
+        Row::Credit => {
+            let layout = credit_layout(lw);
+            let (pl, pt, pr, pb) = layout.prefix;
+            c.text(
+                pl,
+                top + pt,
+                pr + 4,
+                top + pb,
+                crate::CREDIT_PREFIX.trim_end(),
+                th().muted,
+                fonts.body,
+                DT_LEFT | DT_VCENTER | DT_SINGLELINE,
+            );
+            let (ll, lt, lr, lb) = layout.link;
+            let rect = (ll, top + lt, lr, top + lb);
+            let hot = controls::hot(ui, rect);
+            let color = if hot {
+                crate::blend_colors(th().brand, th().text, 0.35)
+            } else {
+                th().brand
+            };
+            c.text(
+                ll,
+                top + lt,
+                lr + 4,
+                top + lb,
+                crate::CREATOR,
+                color,
+                fonts.body,
+                DT_LEFT | DT_VCENTER | DT_SINGLELINE,
+            );
+            // An underline marks it as a link without relying on color.
+            c.fill(ll, top + lb - 3, lr, top + lb - 2, color);
         }
         Row::Prose(lines) => {
             card(c, top, row.h, lw);

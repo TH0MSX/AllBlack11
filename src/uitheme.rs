@@ -97,6 +97,9 @@ pub struct Palette {
     pub track: u32,
     /// The keyboard focus ring. 3:1 against every surface.
     pub focus: u32,
+    /// The brand's cool accent as text and link color: 4.5:1 on every surface it sits on. In high
+    /// contrast it is the system hot-light color, so decoration never overrides the theme.
+    pub brand: u32,
     /// Status text. Always paired with a word or symbol, never color alone.
     pub ok: u32,
     pub warn: u32,
@@ -127,6 +130,7 @@ const DARK: Palette = Palette {
     edit_bg: rgb(0x1C, 0x1C, 0x1C),
     track: rgb(0x8E, 0x8E, 0x8E),
     focus: rgb(0xFF, 0xFF, 0xFF),
+    brand: rgb(0x5B, 0xB4, 0xF0),
     ok: rgb(0x6C, 0xCB, 0x5F),
     warn: rgb(0xFC, 0xE1, 0x00),
     bad: rgb(0xFF, 0x99, 0xA4),
@@ -145,6 +149,7 @@ const LIGHT: Palette = Palette {
     edit_bg: rgb(0xFF, 0xFF, 0xFF),
     track: rgb(0x76, 0x76, 0x76),
     focus: rgb(0x1A, 0x1A, 0x1A),
+    brand: rgb(0x0B, 0x5C, 0xA8),
     ok: rgb(0x0F, 0x7B, 0x0F),
     warn: rgb(0x8A, 0x52, 0x00),
     bad: rgb(0xB0, 0x24, 0x18),
@@ -191,6 +196,7 @@ pub fn high_contrast(sys: &SysColors) -> Palette {
         edit_bg: sys.window,
         track: sys.window_text,
         focus: sys.hotlight,
+        brand: sys.hotlight,
         ok: sys.window_text,
         warn: sys.window_text,
         bad: sys.window_text,
@@ -374,7 +380,7 @@ mod tests {
                 ("card_hi", p.card_hi),
                 ("edit", p.edit_bg),
             ] {
-                for (label, color) in [("text", p.text), ("muted", p.muted)] {
+                for (label, color) in [("text", p.text), ("muted", p.muted), ("brand", p.brand)] {
                     // High contrast selection uses highlight/highlight-text, tested below.
                     if mode == Mode::HighContrast && name == "card_hi" {
                         continue;

@@ -1,2 +1,6 @@
 1 ICON "allblack11.ico"
+10 ICON "brand/tray-white-on.ico"
+11 ICON "brand/tray-white-off.ico"
+12 ICON "brand/tray-black-on.ico"
+13 ICON "brand/tray-black-off.ico"
 1 24 "allblack11.manifest"

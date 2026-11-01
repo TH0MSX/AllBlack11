@@ -81,6 +81,16 @@ pub fn apps_prefer_dark() -> Option<bool> {
     .map(|value| value == 0)
 }
 
+/// `Some(true)` when the taskbar and notification area are dark (`SystemUsesLightTheme == 0`).
+/// The notification area follows the *system* theme, which can differ from the app theme.
+pub fn system_prefers_dark() -> Option<bool> {
+    reg_dword(
+        "Software\\Microsoft\\Windows\\CurrentVersion\\Themes\\Personalize",
+        "SystemUsesLightTheme",
+    )
+    .map(|value| value == 0)
+}
+
 fn open_run_key(access: u32) -> Option<HKEY> {
     let subkey = to_wide(RUN_KEY);
     let mut key = null_mut();
@@ -141,6 +151,34 @@ pub fn set_autostart(enabled: bool) -> Result<(), String> {
         Ok(())
     } else {
         Err(format!("registry update failed ({status})"))
+    }
+}
+
+/// Open a web address in the default browser. Only the creator's GitHub profile address passes
+/// (`brand::is_safe_profile_url`); call this only in response to a click or key press.
+pub fn open_url(url: &str) -> Result<(), String> {
+    if !crate::is_safe_profile_url(url) {
+        return Err("that address is not one AllBlack11 opens".into());
+    }
+    let op = to_wide("open");
+    let target = to_wide(url);
+    let code = unsafe {
+        ShellExecuteW(
+            null_mut(),
+            pcw(&op),
+            pcw(&target),
+            null_mut(),
+            null_mut(),
+            SW_SHOWNORMAL,
+        )
+    };
+    if (code as isize) > 32 {
+        Ok(())
+    } else {
+        Err(format!(
+            "could not open the browser (ShellExecute {})",
+            code as isize
+        ))
     }
 }
 

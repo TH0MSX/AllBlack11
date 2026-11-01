@@ -551,13 +551,16 @@ fn run() -> Result<(), String> {
         config.features.palette_hotkey = false;
         config.features.day_night.enabled = false;
     }
-    let tray_icon = icon::load_tray_icon(instance);
+    let (tray_on, tray_off) = icon::load_tray_icons(
+        instance,
+        icon::taskbar_is_dark(dwm::high_contrast_enabled()),
+    );
     let reg_event = shellwin::create_notify_event();
     let mut app = App {
         hwnd,
         hooks: Vec::new(),
-        icon_on: tray_icon,
-        icon_off: tray_icon,
+        icon_on: tray_on,
+        icon_off: tray_off,
         accent_bgr: registry::accent_bgr(),
         apps_dark: registry::apps_prefer_dark(),
         high_contrast: dwm::high_contrast_enabled(),
@@ -599,8 +602,10 @@ fn run() -> Result<(), String> {
     uxtheme::allow_window(hwnd, true);
     if !app.add_tray() {
         unsafe {
-            if !app.icon_on.is_null() {
-                DestroyIcon(app.icon_on);
+            for handle in [app.icon_on, app.icon_off] {
+                if !handle.is_null() {
+                    DestroyIcon(handle);
+                }
             }
             DestroyWindow(hwnd);
             CloseHandle(exit_event);
@@ -1015,6 +1020,7 @@ fn on_setting_change(lparam: LPARAM) {
         app.accent_bgr = accent;
         app.apps_dark = registry::apps_prefer_dark();
         app.high_contrast = contrast;
+        app.refresh_tray_icons();
         if contrast && contrast_changed {
             app.restore_visuals();
             let _ = legacy::set_active(false, &legacy::LegacyOptions::default());
@@ -1404,11 +1410,13 @@ fn shutdown() {
     app.remove_tray();
     unsafe {
         KillTimer(app.hwnd, TIMER_SECOND);
-        if !app.icon_on.is_null() {
-            DestroyIcon(app.icon_on);
-            app.icon_on = null_mut();
-            app.icon_off = null_mut();
+        for handle in [app.icon_on, app.icon_off] {
+            if !handle.is_null() {
+                DestroyIcon(handle);
+            }
         }
+        app.icon_on = null_mut();
+        app.icon_off = null_mut();
         if !app.accent_key.is_null() {
             RegCloseKey(app.accent_key);
             app.accent_key = null_mut();
@@ -1506,6 +1514,32 @@ impl App {
     /// Styling is running: on, not paused, and not stepping aside for high contrast.
     fn styling_on(&self) -> bool {
         self.config.enabled && !self.high_contrast && !self.paused
+    }
+
+    /// The notification area follows the system theme (or the contrast theme's window color):
+    /// reload the white or near-black mark when that changes, then show it.
+    fn refresh_tray_icons(&mut self) {
+        let instance = unsafe { GetModuleHandleW(std::ptr::null()) };
+        let (on, off) = icon::load_tray_icons(instance, icon::taskbar_is_dark(self.high_contrast));
+        if on.is_null() || off.is_null() {
+            // Keep what is showing rather than ending up with no icon.
+            for handle in [on, off] {
+                if !handle.is_null() {
+                    unsafe { DestroyIcon(handle) };
+                }
+            }
+            return;
+        }
+        let old = [
+            std::mem::replace(&mut self.icon_on, on),
+            std::mem::replace(&mut self.icon_off, off),
+        ];
+        self.update_tray();
+        for handle in old {
+            if !handle.is_null() {
+                unsafe { DestroyIcon(handle) };
+            }
+        }
     }
 
     fn current_icon(&self) -> windows_sys::Win32::UI::WindowsAndMessaging::HICON {

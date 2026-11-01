@@ -88,6 +88,7 @@ const CT_SLIDER: i32 = 50015;
 const CT_TAB_ITEM: i32 = 50019;
 const CT_TEXT: i32 = 50020;
 const CT_HEADER: i32 = 50034;
+const CT_HYPERLINK: i32 = 50005;
 
 const EVENT_FOCUS_CHANGED: i32 = 20005;
 const EVENT_LAYOUT_INVALIDATED: i32 = 20008;
@@ -123,6 +124,8 @@ pub enum Role {
     Text,
     Heading,
     Button,
+    /// A hyperlink: Invoke opens it.
+    Link,
     Toggle,
     Slider,
     ListItem,
@@ -461,6 +464,7 @@ fn control_type(role: Role) -> i32 {
         Role::Text => CT_TEXT,
         Role::Heading => CT_HEADER,
         Role::Button => CT_BUTTON,
+        Role::Link => CT_HYPERLINK,
         Role::Toggle => CT_CHECKBOX,
         Role::Slider => CT_SLIDER,
         Role::ListItem => CT_LIST_ITEM,
@@ -473,6 +477,7 @@ fn role_text(role: Role) -> &'static str {
         Role::Text => "text",
         Role::Heading => "heading",
         Role::Button => "button",
+        Role::Link => "link",
         Role::Toggle => "switch",
         Role::Slider => "slider",
         Role::ListItem => "list item",
@@ -513,7 +518,7 @@ unsafe extern "system" fn simple_pattern(
     };
     let target = element as *const Element as *mut Element;
     let offset = match (pattern, info.role) {
-        (PATTERN_INVOKE, Role::Button) => Some(OFF_INVOKE),
+        (PATTERN_INVOKE, Role::Button | Role::Link) => Some(OFF_INVOKE),
         (PATTERN_TOGGLE, Role::Toggle) => Some(OFF_TOGGLE),
         (PATTERN_SELECTION_ITEM, Role::ListItem | Role::TabItem) => Some(OFF_SELECT),
         (PATTERN_VALUE, _) if info.value.is_some() => Some(OFF_VALUE),

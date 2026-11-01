@@ -43,6 +43,14 @@ fn main() {
     println!("cargo:rerun-if-changed=assets/allblack11.rc");
     println!("cargo:rerun-if-changed=assets/allblack11.manifest");
     println!("cargo:rerun-if-changed=assets/allblack11.ico");
+    for name in [
+        "tray-white-on",
+        "tray-white-off",
+        "tray-black-on",
+        "tray-black-off",
+    ] {
+        println!("cargo:rerun-if-changed=assets/brand/{name}.ico");
+    }
 }
 
 fn find_tool(base: &str) -> String {

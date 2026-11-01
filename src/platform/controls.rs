@@ -66,6 +66,13 @@ impl Pointer {
     }
 }
 
+/// Register an interactive rectangle that is not a button (a text link) and say whether the
+/// pointer is over it, so hover feels the same everywhere.
+pub fn hot(ui: &Ui, rect: Rect) -> bool {
+    ui.pointer.register(rect);
+    ui.pointer.is_hot(rect)
+}
+
 #[derive(Clone, Copy, PartialEq, Eq)]
 pub enum Emphasis {
     /// A normal button.

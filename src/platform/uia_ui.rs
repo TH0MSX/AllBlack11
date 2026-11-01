@@ -27,6 +27,7 @@ enum Do {
     Exclude(usize),
     TrialKeep,
     TrialRevert,
+    Credit,
 }
 
 struct Built {
@@ -116,6 +117,7 @@ impl Builder2<'_> {
 
 impl Ui {
     fn uia_build(&self, hwnd: HWND) -> Vec<Built> {
+        let _measure = MeasureScope::new(self, None, self.lw(hwnd));
         let mut b = Builder2 {
             ui: self,
             hwnd,
@@ -170,6 +172,44 @@ impl Ui {
                         Do::Nothing,
                         None,
                     );
+                }
+                Row::Brand => {
+                    b.push(
+                        "brand",
+                        Role::Heading,
+                        crate::BRAND_NAME,
+                        crate::BRAND_TAGLINE,
+                        card(&b),
+                        false,
+                        Do::Nothing,
+                        None,
+                    );
+                }
+                Row::Credit => {
+                    let layout = credit_layout(self.lw(hwnd));
+                    let (pl, pt, pr, pb) = layout.prefix;
+                    b.push(
+                        "credit:text",
+                        Role::Text,
+                        crate::CREDIT_PREFIX.trim_end(),
+                        "",
+                        b.screen(pl, top + pt, pr, top + pb),
+                        false,
+                        Do::Nothing,
+                        None,
+                    );
+                    let (ll, lt, lr, lb) = layout.link;
+                    let i = b.push(
+                        "credit:link",
+                        Role::Link,
+                        crate::CREDIT_LINK_NAME,
+                        "Opens in your browser",
+                        b.screen(ll, top + lt, lr, top + lb),
+                        true,
+                        Do::Credit,
+                        Some((row_index, 0)),
+                    );
+                    b.out[i].info.value = Some(crate::CREDIT_URL.to_string());
                 }
                 Row::Note(text) => {
                     b.push(
@@ -589,6 +629,7 @@ impl Ui {
             Do::Exclude(index) => self.pick_exclude(index as i32),
             Do::TrialKeep => self.trial_keep(),
             Do::TrialRevert => self.trial_revert(),
+            Do::Credit => self.open_credit(),
         }
         self.relayout(hwnd);
         true

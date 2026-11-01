@@ -117,6 +117,7 @@ impl Ui {
         b.push(Row::PageTitle(heading, state.progress()));
         match state.step {
             0 => {
+                b.push(Row::Brand);
                 b.push(Row::Prose(vec![
                     "AllBlack11 recolors window frames: title bars, borders, corners and optional materials, using Windows' own window attributes.".to_string(),
                     "It cannot recolor everything. Web content, games and many modern apps draw their own surfaces, so some parts stay as they are. AllBlack11 tells you which.".to_string(),

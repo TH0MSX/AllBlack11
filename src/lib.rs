@@ -3,6 +3,7 @@
 
 mod accents;
 mod arch;
+mod brand;
 mod caption;
 mod commands;
 mod compat;
@@ -37,6 +38,10 @@ mod version;
 
 pub use accents::{key_for as accent_key, Accents, PALETTE as ACCENT_PALETTE};
 pub use arch::{classify, machine_name, ArchStatus, BUILD_MACHINE};
+pub use brand::{
+    credit_text, is_safe_profile_url, CREATOR, CREDIT_LINK_NAME, CREDIT_PREFIX, CREDIT_URL,
+    NAME as BRAND_NAME, TAGLINE as BRAND_TAGLINE, VERIFICATION_STATUS,
+};
 pub use commands::{
     commands as palette_commands, search as palette_search, Action as PaletteAction,
     Command as PaletteCommand, Context as PaletteContext,

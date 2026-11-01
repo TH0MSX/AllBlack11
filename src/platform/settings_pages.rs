@@ -226,7 +226,7 @@ impl Ui {
 
     fn rows_home(&self) -> Vec<Laid> {
         let mut b = Builder::new();
-        b.push(page_title(Page::Home));
+        b.push(Row::Brand);
         let paused = super::super::app::is_paused();
         let safe = super::super::app::safe_mode_text();
         let headline = if paused {
@@ -268,6 +268,7 @@ impl Ui {
         b.push(Row::Toggle(Toggle::Theme));
         b.push(Row::Header("Explore"));
         b.push(Row::Buttons(vec![Button::GoScenes, Button::GoHelp]));
+        b.push(Row::Credit);
         b.out
     }
 
@@ -337,7 +338,10 @@ impl Ui {
         if let Some(advice) = self.arch.advice() {
             about.push(advice.to_string());
         }
+        about.push(crate::VERIFICATION_STATUS.to_string());
+        about.push(crate::credit_text());
         b.push(Row::About(about));
+        b.push(Row::Credit);
         b.out
     }
     fn rows_appearance(&self) -> Vec<Laid> {
@@ -911,9 +915,15 @@ pub fn paint_nav(c: &Canvas, ui: &Ui) {
     c.fill(0, 0, ui.nav_w, height, theme.nav);
     c.fill(ui.nav_w - 1, 0, ui.nav_w, height, theme.edge);
     let expanded = ui.nav_w > crate::ui_metrics::NAV_COMPACT;
+    // The brand mark leads the pane: beside the name when it is expanded, alone on the rail.
+    // Under a contrast theme there is no mark and the name stands alone.
+    let mark = uistyle::brand_mark(c.px(24));
+    if let Some(icon) = mark {
+        c.icon(icon, if expanded { 16 } else { 12 }, 16, 24);
+    }
     if expanded {
         c.text(
-            16,
+            if mark.is_some() { 48 } else { 16 },
             16,
             ui.nav_w - 8,
             44,
@@ -1400,9 +1410,11 @@ impl Ui {
             .iter()
             .enumerate()
             .filter_map(|(index, laid)| match &laid.row {
-                Row::Toggle(_) | Row::Choice(_) | Row::Action(_) | Row::AddField(_) => {
-                    Some((index, 1))
-                }
+                Row::Toggle(_)
+                | Row::Choice(_)
+                | Row::Action(_)
+                | Row::AddField(_)
+                | Row::Credit => Some((index, 1)),
                 Row::Buttons(list) => Some((index, list.len())),
                 Row::Presets => Some((index, PRESETS.len())),
                 Row::LookList if self.look_count() > 0 => Some((index, self.look_count())),
@@ -1580,6 +1592,7 @@ impl Ui {
                 }
             }
             Row::Presets => self.apply_preset(sub.min(PRESETS.len() - 1)),
+            Row::Credit => self.open_credit(),
             Row::LookList => self.click_look_list(sub as i32),
             _ => {}
         }
@@ -2125,6 +2138,10 @@ pub fn paint_focus_ring(c: &Canvas, ui: &Ui, row: &Laid, top: i32, lw: i32) {
             let (l, t, r, b) = preset_rect(lw, ui.ext.focus_sub.min(PRESETS.len() - 1));
             controls::focus_ring(c, (l, top + t, r, top + b));
         }
+        Row::Credit => {
+            let (l, t, r, b) = credit_layout(lw).link;
+            controls::focus_ring(c, (l - 2, top + t, r + 2, top + b));
+        }
         _ => controls::focus_ring(c, (MARGIN, top, lw - MARGIN, top + row.h - GAP)),
     }
 }
@@ -2134,6 +2151,18 @@ pub fn paint_focus_ring(c: &Canvas, ui: &Ui, row: &Laid, top: i32, lw: i32) {
 // ---------------------------------------------------------------------------
 
 impl Ui {
+    /// Open the creator's GitHub profile in the default browser. Called only from a click or an
+    /// activation key; nothing opens it automatically.
+    pub fn open_credit(&mut self) {
+        self.status = match registry::open_url(crate::CREDIT_URL) {
+            Ok(()) => "Opened TH0MSX's GitHub profile in your browser.".to_string(),
+            Err(err) => format!(
+                "Could not open the link: {err}. The address is {}.",
+                crate::CREDIT_URL
+            ),
+        };
+    }
+
     pub fn toggle_ext(&mut self, id: Toggle) {
         match id {
             Toggle::FocusLook => self.config.focus.enabled = !self.config.focus.enabled,
