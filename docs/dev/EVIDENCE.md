@@ -132,7 +132,7 @@ the build script needs).
 | Credit link URL rules | yes | yes | yes | no | browser launch not tested |
 | `lkg::Promotion` (known good only after a real run) and its wiring | yes (6); wiring no | yes | yes | not exercised (needs 60 s and a clean exit) | not tested |
 | `atomic.rs` (flushed write, failed write, stale temp, failed rename) | yes (5, on Linux) | yes | yes | n/a | power-loss behavior cannot be tested here |
-| Look history and undo | yes (9 + 1) | yes | yes | yes: Keep recorded, Undo restored the earlier `default` look and was not re-recorded | not tested |
+| Look history and undo | yes (9 + 1) | yes | yes | yes: Keep recorded, Undo restored the earlier `default` look and was not re-recorded | **recording seen on ARM64** (a kept scene was listed); Undo not shown |
 | Rule playground, exclusion reasons | yes (6 + 2; includes a test that `exclusion_for` agrees with `decide`) | yes | yes | yes: protected app skipped with reason; plain app shows sources | not tested |
 | Contrast Lab | yes (7) | yes | yes | yes (render only) | not tested |
 | Tray tooltip text; exit consequences | yes (6) | yes | yes | no (tray) | not tested |
@@ -147,9 +147,11 @@ The author ran the ARM64 installer and build on a Windows 11 ARM64 PC (Snapdrago
 - **Installer**: the new header (mark, name, "3.7 Preview · true black for Windows 11", blue line), the new icon in its title bar, "Native ARM64 build for this ARM64 PC", Update / Uninstall / Close.
 - **Tray**: the white mark in the notification overflow; the tray menu titled "AllBlack11 3.7 Preview · ARM64" with Command palette, Presets, Scenes, Pause all styling, Shell, Maintenance, Start with Windows (checked), Exit.
 - **Taskbar and desktop**: the new icon on two taskbar buttons; Control Panel, Run and File Explorer drawn with black title bars alongside Settings.
+- **Safety**: Look history listing "18 min ago · Scene: OLED Black" (so a kept scene was recorded on hardware); the Pause, Reset windows, Undo shell and Turn off experimental cards. **Undo itself was not shown.**
+- **Diagnostics**: "Native ARM64 build on an ARM64 PC (build ARM64, PC ARM64)", Windows build 26300, high contrast off, and the build-support list (Mica, Mica Alt, Acrylic supported; tinted acrylic experimental).
 - **Settings** (icon rail, narrow window): Home with the brand header and "Made with love by TH0MSX" (TH0MSX underlined); Fix this app with a live window list; Appearance with the live preview, quick looks and toggles; Scenes with the scene list and detail for "Focus"; Rules with Test without applying; "Kept." in the status line.
 
-**Not shown by those screenshots**, so still unverified: the x64 build on x64; Narrator and any UI Automation client; the credit link opening a browser; the tray swap between light and dark taskbars and contrast themes; the Look history, Rule playground results, Contrast check, Exit dialog and last-known-good timing; the Start menu, Alt+Tab and shortcut icons; 125% to 200% scaling; the helper.
+**Not shown by those screenshots**, so still unverified: the x64 build on x64; Narrator and any UI Automation client; the credit link opening a browser; the tray swap between light and dark taskbars and contrast themes; Undo in the Look history, Rule playground results, Contrast check, Exit dialog and last-known-good timing; the Start menu, Alt+Tab and shortcut icons; 125% to 200% scaling; the helper.
 
 ### Defects found and fixed in 3.7
 
