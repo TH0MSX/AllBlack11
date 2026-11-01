@@ -630,6 +630,18 @@ impl Ui {
             b.push(Row::Header("Style receipt"));
             b.push(Row::Lines(self.ext.receipt.clone()));
             b.push(Row::Buttons(vec![Button::CopyReport]));
+            b.push(Row::Expander(
+                "Probe: can Windows style this window at all?",
+            ));
+            if self.section_open("Probe: can Windows style this window at all?") {
+                b.push(Row::Note(
+                    "A probe asks Windows for loud, unmistakable colors on this one window for 20 seconds, then puts it back. Nothing is saved. If you see nothing, the app is painting over its own frame: that is a finding, not a bug. Record what you see with the notes below.",
+                ));
+                b.push(Row::Buttons(vec![
+                    Button::ProbeFrame,
+                    Button::ProbeBackdrop,
+                ]));
+            }
         }
     }
 
@@ -4092,6 +4104,8 @@ impl Ui {
             }
             Button::CreateRule => self.create_rule_from_window(),
             Button::TryLook => self.try_look_on_window(),
+            Button::ProbeFrame => self.probe_window(false),
+            Button::ProbeBackdrop => self.probe_window(true),
             Button::ExcludeApp => self.exclude_selected_app(),
             Button::RestoreWindow => {
                 if let Some(selected) = &self.ext.selected {
@@ -4356,6 +4370,58 @@ impl Ui {
         self.post_command();
         self.schedule_report_refresh();
         self.status = "Trying the look from Effects and colors on that window for 20 seconds. Nothing is saved.".into();
+    }
+
+    /// Ask for a deliberately loud look on the picked window for 20 seconds (the same trial the
+    /// preview uses, so it ends and restores by itself). Frame probe: magenta title bar, lime border,
+    /// yellow title text. Backdrop probe: a strongly tinted red acrylic behind the window. What the
+    /// person sees, or does not see, is the evidence; the style receipt shows what Windows accepted.
+    fn probe_window(&mut self, backdrop: bool) {
+        let Some(selected) = &self.ext.selected else {
+            self.status = "Pick a window first.".into();
+            return;
+        };
+        let mut style = crate::base_style();
+        style.dark_mode = true;
+        style.caption = crate::Color::Rgb {
+            r: 0xFF,
+            g: 0x00,
+            b: 0xFF,
+        };
+        style.border = crate::Color::Rgb {
+            r: 0x00,
+            g: 0xFF,
+            b: 0x00,
+        };
+        style.text = crate::Color::Rgb {
+            r: 0xFF,
+            g: 0xFF,
+            b: 0x00,
+        };
+        if backdrop {
+            style.backdrop = crate::Backdrop::TintedAcrylic;
+            style.acrylic_tint = crate::Color::Rgb {
+                r: 0xFF,
+                g: 0x00,
+                b: 0x00,
+            };
+            style.acrylic_opacity = 0xCC;
+        } else {
+            style.backdrop = crate::Backdrop::None;
+        }
+        cmdq::push(AppCommand::TryOnWindow {
+            key: selected.key,
+            fingerprint: selected.fingerprint.clone(),
+            style,
+        });
+        self.post_command();
+        self.schedule_report_refresh();
+        self.status = if backdrop {
+            "Probe: a red tinted backdrop on that window for 20 seconds. Look for red behind or inside it."
+        } else {
+            "Probe: magenta title bar, lime border and yellow title text on that window for 20 seconds."
+        }
+        .into();
     }
 
     /// Re-read the selected window's report shortly, once the host has acted.
