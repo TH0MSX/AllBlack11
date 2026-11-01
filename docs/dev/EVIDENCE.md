@@ -207,3 +207,26 @@ The author ran the ARM64 installer and build on a Windows 11 ARM64 PC (Snapdrago
 - Not implemented in 3.6 (deferred, see `HANDOFF.md`): Window Anatomy view, per-window undo
   timeline, display-aware scenes, controller-friendly Living Room view, Recipe Remixer, saved
   thumbnails, and capturing another app's window for comparison.
+
+## 3.8.0-preview.1 additions
+
+Same categories as above. **Nothing below has been run on Windows.** "Wine" means the real x64
+exe was run under Wine for layout and basic interaction only.
+
+| Area | Unit-tested | Cross-compiled (x64 and ARM64) | Wine-rendered | Windows runtime |
+| --- | --- | --- | --- | --- |
+| Release policy and version ordering (`update.rs`: stable vs preview, flag and tag, channels, skipped, arch pick, malformed JSON, missing assets, rate limits, clock skew) | yes | yes | n/a | not tested |
+| SHA-256 (NIST vectors, streaming) and bounded download (`sha256.rs`, `download.rs`: cancel mid-stream, oversize, short and long body, disk full, wrong digest, unsafe names, stale cleanup) | yes | yes | n/a | not tested |
+| WinHTTP client, updater worker, Install handoff (`platform/http.rs`, `updater.rs`) | no (needs Windows) | yes | the failure path only (the sandbox network answered non-200); real GitHub not reached | not tested |
+| Updates card, Home badge, balloon | layout text yes | yes | card rendered | not tested |
+| Pack schema, validation, install/remove, precedence, catalog honesty (`packs.rs`) | yes (11 tests) | yes | section rendered; Install wrote a `Pack: Microsoft Store` rule | not tested |
+| Package identity for `ApplicationFrameHost` frames (`procinfo.rs`) | no | yes | no | not tested |
+| Whether caption/border colors apply to Store and Calculator windows | n/a | n/a | n/a | **unknown; the pack says so** |
+| Look history names pack install/remove (`history.rs`) | yes | yes | n/a | not tested |
+| Exclusion manager (`exclusions.rs`: layers agree with `policy::exclusion_for`, class list validation) | yes | yes | section rendered | not tested |
+| Text-box names (`labels.rs` table; `accname.rs` `IAccPropServices::SetHwndPropStr`, vtable checked against the SDK `oleacc.idl`) | table only | yes | the service is absent under Wine, so 0 of 9 were named and the quiet failure path ran | **not verified with Narrator, NVDA or Accessibility Insights** |
+| Wallpaper generator (`generate.py`: deterministic, OLED rules checked) and manifest | yes (manifest, recorded stats, sizes, SHA-256 format) | n/a | contact sheet viewed | n/a |
+| Gallery logic (`wallpaper.rs`: manifest validation, URL allowlist, fit/position, state, placement) | yes (8 tests) | yes | page, tile selection, full-screen preview and the "not attached yet" download message seen | not tested |
+| `IDesktopWallpaper` apply, put back, display list (`gallery.rs`, vtable checked against `shobjidl_core.idl`) | no | yes | the service is absent under Wine (error shown); apply never ran | not tested |
+| Per-display fit | n/a | n/a | n/a | **not possible through Windows' API (one position for all displays); documented, not implemented** |
+

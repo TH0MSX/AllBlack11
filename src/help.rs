@@ -189,7 +189,7 @@ pub struct Topic {
     pub body: &'static [&'static str],
 }
 
-pub const TOPICS: [Topic; 10] = [
+pub const TOPICS: [Topic; 11] = [
     Topic {
         title: "Quick start",
         keywords: &["start", "begin", "first", "setup", "how"],
@@ -242,6 +242,15 @@ pub const TOPICS: [Topic; 10] = [
             "Rules has a Compatibility packs section. A pack is a small data file that says how to style one app and what cannot be styled. Install adds ordinary rules named Pack: followed by the app; it runs nothing. Remove deletes exactly those rules.",
             "The Microsoft Store and Calculator packs change only the window frame: the title bar and border. What the app draws inside its window is drawn by the app itself and cannot be recolored from outside.",
             "Your own rules always win over a pack. Install and Remove appear in Look history, and Undo takes them back. Import pack reads a file from this PC, checks it strictly and refuses anything that is not plain data.",
+        ],
+    },
+    Topic {
+        title: "Wallpapers",
+        keywords: &["wallpaper", "wallpapers", "background", "oled", "desktop", "fit", "fill", "download"],
+        body: &[
+            "The Wallpapers page has eight original black wallpapers made for OLED screens. Pick one to see what it looks like and how big the download is. Nothing is downloaded until you press Download image, and the file is checked against a checksum built into AllBlack11.",
+            "Preview full screen shows the picture on this display the way Windows will place it. Enter applies it and Esc closes. Apply to chooses one display or all of them. Windows keeps one fit for all displays.",
+            "Put back previous returns the picture that was there before you applied one. A solid color or a slideshow cannot be put back. Open file location shows the downloaded file.",
         ],
     },
     Topic {

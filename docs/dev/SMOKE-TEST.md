@@ -6,13 +6,60 @@ Windows), and checked on a Windows ARM64 runner in CI for compilation only. Ever
 therefore **unverified until you tick it**, whatever the screenshots showed. Mark each line pass or fail and attach the diagnostics
 report (Settings > Diagnostics > Write report) to any failure.
 
-Do **section 3.7 first** (about 30 minutes: icon, credit, recovery, new pages), then **section U** (about 25 minutes): it covers the interface redesign and is where a
+Do **section 3.8 first** (about 40 minutes: updater, packs, exclusion manager, text-box names, wallpapers; none of it has run on Windows), then **section 3.7** (about 30 minutes: icon, credit, recovery, new pages), then **section U** (about 25 minutes): it covers the interface redesign and is where a
 screen, a keyboard or a screen reader will disagree with what was rendered under Wine. Then the
 3.6 pass below. In preview.2 the six old tabs became eight pages: Overview is **Home**; Effects is
 **Appearance**; Apps is **Fix this app** (pick and inspect) and **Rules** (rules, exclusions,
 notebook, classic dialogs); Scenes is **Scenes**; Legacy moved into **Rules**; Safety is
 **Safety**; the report, support table and tools are on **Diagnostics**; About and the
 command palette are on **Settings & help**. Steps below that say "tab" mean "page".
+
+## 3.8. Updater, packs, exclusions, labels, wallpapers (3.8.0-preview.1)
+
+Nothing in this section has been run on Windows. Expected outcomes are in italics. Mark each line
+pass or fail and note exactly what you see or hear. Do the steps in order: the updater steps need
+a published release newer than the running build (publish 3.8.0-preview.1 first, then test with
+the 3.7.0-preview.1 build installed, or the reverse for "up to date").
+
+**A. Updater (Settings & help > Updates)**
+1. [ ] Open the page with no network (airplane mode), press **Check for updates**. *A plain "could not reach GitHub" line within about 15 seconds; no dialog; Check again works; styling is unaffected.*
+2. [ ] With network, on 3.7.0-preview.1, channel **Automatic**, press Check. *"A newer version is available: 3.8.0-preview.1 (preview)", notes excerpt, release page link. The Home page shows a badge row. A tray balloon appears once.*
+3. [ ] Set the channel to **Stable only** and check again. *"You have the latest stable version" (a preview is not offered).* Back to Automatic.
+4. [ ] **Skip this version**. *The badge goes; the Updates card says it is skipped; a later check does not re-announce it.* **Show it again** restores it.
+5. [ ] Press **Download**. *A progress line with bytes and percent; the page stays responsive; Cancel works and leaves nothing in `%LOCALAPPDATA%\AllBlack11\updates`.* Start again and let it finish. *"Verified against the published checksum" and the SHA-256 is shown. The file name matches this PC's CPU (arm64 on the Snapdragon laptop, x64 on an x64 PC).*
+6. [ ] Close and reopen AllBlack11. *The downloaded, verified installer is still offered; Discard deletes it.*
+7. [ ] Corrupt the downloaded file (append a byte) and press **Install**. *It refuses: "does not match", file deleted; AllBlack11 keeps running.*
+8. [ ] Download again and press **Install**. *Setup opens, AllBlack11 closes, the upgrade completes, settings are kept, the tray icon returns, About says 3.8.0-preview.1.* Record how long the swap took.
+9. [ ] Roll back: install the 3.7.0-preview.1 Setup over 3.8. *Settings are kept; the optional `updates` and `ui` sections are ignored by 3.7 without errors (check `config.json` still loads).*
+10. [ ] Turn on the daily check, restart. *Nothing is contacted until about a day passes (or press Check); with it off nothing runs.* Confirm in a firewall log or Resource Monitor that only github.com is contacted.
+11. [ ] Narrator on the Updates card. *Each button and the channel choice are announced with their names.*
+
+**B. Compatibility packs (Rules > Compatibility packs)**
+12. [ ] Pick **Microsoft Store**, read the details. *Verdict "Partly supported", the limit "Client content of the Store app is rendered by the app itself and cannot be recolored externally.", "Not yet tested on Windows hardware".*
+13. [ ] Open the Store, then **Install pack**. *Report line "Added rule Pack: Microsoft Store ... priority -10". Look history shows "Installed the Microsoft Store pack".* Look at the window. *Record exactly what changed: title bar color, border, text color. If nothing changed, note the build and open Fix this app on the Store window: the package should read Microsoft.WindowsStore_..., not ApplicationFrameHost.* This decides whether the pack must become "Not supported".
+14. [ ] **Remove pack**. *The rule disappears; the window returns to how Windows draws it after a refresh; Undo (Safety) brings the pack back.*
+15. [ ] Repeat 12 to 14 for **Calculator**. *Same limits; its keys and display stay as the app draws them.*
+16. [ ] Add your own rule for the same package with a different title bar color, then install the pack. *The report says "Your rule N also matches ... and wins"; the window uses your color.*
+17. [ ] **Import pack...** with a valid file (copy a built-in from the docs), then with: an unknown field, an oversized file (over 24 KB), a `look` key outside the allowed set, an unsupported pack with a look. *Each bad file is refused with a plain reason; nothing is saved.*
+
+**C. Exclusion manager and text-box names**
+18. [ ] Rules > Exclusion manager. *Counts of protected classes and programs, your lists, rules that switch styling off, and the five numbered layers.*
+19. [ ] Type `class=Notepad` in the "Never theme" box and press Add. *"Windows of class Notepad are now left alone"; Notepad (if styled) returns to normal after a refresh; the class shows in the list; Remove class takes it away.* Try `class=Shell_TrayWnd` (*already protected*) and `class=a*b` (*refused*).
+20. [ ] Narrator, Tab to each text box on Fix this app, Appearance, Rules, Scenes and Help. *Each says its name ("Filter windows", "Title bar color", "New rule or test", "App to leave alone", "Look name", "Search help") and role. Record any box that is announced as just "edit".* Check with NVDA and Accessibility Insights if available. If names are missing, the property service did not apply: report it, do not assume it works.
+
+**D. Wallpapers**
+21. [ ] Open **Wallpapers**. *Eight tiles with names and "Download N KB/MB"; arrow keys and Tab move between tiles; Narrator reads "Eclipse, Download 633 KB".*
+22. [ ] Select one, press **Preview full screen**. *A black window covers this display and shows the picture; the hint says "Preview from the small picture" until downloaded. Esc closes; clicking closes; switching to another window closes it.*
+23. [ ] Press **Download image** with the 3.8.0-preview.1 release published and the PNGs attached. *Progress, then "checked against the published checksum"; the file is in `%LOCALAPPDATA%\AllBlack11\wallpapers`.* Before the files are attached: *a clear "not attached to release ... yet" message.*
+24. [ ] Open the preview again (now full resolution), change **Fit** between Fill, Fit and Center. *Fill covers (crops on an ultrawide), Fit shows everything with black bars, Center shows actual size.* Press Enter in the preview. *The wallpaper is applied.*
+25. [ ] **Apply to** a single display on a multi-monitor PC. *Only that display changes; the other keeps its picture.* Then All displays.
+26. [ ] **Put back previous**. *The earlier picture returns on each display it was recorded for.* If the earlier background was a solid color or a slideshow, *the button is absent or says it cannot be put back.*
+27. [ ] Check black bars: with Fit on a 16:10 or ultrawide display, *the bars are black, not the old desktop color.*
+28. [ ] **Open file location**. *Explorer opens with the file selected, or the folder if not downloaded.*
+29. [ ] Look at an OLED panel (or a very dark room): *true black stays off; strokes are thin; no large bright area.* Note any banding in the soft glows (Moonrise, Eclipse, Horizon).
+
+**E. Both CPUs**
+30. [ ] Run 1 to 29 on the ARM64 laptop, and on an x64 PC if you have one. *Same behavior; the updater offers the installer for that CPU.*
 
 ## 3.7. The brand, recovery and new pages (3.7.0-preview.1)
 

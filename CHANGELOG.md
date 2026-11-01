@@ -1,5 +1,32 @@
 # Changelog
 
+## 3.8.0-preview.1
+
+A **pre-release** on top of 3.7.0-preview.1: an in-app updater, two compatibility packs, an exclusion manager, labels for the Settings text boxes, and a wallpaper gallery. **None of the new Windows-facing behavior has been run on Windows yet** (the updater against real GitHub, the download and install handoff, the pack behavior on the Store and Calculator, the wallpaper service, screen-reader names). It is unit-tested on Linux (333 tests), cross-compiled for ARM64 and x64, and rendered under Wine for layout (Wine is not Windows). `docs/dev/INVENTORY-3.8.md` lists what exists and what was left undone; `docs/dev/SMOKE-TEST.md` section 3.8 is the hardware pass, in order.
+
+**Updater (Settings & help > Updates)**
+- Asks GitHub's releases API over HTTPS (this repository only) whether a newer release exists: on the button, or once a day if you turn that on (off by default). It never updates by itself and sends no information about you.
+- Respects the pre-release flag **and** the tag: a version with a suffix such as `-preview.1` is a preview. **Update channel:** Automatic (a preview build is offered previews, a stable build only stable releases), Stable only, or Include previews. **Skip this version** is remembered.
+- Picks the installer for this build's CPU by exact name (`AllBlack11-Setup-arm64.exe` or `-x64.exe`) and never guesses. Missing assets, malformed JSON, rate limits, no network and a wrong clock all end in a quiet message and a manual **Check again**.
+- Downloads with progress and **Cancel**, to a `.part` file, size-bounded, and checks the SHA-256 GitHub publishes for the asset (or the one in the release notes). A mismatch deletes the file. The digest is shown. Binaries are not code-signed yet, so the digest comes from the same release, not from a separate signer; the release policy documents the signing path.
+- **Install** re-checks the file, starts Setup and closes AllBlack11 so it can be replaced; the running exe is never overwritten in place. Settings are kept. Stale downloads are cleaned up. Updater failures cannot affect styling, recovery or uninstall.
+- `docs/dev/RELEASE-POLICY.md` fixes how releases are published so the updater can tell stable from preview.
+
+**Compatibility packs (Rules)**
+- A pack is a small, strictly validated data file (no executable content, bounded size) that names an app by package or program, says what it can change, and **must state what it cannot**. Install adds ordinary rules named `Pack: <name>` at priority -10, so **your own rules win**; Remove deletes exactly those rules. Both go through the normal save, appear in Look history and can be undone. Import checks a file from this PC; nothing is fetched.
+- Built in: **Microsoft Store** and **Calculator**. They change the window frame only (title bar and border). *Client content of the Store app is rendered by the app itself and cannot be recolored externally.* Calculator's content is drawn by its own XAML; it being open source does not change that. If caption colors turn out not to apply to a window, the pack's verdict becomes "Not supported" with the observed reason, and an unsupported pack never forces a change.
+- Store and Calculator windows are hosted by `ApplicationFrameHost.exe`; the package is now read from the app inside the frame so a rule or pack can name one app.
+
+**Wallpapers (new page)**
+- Eight original wallpapers drawn by `assets/wallpapers/generate.py`: a true-black foundation, no large bright areas (checked on every run), only the brand's silver and blue. Grid of previews, full-screen preview that shows how Windows will place the picture on this display (Enter applies, Esc closes), **Apply to** a display or all displays, Fill / Fit / Center remembered per wallpaper, **Open file location**, **Put back previous**.
+- The full images (3840x2160, 5.4 MB together) are not in the repository or the exe: they are attached to the release and downloaded one at a time when you press **Download image** (the size is shown first), checked against a SHA-256 compiled into AllBlack11. Windows keeps one fit for all displays, so Fit is not per display.
+
+**Exclusion manager (Rules) and labels**
+- Shows every reason a window is left alone, in the order they are checked, what is fixed, what is yours, and which of your rules switch styling off. Type `class=Name` in the exclusion box to leave a window class alone in every app; remove classes from the list.
+- Every Settings text box now has an accessible name and description (Windows accessibility property service). Not yet checked with Narrator or NVDA.
+
+**Not in this version** (deferred, not stubbed): Window Anatomy, Display-Aware Scenes, Recipe Remixer, the wizards, and everything on the 3.7 deferred list that was not listed above.
+
 ## 3.7.0-preview.1
 
 A **pre-release** on top of 3.6.0-preview.2: a new icon and brand, a first batch of the workbench features, and two recovery fixes. **The ARM64 build has been run by the author on a Windows 11 ARM64 PC** (installer, tray icon and menu, Home, Fix this app, Appearance, Scenes, Rules, Safety and Diagnostics pages, a recorded Look history entry, and styled Control Panel, Run and File Explorer windows were seen working); **the full hardware checklist is not finished and the x64 build has not been run on an x64 PC.** It is unit-tested (269 tests on Linux), cross-compiled, built and unit-tested natively on Windows ARM64 and x64 CI runners, and rendered under Wine for layout (Wine is not Windows). `docs/dev/INVENTORY-3.7.md` lists, item by item, what exists and what was deliberately left undone; `docs/dev/SMOKE-TEST.md` section 3.7 is the hardware pass.

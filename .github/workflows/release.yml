@@ -10,7 +10,7 @@ on:
   workflow_dispatch:
     inputs:
       tag:
-        description: "Tag to create and release, for example v3.7.0-preview.1"
+        description: "Tag to create and release, for example v3.8.0-preview.1"
         required: true
         type: string
 
@@ -31,7 +31,7 @@ jobs:
           TAG: ${{ inputs.tag || github.ref_name }}
         run: |
           if ! printf '%s' "$TAG" | grep -Eq '^v[0-9]+\.[0-9]+\.[0-9]+(-[A-Za-z0-9.]+)?$'; then
-            echo "'$TAG' is not a version tag like v3.7.0-preview.1" >&2
+            echo "'$TAG' is not a version tag like v3.8.0-preview.1" >&2
             exit 1
           fi
           version="${TAG#v}"
@@ -91,7 +91,7 @@ jobs:
           body_path: notes.md
           tag_name: ${{ inputs.tag || github.ref_name }}
           target_commitish: ${{ github.sha }}
-          # A tag with a suffix (v3.7.0-preview.1) is a pre-release and never becomes "latest".
+          # A tag with a suffix (v3.8.0-preview.1) is a pre-release and never becomes "latest".
           prerelease: ${{ contains(inputs.tag || github.ref_name, '-') }}
           make_latest: ${{ !contains(inputs.tag || github.ref_name, '-') }}
         env:
