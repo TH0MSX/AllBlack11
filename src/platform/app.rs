@@ -202,6 +202,9 @@ struct App {
     trial: crate::TrialMachine,
     /// The config that is running and has not yet earned "last known good".
     lkg: crate::LkgPromotion,
+    /// A trial was just kept and already recorded in the look history; the reload its Keep
+    /// causes must not record it again.
+    history_kept: bool,
     /// Emergency pause: windows are put back and nothing new is styled until Resume. Held in
     /// memory only, so a restart always begins from the saved settings.
     paused: bool,
@@ -590,6 +593,7 @@ fn run() -> Result<(), String> {
         last_ops: HashMap::new(),
         trial: crate::TrialMachine::default(),
         lkg: crate::LkgPromotion::default(),
+        history_kept: false,
         paused: false,
         scene_undo: None,
         accents: cfgio::load_accents(),
@@ -1591,6 +1595,32 @@ impl App {
         }
     }
 
+    /// Add this change to the session's look history, unless it is the undo that wrote it.
+    fn record_history(&self, old: &crate::Config, new: &crate::Config) {
+        let (Ok(old_json), Ok(new_json)) = (serde_json::to_string(old), serde_json::to_string(new))
+        else {
+            return;
+        };
+        let scene = match (crate::active_scene(old), crate::active_scene(new)) {
+            (before, Some(after)) if before.as_deref() != Some(after.as_str()) => {
+                crate::scene_catalog()
+                    .into_iter()
+                    .find(|scene| scene.id == after)
+                    .map(|scene| scene.name)
+            }
+            _ => None,
+        };
+        let now = unsafe { GetTickCount64() };
+        crate::with_history(|history| {
+            if history.is_own_undo(&new_json) {
+                return;
+            }
+            if let Some(name) = crate::describe_change(&old_json, &new_json, scene.as_deref()) {
+                history.record(&name, &old_json, now);
+            }
+        });
+    }
+
     /// A parsed config is now being applied. It becomes the "last known good" copy only after it
     /// has run (see `lkg::Promotion`); the clock restarts with every new offer.
     fn offer_lkg(&mut self, text: String) {
@@ -1862,6 +1892,9 @@ impl App {
             }
         };
         self.offer_lkg(text.clone());
+        if !std::mem::take(&mut self.history_kept) {
+            self.record_history(&old, &new);
+        }
         self.config = new;
         self.enforce_safe_mode();
         self.refresh_reduce();
@@ -2951,6 +2984,15 @@ impl App {
             return;
         }
         TRIAL_DEADLINE.store(0, Ordering::Relaxed);
+        // A kept look is the main named change; its "before" is the config from before the
+        // trial, which only the trial machine still has.
+        if keep {
+            if let Some(before) = self.trial.previous().cloned() {
+                let after = self.config.clone();
+                self.record_history(&before, &after);
+                self.history_kept = true;
+            }
+        }
         // Keep: Settings has already written the file (it owns any shell flags a preset
         // carries); the normal apply path then records the last known good copy.
         // Revert or timeout: the machine hands back exactly the config that was running.

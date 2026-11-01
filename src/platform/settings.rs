@@ -308,6 +308,7 @@ enum Button {
     ExportRecipe,
     TestRule,
     TestPicked,
+    UndoLook,
     RestoreLkg,
     ClearNotebook,
     ResetAllWindows,
@@ -559,6 +560,11 @@ fn button_meta(id: Button) -> (&'static str, &'static str, &'static str) {
         Button::TryRecipe => ("", "", "Try this look"),
         Button::ImportRecipe => ("", "", "Import…"),
         Button::ExportRecipe => ("", "", "Export current…"),
+        Button::UndoLook => (
+            "Undo last change",
+            "Puts back the look from before the most recent change listed above, then restyles windows from it. Repeat to go further back.",
+            "Undo last change",
+        ),
         Button::TestRule => ("", "", "Test typed app"),
         Button::TestPicked => ("", "", "Test picked window"),
         Button::RestoreLkg => ("", "", "Restore last known good"),
@@ -2233,6 +2239,7 @@ const DT_VCENTER: u32 = 0x0004;
 const DT_SINGLELINE: u32 = 0x0020;
 const DT_WORDBREAK: u32 = 0x0010;
 const DT_CALCRECT: u32 = 0x0400;
+const DT_NOCLIP: u32 = 0x0100;
 const DT_NOPREFIX: u32 = 0x0800;
 const DT_END_ELLIPSIS: u32 = 0x8000;
 
@@ -2346,7 +2353,21 @@ impl Canvas {
             SetTextColor(self.dc, color);
             let mut rect = self.rect(l, t, r, b);
             let wide = to_wide(text);
-            DrawTextW(self.dc, wide.as_ptr(), -1, &mut rect, flags | DT_NOPREFIX);
+            // Wrapped text is measured to fit, so it needs no clip rectangle; and where a renderer
+            // breaks a line a few pixels later than it measured, an unclipped word is whole
+            // instead of sliced at the edge. The window and scroll clips still apply.
+            let clip = if flags & DT_WORDBREAK != 0 {
+                DT_NOCLIP
+            } else {
+                0
+            };
+            DrawTextW(
+                self.dc,
+                wide.as_ptr(),
+                -1,
+                &mut rect,
+                flags | DT_NOPREFIX | clip,
+            );
             SelectObject(self.dc, old);
         }
     }

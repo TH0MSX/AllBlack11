@@ -834,6 +834,28 @@ impl Ui {
         b.push(Row::Action(Button::ResetAllWindows));
         b.push(Row::Action(Button::UndoShell));
         b.push(Row::Action(Button::StopExperimental));
+        b.push(Row::Header("Look history"));
+        b.push(Row::Note(
+            "Changes to your looks this session, newest first. Undo goes back one step at a time. This is separate from Reset all windows, which puts windows back as Windows draws them.",
+        ));
+        let now = unsafe { windows_sys::Win32::System::SystemInformation::GetTickCount64() };
+        let history: Vec<String> = crate::with_history(|history| {
+            history
+                .entries()
+                .iter()
+                .rev()
+                .take(10)
+                .map(|entry| format!("{} · {}", crate::history_ago(now, entry.at_ms), entry.name))
+                .collect()
+        });
+        if history.is_empty() {
+            b.push(Row::Note(
+                "Nothing yet. Changes you make in this session are listed here.",
+            ));
+        } else {
+            b.push(Row::Lines(history));
+        }
+        b.push(Row::Action(Button::UndoLook));
         b.push(Row::Header("Config recovery"));
         b.push(Row::Lines(vec![
             "AllBlack11 keeps the last config that loaded and applied without errors (config.lkg.json). If config.json is ever broken, that copy runs instead and your file is left alone.".to_string(),
@@ -2201,6 +2223,37 @@ impl Ui {
         };
     }
 
+    /// Undo the most recent look change from the session history. The earlier config is parsed
+    /// and checked before anything is written; if it is not usable nothing changes.
+    fn undo_look(&mut self) {
+        if self.trial_active() {
+            self.status = "Keep or revert the trial look first.".into();
+            return;
+        }
+        let Some(entry) = crate::with_history(|history| history.take_undo()) else {
+            self.status =
+                "There is nothing to undo yet. Changes made in this session are listed above."
+                    .into();
+            return;
+        };
+        match crate::parse_config(&entry.before) {
+            Ok(config) => {
+                self.config = config;
+                self.rule = None;
+                self.exclude_sel = None;
+                self.push_colors_to_edits();
+                self.commit();
+                self.status = format!("Undid: {}.", entry.name);
+            }
+            Err(err) => {
+                self.status = format!(
+                    "Could not undo \"{}\": the earlier look is not usable ({err}). Nothing was changed.",
+                    entry.name
+                );
+            }
+        }
+    }
+
     /// Rule playground, typed: the text in the rule box is read, never applied.
     fn test_typed_rule(&mut self) {
         match crate::playground_parse(&get_text(self.edits.rule)) {
@@ -2463,6 +2516,7 @@ impl Ui {
             Button::TryRecipe => self.try_recipe(),
             Button::ImportRecipe => self.import_recipe(),
             Button::ExportRecipe => self.export_recipe(),
+            Button::UndoLook => self.undo_look(),
             Button::TestRule => self.test_typed_rule(),
             Button::TestPicked => self.test_picked_window(),
             Button::RestoreLkg => {

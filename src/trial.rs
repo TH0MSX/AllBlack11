@@ -62,6 +62,11 @@ impl TrialMachine {
         }
     }
 
+    /// The config that was running before the trial started, while one is active.
+    pub fn previous(&self) -> Option<&Config> {
+        self.active.as_ref().map(|trial| &trial.previous)
+    }
+
     pub fn expired(&self, now: u64) -> bool {
         self.active
             .as_ref()
@@ -247,5 +252,19 @@ mod tests {
         machine.start(u64::MAX - 5, TRIAL_MS, &base());
         assert_eq!(machine.deadline(), Some(u64::MAX));
         assert!(!machine.expired(1));
+    }
+
+    #[test]
+    fn the_config_from_before_the_trial_is_readable_until_it_ends() {
+        let before = config("{}");
+        let mut machine = TrialMachine::default();
+        assert!(machine.previous().is_none());
+        machine.start(0, 15_000, &before);
+        assert_eq!(
+            serde_json::to_string(machine.previous().unwrap()).unwrap(),
+            serde_json::to_string(&before).unwrap()
+        );
+        machine.finish(true);
+        assert!(machine.previous().is_none());
     }
 }

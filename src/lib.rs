@@ -15,6 +15,7 @@ mod explain;
 mod fixapp;
 mod help;
 mod helper_protocol;
+mod history;
 mod identity;
 mod inject;
 mod legacy_policy;
@@ -78,6 +79,10 @@ pub use help::{
 pub use helper_protocol::{
     may_use_helper, parse_command as parse_helper_command, Backoff as HelperBackoff,
     Command as HelperCommand, LineBuffer, Reply as HelperReply,
+};
+pub use history::{
+    ago as history_ago, describe_change, with_session as with_history, Entry as HistoryEntry,
+    History,
 };
 pub use identity::{check as check_identity, Fingerprint, Identity};
 pub use inject::{inject_allowed, InjectTarget};
