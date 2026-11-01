@@ -251,6 +251,11 @@ pub fn exclusion_for(exe: &str, class_name: &str, config: &Config) -> Option<Exc
     None
 }
 
+/// The window classes that are never styled and cannot be listed or unlisted.
+pub fn protected_classes() -> &'static [&'static str] {
+    ALWAYS_SKIP_CLASSES
+}
+
 /// Shell hosts, services, and our own process. The experimental hook uses the same list.
 
 #[cfg(test)]

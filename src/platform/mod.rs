@@ -8,6 +8,7 @@
 //! `legacy` load `AllBlack11Hook.dll` into same-architecture processes that are
 //! not elevated, protected, or excluded.
 
+mod accname;
 mod app;
 mod cfgio;
 mod cmdq;

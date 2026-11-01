@@ -12,6 +12,7 @@ mod config;
 mod contrast_lab;
 mod download;
 mod effects;
+mod exclusions;
 mod explain;
 mod fixapp;
 mod help;
@@ -19,6 +20,7 @@ mod helper_protocol;
 mod history;
 mod identity;
 mod inject;
+mod labels;
 mod legacy_policy;
 mod lkg;
 mod menu_model;
@@ -67,6 +69,10 @@ pub use contrast_lab::{
     style_pairs as contrast_style_pairs,
 };
 pub use effects::{focus_style, reduce_reason, reduced, Explicit, SystemState};
+pub use exclusions::{
+    add_class as add_excluded_class, precedence as exclusion_precedence,
+    remove_class as remove_excluded_class, summary as exclusion_summary, why as exclusion_why,
+};
 pub use explain::{
     attribute_support, explain, framework_hint, reason_text, AttributeSupport, Confirm,
     Explanation, Framework, FrameworkHint, Support, TitleBar,
@@ -90,6 +96,7 @@ pub use history::{
 };
 pub use identity::{check as check_identity, Fingerprint, Identity};
 pub use inject::{inject_allowed, InjectTarget};
+pub use labels::{EditLabel, EDIT_LABELS};
 pub use legacy_policy::{
     capability, contrast_ratio, host_kind, palette, window_verdict, Capability, HostKind, Level,
     Palette, SharedState, Tech, Verdict, PALETTES,

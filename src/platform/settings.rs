@@ -280,6 +280,8 @@ enum Choice {
     UpdateChannel,
     /// Which compatibility pack the buttons below act on.
     Pack,
+    /// Which of your excluded window classes Remove acts on.
+    ExcludedClass,
 }
 
 #[derive(Clone, Copy, PartialEq, Eq)]
@@ -313,6 +315,7 @@ enum Button {
     PackInstall,
     PackRemove,
     ImportPack,
+    RemoveExcludedClass,
     TestRule,
     TestPicked,
     UndoLook,
@@ -486,6 +489,7 @@ fn choice_desc(ui: &Ui, id: Choice) -> &'static str {
             2 => "A new rule matches the package (Store apps). Falls back to the executable.",
             _ => "A new rule matches only the window class, across every app that uses it.",
         },
+        Choice::ExcludedClass => "Window classes you told AllBlack11 to leave alone in every app. Click to step through them, then Remove. To add one, type class=Name in the box above and press Add.",
         Choice::Pack => "Pick a compatibility pack, read what it can and cannot do below, then Install. A pack adds ordinary rules named \"Pack: …\" that your own rules override. Click to step to the next pack.",
         Choice::UpdateChannel => "Which releases to offer. Automatic follows the kind of build you run: a preview build is offered previews, a stable build only stable releases. Click to change.",
         Choice::AppAppearance => "Changes only AllBlack11's own windows, never the apps it styles. Click to switch between Windows setting, Light and Dark.",
@@ -511,6 +515,7 @@ fn choice_title(id: Choice) -> &'static str {
         Choice::AppAppearance => "AllBlack11 theme",
         Choice::UpdateChannel => "Update channel",
         Choice::Pack => "Pack",
+        Choice::ExcludedClass => "Excluded window class",
         Choice::DayScene => "Day scene",
         Choice::NightScene => "Night scene",
         Choice::DayStarts => "Day starts",
@@ -586,6 +591,7 @@ fn button_meta(id: Button) -> (&'static str, &'static str, &'static str) {
         Button::PackInstall => ("", "", "Install pack"),
         Button::PackRemove => ("", "", "Remove pack"),
         Button::ImportPack => ("", "", "Import pack…"),
+        Button::RemoveExcludedClass => ("", "", "Remove class"),
         Button::ExportRecipe => ("", "", "Export current…"),
         Button::CheckUpdates => ("", "", "Check for updates"),
         Button::DownloadUpdate => ("", "", "Download"),
@@ -1494,6 +1500,17 @@ impl Ui {
         };
         ui.push_colors_to_edits();
         ui.refresh_packs();
+        let edits = ui.all_edits();
+        let named = super::accname::label_edits(&edits);
+        if named != edits.len() {
+            super::wide::log_line(
+                "info",
+                &format!(
+                    "Named {named} of {} Settings text boxes for screen readers.",
+                    edits.len()
+                ),
+            );
+        }
         ui.init_onboarding();
         ui
     }
@@ -1952,6 +1969,7 @@ impl Ui {
                 | Choice::AppAppearance
                 | Choice::UpdateChannel
                 | Choice::Pack
+                | Choice::ExcludedClass
         ) {
             self.cycle_ext(id);
             return;
@@ -2013,7 +2031,24 @@ impl Ui {
                 self.commit();
             }
             Button::AddExclude => {
-                let name = file_name(&get_text(self.edits.exclude)).trim().to_string();
+                let typed = get_text(self.edits.exclude);
+                if let Some(class) = typed
+                    .trim()
+                    .get(..6)
+                    .filter(|head| head.eq_ignore_ascii_case("class="))
+                    .map(|_| typed.trim()[6..].to_string())
+                {
+                    match crate::add_excluded_class(&mut self.config, &class) {
+                        Ok(message) => {
+                            self.status = message;
+                            set_text(self.edits.exclude, "");
+                            self.commit();
+                        }
+                        Err(message) => self.status = message,
+                    }
+                    return;
+                }
+                let name = file_name(&typed).trim().to_string();
                 if name.is_empty() {
                     self.status = "Type an exe name to exclude.".into();
                     return;
@@ -3052,6 +3087,12 @@ fn choice_text(ui: &Ui, id: Choice) -> String {
         .to_string(),
         Choice::AppAppearance => ui.config.ui.appearance.label().to_string(),
         Choice::UpdateChannel => ui.config.updates.channel.label().to_string(),
+        Choice::ExcludedClass => ui
+            .config
+            .exclude_classes
+            .get(ui.ext.class_sel)
+            .cloned()
+            .unwrap_or_else(|| "None".to_string()),
         Choice::Pack => ui
             .ext
             .packs

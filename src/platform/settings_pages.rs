@@ -39,6 +39,7 @@ pub struct Ext {
     /// Compatibility packs: the built-in catalog first, then valid imported files (true).
     pub packs: Vec<(crate::Pack, bool)>,
     pub pack_sel: usize,
+    pub class_sel: usize,
     /// What the last pack install or removal did, in plain lines. Never saved.
     pub pack_report: Vec<String>,
     pub recipe_diff: Vec<String>,
@@ -618,11 +619,12 @@ impl Ui {
         }
         b.push(Row::Header("Never theme these apps"));
         b.push(Row::Note(
-            "Games and launchers belong here. Use the exe name, such as steam.exe.",
+            "Games and launchers belong here. Use the exe name, such as steam.exe. To leave a window class alone in every app instead, type class=Name.",
         ));
         b.push_h(Row::ExcludeList, list_height(self.config.exclude.len()));
         b.push(Row::AddField(Button::AddExclude));
         b.push(Row::Action(Button::RemoveExclude));
+        self.push_exclusions(&mut b);
         self.push_packs(&mut b);
         self.push_notebook(&mut b);
         self.push_legacy(&mut b);
@@ -2309,6 +2311,21 @@ impl Ui {
         }
     }
 
+    /// The exclusion manager: every reason a window is left alone, in order, and what is yours.
+    fn push_exclusions(&self, b: &mut Builder) {
+        b.push(Row::Header("Exclusion manager"));
+        let mut lines = crate::exclusion_summary(&self.config);
+        lines.extend(crate::exclusion_precedence());
+        b.push(Row::Lines(lines));
+        if !self.config.exclude_classes.is_empty() {
+            b.push(Row::Choice(Choice::ExcludedClass));
+            b.push(Row::Buttons(vec![Button::RemoveExcludedClass]));
+        }
+        b.push(Row::Note(
+            "To see why one app is or is not styled, use Test without applying above: it names the layer that wins.",
+        ));
+    }
+
     /// Compatibility packs: pick one, read what it does and what it cannot, install or remove it.
     fn push_packs(&self, b: &mut Builder) {
         b.push(Row::Header("Compatibility packs"));
@@ -2692,6 +2709,12 @@ impl Ui {
             Choice::RuleScope => {
                 self.ext.rule_scope = (self.ext.rule_scope + 1) % 4;
             }
+            Choice::ExcludedClass => {
+                let count = self.config.exclude_classes.len();
+                if count > 0 {
+                    self.ext.class_sel = (self.ext.class_sel + 1) % count;
+                }
+            }
             Choice::Pack => {
                 if !self.ext.packs.is_empty() {
                     self.ext.pack_sel = (self.ext.pack_sel + 1) % self.ext.packs.len();
@@ -2856,6 +2879,16 @@ impl Ui {
             Button::PreferAppDefaults => self.prefer_app_defaults(),
             Button::TryRecipe => self.try_recipe(),
             Button::ImportRecipe => self.import_recipe(),
+            Button::RemoveExcludedClass => {
+                match crate::remove_excluded_class(&mut self.config, self.ext.class_sel) {
+                    Some(class) => {
+                        self.status = format!("Window class {class} is styled again.");
+                        self.ext.class_sel = 0;
+                        self.commit();
+                    }
+                    None => self.status = "Pick a window class first.".into(),
+                }
+            }
             Button::PackInstall => self.install_selected_pack(),
             Button::PackRemove => self.remove_selected_pack(),
             Button::ImportPack => self.import_pack(),
