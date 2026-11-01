@@ -2,7 +2,7 @@ name: CI
 
 on:
   push:
-    branches: [main, 'claude/next-preview-3.6', 'claude/ui-polish-fluent', 'claude/workbench-3.7']
+    branches: [main, 'claude/next-preview-3.6', 'claude/ui-polish-fluent', 'claude/workbench-3.7', 'claude/next-3.8']
   pull_request:
   workflow_dispatch:
 
