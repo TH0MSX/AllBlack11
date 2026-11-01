@@ -8,8 +8,8 @@
 
 <a href="https://github.com/TH0MSX/AllBlack11/releases/tag/v3.7.0-preview.1"><img src="https://img.shields.io/github/v/release/TH0MSX/AllBlack11?include_prereleases&style=for-the-badge&color=5bb4f0&labelColor=000000" alt="Latest release"></a>
 <a href="https://github.com/TH0MSX/AllBlack11/releases/tag/v3.7.0-preview.1"><img src="https://img.shields.io/github/downloads/TH0MSX/AllBlack11/total?style=for-the-badge&color=5bb4f0&labelColor=000000" alt="Downloads"></a>
-<img src="https://img.shields.io/badge/native-ARM64%20%2B%20x64-018574?style=for-the-badge&labelColor=000000" alt="ARM64 and x64 native">
-<img src="https://img.shields.io/badge/admin-not%20required-018574?style=for-the-badge&labelColor=000000" alt="No admin">
+<img src="https://img.shields.io/badge/native-ARM64%20%2B%20x64-5bb4f0?style=for-the-badge&labelColor=000000" alt="ARM64 and x64 native">
+<img src="https://img.shields.io/badge/admin-not%20required-5bb4f0?style=for-the-badge&labelColor=000000" alt="No admin">
 <a href="LICENSE"><img src="https://img.shields.io/github/license/TH0MSX/AllBlack11?style=for-the-badge&color=5bb4f0&labelColor=000000" alt="MIT license"></a>
 
 [**⬇️ Download**](#-download) · [**🚀 Quick start**](#-quick-start) · [**✨ Features**](#-features) · [**🖱️ Settings**](#️-tray-menu-and-settings) · [**⚙️ Config**](#️-configuration) · [**🛡️ Safety**](#️-safety-and-uninstall) · [**❓ FAQ**](#-faq)
