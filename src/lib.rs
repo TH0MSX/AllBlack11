@@ -9,6 +9,7 @@ mod caption;
 mod commands;
 mod compat;
 mod config;
+mod contrast_lab;
 mod effects;
 mod explain;
 mod fixapp;
@@ -21,6 +22,7 @@ mod lkg;
 mod menu_model;
 mod onboarding;
 mod palette;
+mod playground;
 mod policy;
 mod presets;
 mod recipes;
@@ -53,6 +55,10 @@ pub use config::{
     base_style, bundled_default_json, parse_config, set_enabled_flag, Backdrop, Color, Config,
     Corners, DayNight, Features, FocusSettings, LegacySettings, PartialStyle, ReduceEffects, Rule,
     Style, UiSettings, FALLBACK_ACCENT_BGR,
+};
+pub use contrast_lab::{
+    check as contrast_check, lines as contrast_lines, palette_pairs as contrast_palette_pairs,
+    style_pairs as contrast_style_pairs,
 };
 pub use effects::{focus_style, reduce_reason, reduced, Explicit, SystemState};
 pub use explain::{
@@ -93,6 +99,10 @@ pub use onboarding::{
 pub use palette::{
     check_image, derive as derive_palette, sample_points, to_scene as palette_scene,
     Palette as ImagePalette, GRID as PALETTE_GRID, MAX_FILE_BYTES as IMAGE_MAX_BYTES,
+};
+pub use playground::{
+    evaluate as playground_evaluate, parse_subject as playground_parse,
+    Subject as PlaygroundSubject,
 };
 pub use policy::{
     decide, is_borderless_fullscreen, rect_covers_monitor, Decision, WindowFacts, WS_CHILD,

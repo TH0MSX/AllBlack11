@@ -30,6 +30,8 @@ pub struct Ext {
     pub selected: Option<WindowEntry>,
     pub report: Option<crate::Report>,
     pub report_lines: Vec<String>,
+    /// The last Rule playground answer. Never saved.
+    pub playground: Vec<String>,
     pub filter: String,
     pub recipes: Vec<(Recipe, Trust)>,
     pub recipe_sel: Option<usize>,
@@ -401,7 +403,33 @@ impl Ui {
         b.push(Row::Toggle(Toggle::Oled));
         b.push(Row::Toggle(Toggle::Black));
         b.push(Row::Action(Button::RestartExplorer));
+        self.push_contrast_lab(&mut b);
         b.out
+    }
+
+    /// Contrast Lab: the colors this look uses, measured, with the nearest fix for any that fail.
+    fn push_contrast_lab(&self, b: &mut Builder) {
+        let accent = registry::accent_bgr() & 0x00FF_FFFF;
+        let mut findings =
+            crate::contrast_check(&crate::contrast_style_pairs(&self.current_style(), accent));
+        findings.extend(crate::contrast_check(&crate::contrast_palette_pairs(
+            &crate::legacy_policy::palette(&self.config.legacy.palette),
+        )));
+        let failing = findings.iter().filter(|f| !f.pass).count();
+        let mut lines = vec![if failing == 0 {
+            format!("All {} measured pairs pass.", findings.len())
+        } else {
+            format!(
+                "{failing} of {} measured pairs fail. Each fix keeps the color's hue and moves it the least.",
+                findings.len()
+            )
+        }];
+        lines.extend(crate::contrast_lines(&findings));
+        b.push(Row::Header("Contrast check"));
+        b.push(Row::Note(
+            "Measures the colors this look uses, and the classic dialog palette. Hover, focus and selection colors of classic controls are drawn by Windows, so they are not measured here.",
+        ));
+        b.push(Row::Lines(lines));
     }
 
     /// The picker: button, hint, filter and window list.
@@ -548,6 +576,16 @@ impl Ui {
                 .collect()
         };
         b.push(Row::Lines(conflict_lines));
+        b.push(Row::Header("Test without applying"));
+        b.push(Row::Note(
+            "Type an app name in the box above (notepad.exe, or notepad.exe class=Notepad), then press Test. It shows which rule would win and why. Nothing is applied or saved.",
+        ));
+        b.push(Row::Buttons(vec![Button::TestRule, Button::TestPicked]));
+        if self.ext.playground.is_empty() {
+            b.push(Row::Note("No test yet. The answer appears here."));
+        } else {
+            b.push(Row::Lines(self.ext.playground.clone()));
+        }
         b.push(Row::Header("Never theme these apps"));
         b.push(Row::Note(
             "Games and launchers belong here. Use the exe name, such as steam.exe.",
@@ -2163,6 +2201,41 @@ impl Ui {
         };
     }
 
+    /// Rule playground, typed: the text in the rule box is read, never applied.
+    fn test_typed_rule(&mut self) {
+        match crate::playground_parse(&get_text(self.edits.rule)) {
+            Ok(subject) => {
+                self.ext.playground = crate::playground_evaluate(
+                    &self.config,
+                    &subject,
+                    registry::accent_bgr() & 0x00FF_FFFF,
+                );
+                self.status = "Tested. Nothing was applied.".into();
+            }
+            Err(message) => self.status = message,
+        }
+    }
+
+    /// Rule playground, with the window picked on Fix this app (its program and class only).
+    fn test_picked_window(&mut self) {
+        let Some(entry) = self.ext.selected.clone() else {
+            self.status =
+                "Nothing is picked. Pick a window on Fix this app, then test it here.".into();
+            return;
+        };
+        let subject = crate::PlaygroundSubject {
+            exe: entry.exe,
+            class: entry.class,
+            ..crate::PlaygroundSubject::default()
+        };
+        self.ext.playground = crate::playground_evaluate(
+            &self.config,
+            &subject,
+            registry::accent_bgr() & 0x00FF_FFFF,
+        );
+        self.status = "Tested the picked window. Nothing was applied.".into();
+    }
+
     pub fn toggle_ext(&mut self, id: Toggle) {
         match id {
             Toggle::FocusLook => self.config.focus.enabled = !self.config.focus.enabled,
@@ -2390,6 +2463,8 @@ impl Ui {
             Button::TryRecipe => self.try_recipe(),
             Button::ImportRecipe => self.import_recipe(),
             Button::ExportRecipe => self.export_recipe(),
+            Button::TestRule => self.test_typed_rule(),
+            Button::TestPicked => self.test_picked_window(),
             Button::RestoreLkg => {
                 cmdq::push(AppCommand::RestoreLastKnownGood);
                 self.post_command();

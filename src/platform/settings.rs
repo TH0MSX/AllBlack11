@@ -306,6 +306,8 @@ enum Button {
     TryRecipe,
     ImportRecipe,
     ExportRecipe,
+    TestRule,
+    TestPicked,
     RestoreLkg,
     ClearNotebook,
     ResetAllWindows,
@@ -557,6 +559,8 @@ fn button_meta(id: Button) -> (&'static str, &'static str, &'static str) {
         Button::TryRecipe => ("", "", "Try this look"),
         Button::ImportRecipe => ("", "", "Import…"),
         Button::ExportRecipe => ("", "", "Export current…"),
+        Button::TestRule => ("", "", "Test typed app"),
+        Button::TestPicked => ("", "", "Test picked window"),
         Button::RestoreLkg => ("", "", "Restore last known good"),
         Button::ClearNotebook => ("", "", "Clear notebook"),
         Button::ResetAllWindows => (

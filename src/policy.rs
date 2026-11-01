@@ -180,6 +180,77 @@ fn exe_listed(exe: &str, list: &[impl AsRef<str>]) -> bool {
     list.iter().any(|item| exe_matches(item.as_ref(), exe))
 }
 
+/// Why a target is never styled, for the exclusion manager and the rule playground. The order
+/// is the order `decide` checks them in, so the explanation names the reason that actually wins.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Exclusion {
+    /// A shell, menu or input window class AllBlack11 never touches. Cannot be changed.
+    ProtectedClass,
+    /// A class you listed in `excludeClasses`.
+    YourClass,
+    /// A shell host, service or AllBlack11 itself. Cannot be changed.
+    ProtectedProcess,
+    /// An app you listed under "Never theme these apps".
+    YourApp,
+    /// Explorer's own shell windows; its file windows are allowed.
+    ExplorerShell,
+}
+
+impl Exclusion {
+    /// Whether the user can lift it. A protected target stays protected whatever the lists say.
+    pub fn can_be_lifted(self) -> bool {
+        matches!(self, Exclusion::YourClass | Exclusion::YourApp)
+    }
+
+    pub fn explain(self) -> &'static str {
+        match self {
+            Exclusion::ProtectedClass => {
+                "This window class belongs to the shell, a menu or input UI. AllBlack11 never styles it, and no setting changes that."
+            }
+            Exclusion::YourClass => {
+                "You listed this window class as one to leave alone (excludeClasses in config.json). Remove it there to style it."
+            }
+            Exclusion::ProtectedProcess => {
+                "This process is a shell host, a system service or AllBlack11 itself. It is protected: it is never styled, and no list changes that."
+            }
+            Exclusion::YourApp => {
+                "You listed this app under Never theme these apps. Remove it from that list on the Rules page to style it."
+            }
+            Exclusion::ExplorerShell => {
+                "This is one of Explorer's shell windows. Only its file windows are styled."
+            }
+        }
+    }
+}
+
+/// The reason `decide` would skip this app or class on exclusion grounds, if any. Pure and kept
+/// in step with `decide` by a test, so the explanation cannot disagree with what happens.
+pub fn exclusion_for(exe: &str, class_name: &str, config: &Config) -> Option<Exclusion> {
+    if !class_name.is_empty() {
+        if class_listed(class_name, ALWAYS_SKIP_CLASSES) {
+            return Some(Exclusion::ProtectedClass);
+        }
+        if class_listed(class_name, &config.exclude_classes) {
+            return Some(Exclusion::YourClass);
+        }
+    }
+    if !exe.is_empty() {
+        if exe_listed(exe, ALWAYS_SKIP_PROCESSES) {
+            return Some(Exclusion::ProtectedProcess);
+        }
+        if exe_listed(exe, &config.exclude) {
+            return Some(Exclusion::YourApp);
+        }
+        if exe.eq_ignore_ascii_case("explorer.exe")
+            && class_name != "#32770"
+            && !class_listed(class_name, EXPLORER_ALLOWED_CLASSES)
+        {
+            return Some(Exclusion::ExplorerShell);
+        }
+    }
+    None
+}
+
 /// Shell hosts, services, and our own process. The experimental hook uses the same list.
 
 #[cfg(test)]
@@ -366,5 +437,67 @@ mod tests {
             decide(&normal_notepad(), &config, 0),
             Decision::Skip("class")
         ));
+    }
+
+    #[test]
+    fn exclusion_for_agrees_with_decide() {
+        let mut config = Config::default();
+        config.exclude.push("mygame.exe".to_string());
+        config.exclude_classes.push("MyOverlay".to_string());
+        let cases: [(&str, &str, Option<Exclusion>); 8] = [
+            ("notepad.exe", "Notepad", None),
+            ("mygame.exe", "GameWindow", Some(Exclusion::YourApp)),
+            ("notepad.exe", "MyOverlay", Some(Exclusion::YourClass)),
+            ("dwm.exe", "Foo", Some(Exclusion::ProtectedProcess)),
+            (
+                "notepad.exe",
+                "Shell_TrayWnd",
+                Some(Exclusion::ProtectedClass),
+            ),
+            ("explorer.exe", "Progman", Some(Exclusion::ProtectedClass)),
+            (
+                "explorer.exe",
+                "SomethingElse",
+                Some(Exclusion::ExplorerShell),
+            ),
+            ("explorer.exe", "CabinetWClass", None),
+        ];
+        for (exe, class, expected) in cases {
+            assert_eq!(
+                exclusion_for(exe, class, &config),
+                expected,
+                "{exe} {class}"
+            );
+            let mut facts = normal_notepad();
+            facts.exe = exe.to_string();
+            facts.class_name = class.to_string();
+            let skipped_for_exclusion = matches!(
+                decide(&facts, &config, 0),
+                Decision::Skip("excluded" | "class" | "explorer-shell")
+            );
+            assert_eq!(
+                skipped_for_exclusion,
+                expected.is_some(),
+                "decide and exclusion_for disagree for {exe} / {class}"
+            );
+        }
+    }
+
+    #[test]
+    fn protected_targets_cannot_be_lifted_and_your_lists_can() {
+        assert!(!Exclusion::ProtectedClass.can_be_lifted());
+        assert!(!Exclusion::ProtectedProcess.can_be_lifted());
+        assert!(!Exclusion::ExplorerShell.can_be_lifted());
+        assert!(Exclusion::YourApp.can_be_lifted());
+        assert!(Exclusion::YourClass.can_be_lifted());
+        for e in [
+            Exclusion::ProtectedClass,
+            Exclusion::YourClass,
+            Exclusion::ProtectedProcess,
+            Exclusion::YourApp,
+            Exclusion::ExplorerShell,
+        ] {
+            assert!(!e.explain().is_empty());
+        }
     }
 }
