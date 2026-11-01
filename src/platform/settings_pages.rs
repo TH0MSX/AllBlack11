@@ -18,6 +18,8 @@ use super::super::inspect::{self, WindowEntry};
 
 #[path = "setup_ui.rs"]
 mod setup;
+#[path = "uia_ui.rs"]
+mod uia_bridge;
 pub use setup::{paint_tip, paint_tutorial_highlight, SetupUi, TutorialRun};
 
 pub const CMD_RESET_ALL: usize = 4;
@@ -1130,6 +1132,9 @@ impl Ui {
             _ => {}
         }
         self.relayout(hwnd);
+        // A screen reader is told the content changed, and where focus now is.
+        unsafe { uia::raise_layout_changed(hwnd) };
+        self.uia_announce_focus(hwnd);
     }
 
     fn post_command(&self) {
@@ -1373,6 +1378,8 @@ impl Ui {
                 Row::Buttons(list) => Some((index, list.len())),
                 Row::Presets => Some((index, PRESETS.len())),
                 Row::LookList if self.look_count() > 0 => Some((index, self.look_count())),
+                // Sliders are reachable by keyboard: Left and Right change the value.
+                Row::Slider(_) => Some((index, 1)),
                 _ => None,
             })
             .collect()
@@ -1382,6 +1389,11 @@ impl Ui {
     /// content's controls follow it in reading order, and Tab from the last control comes back
     /// to the pane, so focus is never trapped (Microsoft: keyboard accessibility).
     pub fn move_focus(&mut self, hwnd: HWND, backwards: bool) {
+        self.move_focus_inner(hwnd, backwards);
+        self.uia_announce_focus(hwnd);
+    }
+
+    fn move_focus_inner(&mut self, hwnd: HWND, backwards: bool) {
         let list = self.interactive_rows();
         let has_nav = self.nav_w > 0;
         if self.ext.nav_focus {
@@ -1428,6 +1440,37 @@ impl Ui {
         self.scroll_focus_into_view(hwnd);
     }
 
+    /// Left/Right: change a focused slider by 5 percent, otherwise move within the focused
+    /// composite control (a row of buttons, a list).
+    pub fn arrow_key(&mut self, hwnd: HWND, delta: i32) {
+        let list = self.interactive_rows();
+        let rows = self.rows();
+        let slider = self
+            .ext
+            .focus
+            .and_then(|ordinal| list.get(ordinal))
+            .and_then(|(row_index, _)| rows.get(*row_index))
+            .and_then(|laid| match laid.row {
+                Row::Slider(id) => Some(id),
+                _ => None,
+            });
+        if let Some(id) = slider {
+            if self.trial_active() {
+                self.status = "Keep or revert the trial look first.".into();
+                return;
+            }
+            let (fraction, _) = slider_state(self, id);
+            let (x0, x1) = slider_track(self.lw(hwnd));
+            let next = (fraction + 0.05 * delta as f32).clamp(0.0, 1.0);
+            let lx = x0 + ((x1 - x0) as f32 * next).round() as i32;
+            self.set_slider(hwnd, id, lx);
+            self.commit();
+        } else {
+            self.move_sub(delta);
+        }
+        self.uia_announce_focus(hwnd);
+    }
+
     pub fn move_sub(&mut self, delta: i32) {
         let list = self.interactive_rows();
         let Some((_, count)) = self.ext.focus.and_then(|index| list.get(index).copied()) else {
@@ -1437,6 +1480,10 @@ impl Ui {
             self.ext.focus_sub =
                 (self.ext.focus_sub as i32 + delta).rem_euclid(count as i32) as usize;
         }
+    }
+
+    pub fn scroll_focus_into_view_pub(&mut self, hwnd: HWND) {
+        self.scroll_focus_into_view(hwnd);
     }
 
     fn scroll_focus_into_view(&mut self, hwnd: HWND) {

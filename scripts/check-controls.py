@@ -13,7 +13,7 @@ from pathlib import Path
 
 platform = Path(sys.argv[1] if len(sys.argv) > 1 else "src/platform")
 settings = (platform / "settings.rs").read_text()
-pages = (platform / "settings_pages.rs").read_text()
+pages = (platform / "settings_pages.rs").read_text() + "\n" + (platform / "setup_ui.rs").read_text()
 
 
 def enum_variants(name):
@@ -25,7 +25,7 @@ def enum_variants(name):
 
 def builder_bodies(text):
     bodies = []
-    for m in re.finditer(r"\n    (?:pub )?fn ((?:rows|push)_\w+)\(", text):
+    for m in re.finditer(r"\n    (?:pub )?fn ((?:rows|push|with)_\w+)\(", text):
         start = text.index("{", m.end())
         depth = 0
         for i in range(start, len(text)):

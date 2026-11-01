@@ -58,6 +58,8 @@ mod controls;
 mod pages;
 #[path = "cmdpal.rs"]
 mod palette_ui;
+#[path = "uia.rs"]
+mod uia;
 #[path = "uistyle.rs"]
 mod uistyle;
 
@@ -751,6 +753,17 @@ unsafe extern "system" fn wndproc(hwnd: HWND, msg: u32, wparam: WPARAM, lparam: 
         if let Some(ui) = get_ui(hwnd).as_mut() {
             ui.refresh_theme(hwnd);
         }
+        // QA aid: walk the UI Automation tree through its COM vtables and write the result.
+        if std::env::var_os("ALLBLACK11_UIA_SELFTEST").is_some() {
+            let handle = hwnd as isize;
+            std::thread::spawn(move || {
+                // Let the first paint and layout finish.
+                std::thread::sleep(std::time::Duration::from_millis(1500));
+                let report = uia::self_test(handle as HWND);
+                let text = report.join("\r\n");
+                let _ = write_atomic(&config_dir().join("uia-selftest.txt"), &text);
+            });
+        }
         return 0;
     }
     if msg == WM_GETMINMAXINFO {
@@ -767,6 +780,18 @@ unsafe extern "system" fn wndproc(hwnd: HWND, msg: u32, wparam: WPARAM, lparam: 
     let ui = &mut *ui;
     match msg {
         WM_ERASEBKGND => 1,
+        // WM_GETOBJECT: a screen reader or other UI Automation client asks about this window.
+        0x003D => match uia::handle_get_object(hwnd, wparam, lparam) {
+            Some(result) => result,
+            None => DefWindowProcW(hwnd, msg, wparam, lparam),
+        },
+        // Questions from the UI Automation provider objects, always answered on this thread.
+        uia::WM_UIA_QUERY => {
+            if let Some(query) = (lparam as *mut uia::Query).as_mut() {
+                ui.uia_answer(hwnd, query);
+            }
+            0
+        }
         WM_PAINT => {
             paint(hwnd, ui);
             0
@@ -969,12 +994,12 @@ unsafe extern "system" fn wndproc(hwnd: HWND, msg: u32, wparam: WPARAM, lparam: 
                     return 0;
                 }
                 0x25 if ui.ext.focus.is_some() => {
-                    ui.move_sub(-1);
+                    ui.arrow_key(hwnd, -1);
                     InvalidateRect(hwnd, std::ptr::null(), 0);
                     return 0;
                 }
                 0x27 if ui.ext.focus.is_some() => {
-                    ui.move_sub(1);
+                    ui.arrow_key(hwnd, 1);
                     InvalidateRect(hwnd, std::ptr::null(), 0);
                     return 0;
                 }
@@ -1017,6 +1042,7 @@ unsafe extern "system" fn wndproc(hwnd: HWND, msg: u32, wparam: WPARAM, lparam: 
             0
         }
         WM_DESTROY => {
+            uia::disconnect(hwnd);
             SETTINGS.store(0, Ordering::Release);
             let ui = Box::from_raw(take_ui(hwnd));
             ui.fonts.delete();
