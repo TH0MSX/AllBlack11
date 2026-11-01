@@ -115,6 +115,8 @@ const TIMER_CLICK: usize = 4;
 const TIMER_TRIAL: usize = 5;
 /// One-shot timer for the next Day/Night boundary. Re-armed after every evaluation.
 const TIMER_SCHEDULE: usize = 6;
+/// One-shot: has the running config been stable long enough to become the last known good?
+const TIMER_LKG: usize = 7;
 const HOTKEY_PALETTE: i32 = 1;
 const TRY_WINDOW_MS: u64 = 20_000;
 
@@ -198,6 +200,8 @@ struct App {
     last_ops: HashMap<i64, OpRecord>,
     /// All trial decisions live in `crate::trial`, which has the tests.
     trial: crate::TrialMachine,
+    /// The config that is running and has not yet earned "last known good".
+    lkg: crate::LkgPromotion,
     /// Emergency pause: windows are put back and nothing new is styled until Resume. Held in
     /// memory only, so a restart always begins from the saved settings.
     paused: bool,
@@ -541,7 +545,7 @@ fn run() -> Result<(), String> {
     // Must be read before `load_config` writes a default config: no config file means a fresh
     // install (first-run setup), a config file means an upgrade (never prompt).
     let fresh_install = !config_path().exists();
-    let (mut config, config_warning) = load_config();
+    let (mut config, config_warning, lkg_candidate) = load_config();
     init_onboarding(fresh_install);
     let (startup_mode, startup_marker) = begin_session();
     if startup_mode.is_safe() {
@@ -585,6 +589,7 @@ fn run() -> Result<(), String> {
         reduce: None,
         last_ops: HashMap::new(),
         trial: crate::TrialMachine::default(),
+        lkg: crate::LkgPromotion::default(),
         paused: false,
         scene_undo: None,
         accents: cfgio::load_accents(),
@@ -597,6 +602,9 @@ fn run() -> Result<(), String> {
         config,
     };
     app.prune_dead();
+    if let Some(text) = lkg_candidate {
+        app.offer_lkg(text);
+    }
     APP_HWND.store(hwnd as isize, Ordering::Relaxed);
     uxtheme::allow_dark_menus(!app.high_contrast);
     uxtheme::allow_window(hwnd, true);
@@ -727,7 +735,10 @@ fn begin_session() -> (crate::StartupMode, crate::StartupMarker) {
     (mode, marker)
 }
 
-fn load_config() -> (crate::Config, Option<String>) {
+/// The config to run, a warning to show if the file was not used, and (only when `config.json`
+/// itself parsed) its text as a *candidate* for the last known good copy: it is promoted later,
+/// after it has actually run (`LkgPromotion`), never just for parsing.
+fn load_config() -> (crate::Config, Option<String>, Option<String>) {
     let path = config_path();
     if let Some(parent) = path.parent() {
         let _ = std::fs::create_dir_all(parent);
@@ -737,7 +748,7 @@ fn load_config() -> (crate::Config, Option<String>) {
         if wide::write_atomic(&path, bundled_default_json()).is_err() {
             log_line("error", "could not write the default config");
         }
-        return (crate::pick_config(None, None).config, None);
+        return (crate::pick_config(None, None).config, None, None);
     }
     let primary = match std::fs::read_to_string(&path) {
         Ok(text) => text,
@@ -746,6 +757,7 @@ fn load_config() -> (crate::Config, Option<String>) {
             String::new()
         }
     };
+    let mut candidate = None;
     let picked = crate::pick_config(Some(&primary), cfgio::load_lkg().as_deref());
     match picked.source {
         crate::ConfigSource::Primary => {
@@ -756,7 +768,7 @@ fn load_config() -> (crate::Config, Option<String>) {
                     let _ = wide::write_atomic(&backup, &primary);
                 }
             }
-            cfgio::save_lkg(&primary)
+            candidate = Some(primary.clone());
         }
         _ => {
             if let Some(warning) = &picked.warning {
@@ -764,7 +776,7 @@ fn load_config() -> (crate::Config, Option<String>) {
             }
         }
     }
-    (picked.config, picked.warning)
+    (picked.config, picked.warning, candidate)
 }
 
 fn load_snapshots() -> HashMap<i64, StoredSnapshot> {
@@ -928,6 +940,8 @@ unsafe extern "system" fn wndproc(hwnd: HWND, msg: u32, wparam: WPARAM, lparam: 
                 with_app(|app| app.fire_due());
             } else if wparam == TIMER_TRIAL {
                 with_app(|app| app.expire_trials());
+            } else if wparam == TIMER_LKG {
+                with_app(|app| app.promote_lkg(false));
             } else if wparam == TIMER_SCHEDULE {
                 if with_app(|app| app.schedule_tick()).unwrap_or(false) {
                     shellwin::broadcast_immersive_color();
@@ -1398,6 +1412,9 @@ fn shutdown() {
         return;
     }
     app.shut_down = true;
+    // A clean exit after a real run is evidence the config worked; do it before anything is torn
+    // down, while the state it depends on is still true.
+    app.promote_lkg(true);
     app.sync_hotkey();
     APP_HWND.store(0, Ordering::Relaxed);
     let _ = wide::write_atomic(
@@ -1539,6 +1556,54 @@ impl App {
             if !handle.is_null() {
                 unsafe { DestroyIcon(handle) };
             }
+        }
+    }
+
+    /// A parsed config is now being applied. It becomes the "last known good" copy only after it
+    /// has run (see `lkg::Promotion`); the clock restarts with every new offer.
+    fn offer_lkg(&mut self, text: String) {
+        let now = unsafe { GetTickCount64() };
+        self.lkg.offer(&text, now);
+        unsafe { SetTimer(self.hwnd, TIMER_LKG, crate::LKG_STABLE_MS as u32, None) };
+    }
+
+    /// Whether this run is a real test of the config: styling is on, nothing is paused, no trial
+    /// is substituting another config, and safe mode has not forced parts of it off.
+    fn lkg_eligible(&self) -> bool {
+        self.config.enabled
+            && !self.paused
+            && !self.high_contrast
+            && !self.safe.is_safe()
+            && !self.trial.is_active()
+    }
+
+    fn promote_lkg(&mut self, clean_exit: bool) {
+        if !self.lkg.is_pending() {
+            unsafe { KillTimer(self.hwnd, TIMER_LKG) };
+            return;
+        }
+        let now = unsafe { GetTickCount64() };
+        let eligible = self.lkg_eligible();
+        let promoted = if clean_exit {
+            self.lkg.clean_exit(now, eligible)
+        } else {
+            self.lkg.stable(now, eligible)
+        };
+        match promoted {
+            Some(text) => {
+                unsafe { KillTimer(self.hwnd, TIMER_LKG) };
+                cfgio::save_lkg(&text);
+                log_line(
+                    "info",
+                    "config recorded as last known good after running cleanly",
+                );
+            }
+            // Not stable yet, or this run does not count: look again in a minute. The timer is
+            // killed above when there is nothing left to promote.
+            None if !clean_exit => unsafe {
+                SetTimer(self.hwnd, TIMER_LKG, crate::LKG_STABLE_MS as u32, None);
+            },
+            None => {}
         }
     }
 
@@ -1767,7 +1832,7 @@ impl App {
                 return false;
             }
         };
-        cfgio::save_lkg(&text);
+        self.offer_lkg(text.clone());
         self.config = new;
         self.enforce_safe_mode();
         self.refresh_reduce();

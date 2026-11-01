@@ -877,7 +877,8 @@ mod win {
                     bottom: (HEADER_H as f32 * state.k) as i32,
                 };
                 FillRect(dc, &header, state.black);
-                let teal = CreateSolidBrush(0x0074_8501);
+                // The brand's cool accent (the same blue as the icon's window frame).
+                let teal = CreateSolidBrush(0x00F0_B45B);
                 let line = RECT {
                     left: 0,
                     top: header.bottom - (3.0 * state.k) as i32,
@@ -900,12 +901,46 @@ mod win {
                         let text = wide(text);
                         DrawTextW(dc, text.as_ptr(), -1, &mut rect, 0x0020 | 0x0800);
                     };
-                draw("AllBlack11", state.title_font, 0x00FF_FFFF, 28, 18, 58);
+                // The brand mark leads the header, drawn from the icon resource at the right size.
+                let mark = (56.0 * state.k) as i32;
+                let instance = GetModuleHandleW(null());
+                let icon = windows_sys::Win32::UI::WindowsAndMessaging::LoadImageW(
+                    instance,
+                    1 as *const u16,
+                    windows_sys::Win32::UI::WindowsAndMessaging::IMAGE_ICON,
+                    mark,
+                    mark,
+                    windows_sys::Win32::UI::WindowsAndMessaging::LR_SHARED,
+                );
+                let text_left = if icon.is_null() {
+                    28
+                } else {
+                    windows_sys::Win32::UI::WindowsAndMessaging::DrawIconEx(
+                        dc,
+                        (28.0 * state.k) as i32,
+                        ((HEADER_H as f32 * state.k) as i32 - mark) / 2 - (1.5 * state.k) as i32,
+                        icon as _,
+                        mark,
+                        mark,
+                        0,
+                        null_mut(),
+                        windows_sys::Win32::UI::WindowsAndMessaging::DI_NORMAL,
+                    );
+                    28 + 56 + 16
+                };
+                draw(
+                    "AllBlack11",
+                    state.title_font,
+                    0x00FF_FFFF,
+                    text_left,
+                    20,
+                    58,
+                );
                 draw(
                     &format!("{} · true black for Windows 11", display_version()),
                     state.small_font,
                     0x00B0_B0B0,
-                    30,
+                    text_left + 2,
                     60,
                     84,
                 );

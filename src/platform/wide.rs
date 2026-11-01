@@ -103,20 +103,9 @@ pub fn migrate_legacy_config() {
     );
 }
 
-/// Write `text` next to `path`, then rename over it, so a crash or a full disk never
-/// leaves a half-written config or backup behind.
+/// Write `text` so a crash or a full disk never leaves a half-written file (see `atomic`).
 pub fn write_atomic(path: &std::path::Path, text: &str) -> Result<(), String> {
-    if let Some(parent) = path.parent() {
-        std::fs::create_dir_all(parent).map_err(|err| err.to_string())?;
-    }
-    let mut tmp = path.as_os_str().to_owned();
-    tmp.push(".tmp");
-    let tmp = PathBuf::from(tmp);
-    std::fs::write(&tmp, text).map_err(|err| err.to_string())?;
-    std::fs::rename(&tmp, path).map_err(|err| {
-        let _ = std::fs::remove_file(&tmp);
-        err.to_string()
-    })
+    crate::write_atomic(path, text)
 }
 
 pub fn lkg_path() -> PathBuf {

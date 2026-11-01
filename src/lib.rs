@@ -3,6 +3,7 @@
 
 mod accents;
 mod arch;
+mod atomic;
 mod brand;
 mod caption;
 mod commands;
@@ -38,6 +39,7 @@ mod version;
 
 pub use accents::{key_for as accent_key, Accents, PALETTE as ACCENT_PALETTE};
 pub use arch::{classify, machine_name, ArchStatus, BUILD_MACHINE};
+pub use atomic::write_atomic;
 pub use brand::{
     credit_text, is_safe_profile_url, CREATOR, CREDIT_LINK_NAME, CREDIT_PREFIX, CREDIT_URL,
     NAME as BRAND_NAME, TAGLINE as BRAND_TAGLINE, VERIFICATION_STATUS,
@@ -76,7 +78,10 @@ pub use legacy_policy::{
     capability, contrast_ratio, host_kind, palette, window_verdict, Capability, HostKind, Level,
     Palette, SharedState, Tech, Verdict, PALETTES,
 };
-pub use lkg::{is_pre_schema_2, pick as pick_config, Picked, Source as ConfigSource};
+pub use lkg::{
+    is_pre_schema_2, pick as pick_config, Picked, Promotion as LkgPromotion,
+    Source as ConfigSource, MIN_CLEAN_MS as LKG_MIN_CLEAN_MS, STABLE_MS as LKG_STABLE_MS,
+};
 pub use menu_model::{
     flatten as flatten_menu, Drawn as MenuDrawn, Item as MenuItem, ItemKind as MenuItemKind,
 };
