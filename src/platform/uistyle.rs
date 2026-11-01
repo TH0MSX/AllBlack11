@@ -163,6 +163,11 @@ pub fn style_font(style: TextStyle, effective_dpi: u32) -> HFONT {
     create_font(&family, effective_dpi, style.size, style.weight)
 }
 
+/// Is an icon font installed at all? Without one the navigation pane shows labels only.
+pub fn icon_font_available() -> bool {
+    ICON_FONTS.iter().any(|name| font_installed(name))
+}
+
 /// The icon font, or null when neither Segoe Fluent Icons nor Segoe MDL2 Assets is installed.
 pub fn icon_font(effective_dpi: u32, size: i32) -> HFONT {
     for name in ICON_FONTS {

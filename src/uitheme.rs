@@ -330,6 +330,8 @@ pub mod metrics {
     pub const CARD_GAP: i32 = 4;
     pub const NAV_EXPANDED: i32 = 216;
     pub const NAV_COMPACT: i32 = 48;
+    /// Used when no icon font is installed: labels only, never an unlabeled rail.
+    pub const NAV_TEXT_ONLY: i32 = 168;
     /// Below this client width the navigation pane collapses to icons.
     pub const NAV_BREAKPOINT: i32 = 720;
     /// A comfortable minimum target (Microsoft recommends 40 px for touch; mouse targets may be
@@ -571,6 +573,7 @@ mod tests {
             CARD_GAP,
             NAV_EXPANDED,
             NAV_COMPACT,
+            NAV_TEXT_ONLY,
             TARGET,
             MIN_TARGET,
         ] {

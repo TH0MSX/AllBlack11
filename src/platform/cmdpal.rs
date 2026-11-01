@@ -226,6 +226,9 @@ unsafe extern "system" fn palette_proc(
             );
             PALETTE.store(hwnd as isize, Ordering::Release);
             uxtheme::allow_window(hwnd, true);
+            // Overlays round at 8 px (Microsoft: geometry); the system draws the corners.
+            let round: u32 = 2;
+            DwmSetWindowAttribute(hwnd, 33, &round as *const u32 as *const _, 4);
             if let Some(pal) = state(hwnd) {
                 resize(hwnd, pal);
             }

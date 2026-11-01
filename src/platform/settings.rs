@@ -178,6 +178,9 @@ struct Ui {
     drag: Option<Slider>,
     /// Pointer position and the control under it, for hover and pressed states.
     pointer: controls::Pointer,
+    /// The tooltip window for the icon-only navigation rail, and the label text it points at.
+    nav_tips: HWND,
+    nav_tip_text: Vec<Vec<u16>>,
     /// Width of the navigation pane in logical px (0 while the setup flow is showing).
     nav_w: i32,
     /// Left edge of the content in client logical px: the navigation pane's width, plus centering
@@ -769,7 +772,12 @@ unsafe extern "system" fn wndproc(hwnd: HWND, msg: u32, wparam: WPARAM, lparam: 
     if msg == WM_GETMINMAXINFO {
         let info = &mut *(lparam as *mut MINMAXINFO);
         let k = crate::layout_scale(dpi_of(hwnd), uistyle::text_scale_percent());
-        info.ptMinTrackSize.x = ((MIN_W + crate::ui_metrics::NAV_COMPACT + 16) as f32 * k) as i32;
+        let nav_min = if uistyle::icon_font_available() {
+            crate::ui_metrics::NAV_COMPACT
+        } else {
+            crate::ui_metrics::NAV_TEXT_ONLY
+        };
+        info.ptMinTrackSize.x = ((MIN_W + nav_min + 16) as f32 * k) as i32;
         info.ptMinTrackSize.y = ((MIN_H + 47) as f32 * k) as i32;
         return 0;
     }
@@ -1166,6 +1174,8 @@ impl Ui {
             scroll: 0,
             drag: None,
             pointer: controls::Pointer::default(),
+            nav_tips: std::ptr::null_mut(),
+            nav_tip_text: Vec::new(),
             nav_w: crate::ui_metrics::NAV_EXPANDED,
             content_x: crate::ui_metrics::NAV_EXPANDED,
             client_lh: 0,
@@ -1285,6 +1295,9 @@ impl Ui {
     fn pick_nav_w(&self, hwnd: HWND) -> i32 {
         if self.ext.setup_active() {
             0
+        } else if !uistyle::icon_font_available() {
+            // No icons to collapse to: keep the labels at every width.
+            crate::ui_metrics::NAV_TEXT_ONLY
         } else if self.client_lw(hwnd) >= crate::ui_metrics::NAV_BREAKPOINT {
             crate::ui_metrics::NAV_EXPANDED
         } else {
@@ -1309,7 +1322,81 @@ impl Ui {
         let max_scroll = (self.content_height() - view).max(0);
         self.scroll = self.scroll.clamp(0, max_scroll);
         self.position_edits(hwnd);
+        self.update_nav_tooltips(hwnd);
         unsafe { InvalidateRect(hwnd, std::ptr::null(), 0) };
+    }
+
+    /// In the icon-only rail a pointer needs the names: one system tooltip per destination.
+    /// (Screen readers get the same names from UI Automation.)
+    fn update_nav_tooltips(&mut self, hwnd: HWND) {
+        use windows_sys::Win32::UI::Controls::{
+            InitCommonControlsEx, ICC_WIN95_CLASSES, INITCOMMONCONTROLSEX, TTF_SUBCLASS,
+            TTM_ADDTOOLW, TTM_DELTOOLW, TTS_ALWAYSTIP, TTS_NOPREFIX, TTTOOLINFOW,
+        };
+        let compact = self.nav_w == crate::ui_metrics::NAV_COMPACT;
+        if self.nav_tips.is_null() {
+            if !compact {
+                return;
+            }
+            unsafe {
+                let init = INITCOMMONCONTROLSEX {
+                    dwSize: std::mem::size_of::<INITCOMMONCONTROLSEX>() as u32,
+                    dwICC: ICC_WIN95_CLASSES,
+                };
+                InitCommonControlsEx(&init);
+                let class = to_wide("tooltips_class32");
+                self.nav_tips = CreateWindowExW(
+                    windows_sys::Win32::UI::WindowsAndMessaging::WS_EX_TOPMOST,
+                    pcw(&class),
+                    std::ptr::null(),
+                    windows_sys::Win32::UI::WindowsAndMessaging::WS_POPUP
+                        | TTS_ALWAYSTIP
+                        | TTS_NOPREFIX,
+                    0,
+                    0,
+                    0,
+                    0,
+                    hwnd,
+                    std::ptr::null_mut(),
+                    GetModuleHandleW(std::ptr::null()),
+                    std::ptr::null(),
+                );
+            }
+            if self.nav_tips.is_null() {
+                return;
+            }
+        }
+        // Remove the tools added last time, then add one per destination if the rail is showing.
+        self.nav_tip_text = Page::ALL
+            .iter()
+            .map(|page| to_wide(page.nav_label()))
+            .collect();
+        for index in 0..Page::ALL.len() {
+            let mut tool: TTTOOLINFOW = unsafe { std::mem::zeroed() };
+            tool.cbSize = std::mem::size_of::<TTTOOLINFOW>() as u32;
+            tool.hwnd = hwnd;
+            tool.uId = index;
+            unsafe { SendMessageW(self.nav_tips, TTM_DELTOOLW, 0, &tool as *const _ as LPARAM) };
+        }
+        if !compact {
+            return;
+        }
+        for (index, text) in self.nav_tip_text.iter().enumerate() {
+            let (l, t, r, b) = pages::nav_item_rect(self, index);
+            let mut tool: TTTOOLINFOW = unsafe { std::mem::zeroed() };
+            tool.cbSize = std::mem::size_of::<TTTOOLINFOW>() as u32;
+            tool.uFlags = TTF_SUBCLASS;
+            tool.hwnd = hwnd;
+            tool.uId = index;
+            tool.rect = RECT {
+                left: self.px(l),
+                top: self.px(t),
+                right: self.px(r),
+                bottom: self.px(b),
+            };
+            tool.lpszText = text.as_ptr() as *mut u16;
+            unsafe { SendMessageW(self.nav_tips, TTM_ADDTOOLW, 0, &tool as *const _ as LPARAM) };
+        }
     }
 
     /// Mouse position to (logical x, content y). None above the scrolling region.
@@ -2241,16 +2328,10 @@ fn paint_row(c: &Canvas, ui: &Ui, row: &Laid, top: i32, lw: i32) {
                 fonts.body,
                 DT_LEFT | DT_VCENTER | DT_SINGLELINE,
             );
-            c.text(
-                right - 30,
-                mid - 16,
-                right - 8,
-                mid + 16,
-                "▾",
-                th().muted,
-                fonts.body,
-                DT_CENTER | DT_VCENTER | DT_SINGLELINE,
-            );
+            // A drawn chevron, not a glyph: it never depends on a font having the character.
+            let (cx, cy) = (right - 19, mid);
+            c.line(cx - 4, cy - 2, cx, cy + 2, th().muted, 2);
+            c.line(cx, cy + 2, cx + 4, cy - 2, th().muted, 2);
         }
         Row::Slider(id) => {
             card(c, top, row.h, lw);
@@ -2298,16 +2379,45 @@ fn paint_row(c: &Canvas, ui: &Ui, row: &Laid, top: i32, lw: i32) {
                 ID_TEXT => style.text,
                 _ => style.acrylic_tint,
             };
-            c.text(
-                left,
-                top,
-                right - 180,
-                top + card_h,
-                color_label(*id),
-                th().text,
-                fonts.body,
-                DT_LEFT | DT_VCENTER | DT_SINGLELINE,
-            );
+            // A box that does not hold a usable color says so, in words and with a mark, not
+            // only in color. The look keeps the last valid value meanwhile.
+            let invalid = ui
+                .color_edit(*id)
+                .map(get_text)
+                .is_some_and(|text| parse_color(text.trim()).is_err());
+            if invalid {
+                c.text(
+                    left,
+                    top + 6,
+                    right - 180,
+                    top + 28,
+                    color_label(*id),
+                    th().text,
+                    fonts.body,
+                    DT_LEFT | DT_VCENTER | DT_SINGLELINE,
+                );
+                c.text(
+                    left,
+                    top + 28,
+                    right - 150,
+                    top + card_h - 2,
+                    "⚠ Not a color yet. Use #RRGGBB, accent, none or default.",
+                    th().bad,
+                    fonts.small,
+                    DT_LEFT | DT_VCENTER | DT_SINGLELINE | DT_END_ELLIPSIS,
+                );
+            } else {
+                c.text(
+                    left,
+                    top,
+                    right - 180,
+                    top + card_h,
+                    color_label(*id),
+                    th().text,
+                    fonts.body,
+                    DT_LEFT | DT_VCENTER | DT_SINGLELINE,
+                );
+            }
             draw_swatch(c, right - 120 - 34, top + card_h / 2 - 9, color, ui.accent);
         }
         Row::Presets => {

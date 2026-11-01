@@ -435,7 +435,7 @@ impl Ui {
             if !plan.actions.is_empty() {
                 b.push(Row::Header("Safe actions"));
                 b.push(Row::Note(
-                    "Preview shows the look from the Effects page on this one window for 20 seconds, then puts it back. Nothing is saved until you press Save as rule.",
+                    "Preview shows the look from the Appearance page on this one window for 20 seconds, then puts it back. Nothing is saved until you press Save as rule.",
                 ));
                 b.push(Row::Choice(Choice::RuleScope));
                 let buttons = plan
@@ -494,7 +494,7 @@ impl Ui {
         b.push(page_title(Page::Rules));
         b.push(Row::Header("Per-app rules"));
         b.push(Row::Note(
-            "Most specific match wins, then the higher priority, then the earlier rule. Pick a rule to edit its look on the Effects page.",
+            "Most specific match wins, then the higher priority, then the earlier rule. Pick a rule to edit its look on the Appearance page.",
         ));
         b.push_h(Row::RuleList, list_height(self.config.rules.len()));
         if let Some(rule) = self.rule.and_then(|index| self.config.rules.get(index)) {
@@ -607,7 +607,7 @@ impl Ui {
         b.push(Row::Header("Identity accents (optional)"));
         b.push(Row::Toggle(Toggle::IdentityAccents));
         b.push(Row::Note(
-            "Pick an app on the Apps page to change its accent. Colors are chosen once per app, saved on this PC (app names only, never window titles), and stay the same.",
+            "Pick an app on Fix this app to change its accent. Colors are chosen once per app, saved on this PC (app names only, never window titles), and stay the same.",
         ));
         b.push(Row::Header("Recipes"));
         b.push(Row::Note(
@@ -695,7 +695,7 @@ impl Ui {
 }
 
 impl Ui {
-    /// Compatibility notebook summary (moved from the old Profiles page to sit next to the
+    /// Compatibility notebook summary (sits with the rules, next to the
     /// per-app notes it summarizes).
     fn push_notebook(&self, b: &mut Builder) {
         b.push(Row::Header("Compatibility notebook"));
@@ -719,7 +719,7 @@ impl Ui {
                 counts[2],
                 counts[3]
             ),
-            "Notes stay on this PC (compat.json). Nothing is sent anywhere. Add one from the Apps page.".to_string(),
+            "Notes stay on this PC (compat.json). Nothing is sent anywhere. Add one from Fix this app.".to_string(),
         ]));
         b.push(Row::Buttons(vec![Button::ClearNotebook]));
     }
@@ -803,7 +803,7 @@ impl Ui {
         b.push(Row::Header("x64 helper (ARM64 only)"));
         b.push(Row::About(vec![super::super::legacy::helper_status()]));
         b.push(Row::Note(
-            "Turn off emulated x64 coverage on the Legacy page, or press Turn off experimental features above. Either one asks the helper to stop and ends it if it does not.",
+            "Turn off emulated x64 coverage under Rules and compatibility, or press Turn off experimental features above. Either one asks the helper to stop and ends it if it does not.",
         ));
         b.out
     }
@@ -812,17 +812,14 @@ impl Ui {
         let on = |flag: bool| if flag { "on" } else { "off" };
         vec![
             format!(
-                "Dark legacy windows: {} (Legacy page)",
+                "Dark classic dialogs: {} (Rules and compatibility)",
                 on(self.config.experimental_dark_legacy)
             ),
             format!(
-                "Emulated x64 coverage: {} (Legacy page)",
+                "Emulated x64 coverage: {} (Rules and compatibility)",
                 on(self.config.legacy.emulated_x64)
             ),
-            format!(
-                "Focus Look: {} (Effects page)",
-                on(self.config.focus.enabled)
-            ),
+            format!("Focus Look: {} (Appearance)", on(self.config.focus.enabled)),
         ]
     }
 }
@@ -906,7 +903,7 @@ pub fn paint_nav(c: &Canvas, ui: &Ui) {
     let height = ui.client_lh;
     c.fill(0, 0, ui.nav_w, height, theme.nav);
     c.fill(ui.nav_w - 1, 0, ui.nav_w, height, theme.edge);
-    let expanded = ui.nav_w >= crate::ui_metrics::NAV_EXPANDED;
+    let expanded = ui.nav_w > crate::ui_metrics::NAV_COMPACT;
     if expanded {
         c.text(
             16,
@@ -1050,35 +1047,21 @@ pub fn paint_trial_bar(c: &Canvas, ui: &Ui, lw: i32) {
         DT_LEFT | DT_VCENTER | DT_SINGLELINE | DT_END_ELLIPSIS,
     );
     let (keep, revert) = trial_pills(lw, top);
-    c.round(keep.0, keep.1, keep.2, keep.3, 5, Some(ui.accent), None);
-    c.text(
-        keep.0,
-        keep.1,
-        keep.2,
-        keep.3,
+    controls::draw_button(
+        c,
+        ui,
+        keep,
         "Keep",
-        0x0000_0000,
-        ui.fonts.small,
-        DT_CENTER | DT_VCENTER | DT_SINGLELINE,
+        controls::Emphasis::Primary,
+        controls::State::default(),
     );
-    c.round(
-        revert.0,
-        revert.1,
-        revert.2,
-        revert.3,
-        5,
-        Some(th().card_hi),
-        Some(th().edge),
-    );
-    c.text(
-        revert.0,
-        revert.1,
-        revert.2,
-        revert.3,
+    controls::draw_button(
+        c,
+        ui,
+        revert,
         "Revert",
-        th().text,
-        ui.fonts.small,
-        DT_CENTER | DT_VCENTER | DT_SINGLELINE,
+        controls::Emphasis::Standard,
+        controls::State::default(),
     );
 }
 
@@ -2025,6 +2008,19 @@ pub fn paint_extra(c: &Canvas, ui: &Ui, row: &Laid, top: i32, lw: i32) {
                 }
             }
         }
+        Row::SearchField => {
+            card(c, top, row.h, lw);
+            c.text(
+                left,
+                top,
+                left + 96,
+                top + row.h - GAP,
+                "Search help",
+                th().text,
+                fonts.body,
+                DT_LEFT | DT_VCENTER | DT_SINGLELINE,
+            );
+        }
         Row::Filter => {
             card(c, top, row.h, lw);
             c.text(
@@ -2406,7 +2402,7 @@ impl Ui {
             rule.name = Some(selected.exe.clone());
             self.config.rules.push(rule);
             self.rule = Some(self.config.rules.len() - 1);
-            self.status = "Rule created. Edit its look on the Effects page.".into();
+            self.status = "Rule created. Edit its look on the Appearance page.".into();
         }
         self.push_colors_to_edits();
         self.commit();
@@ -2424,7 +2420,7 @@ impl Ui {
         });
         self.post_command();
         self.schedule_report_refresh();
-        self.status = "Trying the look from the Effects page on that window for 20 seconds. Nothing is saved.".into();
+        self.status = "Trying the look from the Appearance page on that window for 20 seconds. Nothing is saved.".into();
     }
 
     /// Re-read the selected window's report shortly, once the host has acted.
