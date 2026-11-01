@@ -14,6 +14,9 @@ set -euo pipefail
 page="${1:-0}"; out="${2:-/tmp/ui-shot.png}"; size="${3:-1000x760}"
 exe="$(dirname "$0")/../target/x86_64-pc-windows-msvc/release/AllBlack11.exe"
 export WINEPREFIX="${WINEPREFIX:-/tmp/wineprefix}" WINEDEBUG=-all DISPLAY="${DISPLAY:-:99}"
+# Wine's explorer.exe draws the system tray and balloon notifications as top-level windows that
+# float over the capture. They are not part of AllBlack11; hide them so screenshots show only it.
+unmap_wine_shell() { for w in $(xdotool search --onlyvisible --class 'explorer.exe' 2>/dev/null); do xdotool windowunmap "$w" 2>/dev/null || true; done; }
 pgrep -x Xvfb >/dev/null || { Xvfb "$DISPLAY" -screen 0 2000x1400x24 >/dev/null 2>&1 & sleep 2; }
 /usr/lib/wine/wineserver -k 2>/dev/null || true
 sleep 1
@@ -27,6 +30,7 @@ done
 xdotool windowmove "$id" 0 0 2>/dev/null || true
 xdotool windowsize "$id" "${size%x*}" "${size#*x}" 2>/dev/null || true
 sleep 2
+unmap_wine_shell; xdotool windowraise "$id" 2>/dev/null || true; sleep 0.3
 import -window "$id" "$out"
 /usr/lib/wine/wineserver -k 2>/dev/null || true
 echo "saved $out"

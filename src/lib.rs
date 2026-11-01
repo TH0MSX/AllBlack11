@@ -10,12 +10,14 @@ mod config;
 mod effects;
 mod explain;
 mod fixapp;
+mod help;
 mod helper_protocol;
 mod identity;
 mod inject;
 mod legacy_policy;
 mod lkg;
 mod menu_model;
+mod onboarding;
 mod palette;
 mod policy;
 mod presets;
@@ -54,6 +56,11 @@ pub use fixapp::{
     plan as fix_plan, receipt_lines, Action as FixAction, Context as FixContext, Level as FixLevel,
     Plan as FixPlan, Surface as FixSurface,
 };
+pub use help::{
+    find as find_tutorial, search as search_help, steps_for as tutorial_steps,
+    Capabilities as TutorialCaps, Condition as TutorialCondition, Step as TutorialStep,
+    Target as TutorialTarget, Topic as HelpTopic, Tutorial, TOPICS as HELP_TOPICS, TUTORIALS,
+};
 pub use helper_protocol::{
     may_use_helper, parse_command as parse_helper_command, Backoff as HelperBackoff,
     Command as HelperCommand, LineBuffer, Reply as HelperReply,
@@ -67,6 +74,11 @@ pub use legacy_policy::{
 pub use lkg::{is_pre_schema_2, pick as pick_config, Picked, Source as ConfigSource};
 pub use menu_model::{
     flatten as flatten_menu, Drawn as MenuDrawn, Item as MenuItem, ItemKind as MenuItemKind,
+};
+pub use onboarding::{
+    initial as onboarding_initial, parse as onboarding_parse, to_json as onboarding_json,
+    State as OnboardingState, Status as OnboardingStatus, LAST_STEP as SETUP_LAST_STEP,
+    STEP_TITLES as SETUP_STEP_TITLES,
 };
 pub use palette::{
     check_image, derive as derive_palette, sample_points, to_scene as palette_scene,

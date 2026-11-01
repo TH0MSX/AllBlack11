@@ -127,6 +127,10 @@ pub fn notebook_path() -> PathBuf {
     config_dir().join("compat.json")
 }
 
+pub fn onboarding_path() -> PathBuf {
+    config_dir().join("onboarding.json")
+}
+
 pub fn accents_path() -> PathBuf {
     config_dir().join("accents.json")
 }

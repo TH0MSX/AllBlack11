@@ -32,6 +32,21 @@ pub fn save_notebook(book: &crate::Notebook) -> Result<(), String> {
     )
 }
 
+/// The setup state. A missing or unreadable file is "no history": the host decides whether
+/// that means a fresh install (prompt) or an upgrade (never prompt) before Settings opens.
+pub fn load_onboarding() -> Option<crate::OnboardingState> {
+    std::fs::read_to_string(super::wide::onboarding_path())
+        .ok()
+        .and_then(|text| crate::onboarding_parse(&text))
+}
+
+pub fn save_onboarding(state: &crate::OnboardingState) -> Result<(), String> {
+    write_atomic(
+        &super::wide::onboarding_path(),
+        &format!("{}\n", crate::onboarding_json(state)),
+    )
+}
+
 pub fn load_accents() -> crate::Accents {
     std::fs::read_to_string(super::wide::accents_path())
         .ok()

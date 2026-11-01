@@ -16,6 +16,10 @@ use super::super::app::TRIAL_DEADLINE;
 use super::super::cmdq::{self, AppCommand, WM_APP_COMMAND};
 use super::super::inspect::{self, WindowEntry};
 
+#[path = "setup_ui.rs"]
+mod setup;
+pub use setup::{paint_tip, paint_tutorial_highlight, SetupUi, TutorialRun};
+
 pub const CMD_RESET_ALL: usize = 4;
 
 #[derive(Default)]
@@ -58,12 +62,15 @@ pub struct Ext {
     /// What the selected app's identity accent is, read once per selection (no disk reads
     /// while laying out rows).
     pub accent_line: String,
+    pub setup: SetupUi,
+    pub tutorial: Option<TutorialRun>,
+    pub help_query: String,
 }
 
 impl Ext {
     /// The first-run setup flow is showing instead of a page. (Filled in with the setup flow.)
     pub fn setup_active(&self) -> bool {
-        false
+        self.setup.active
     }
 }
 
@@ -151,7 +158,7 @@ impl Page {
 /// The title block every page starts with.
 fn page_title(page: Page) -> Row {
     let (title, description) = page.heading();
-    Row::PageTitle(title, description)
+    Row::PageTitle(title, description.to_string())
 }
 
 struct Builder {
@@ -188,6 +195,14 @@ fn list_height(len: usize) -> i32 {
 
 impl Ui {
     pub fn rows_for_page(&self) -> Vec<Laid> {
+        if self.ext.setup.active {
+            return self.rows_setup();
+        }
+        let rows = self.rows_for_current_page();
+        self.with_tip(rows)
+    }
+
+    fn rows_for_current_page(&self) -> Vec<Laid> {
         match self.page {
             Page::Home => self.rows_home(),
             Page::Fix => self.rows_fix(),
@@ -226,6 +241,7 @@ impl Ui {
             ));
         }
         b.push(Row::About(status));
+        self.push_setup_card(&mut b);
         b.push(Row::Header("What next"));
         b.push(Row::Buttons(vec![
             Button::GoFix,
@@ -288,6 +304,7 @@ impl Ui {
     fn rows_help(&self) -> Vec<Laid> {
         let mut b = Builder::new();
         b.push(page_title(Page::Help));
+        self.push_help(&mut b);
         b.push(Row::Header("AllBlack11 itself"));
         b.push(Row::Choice(Choice::AppAppearance));
         b.push(Row::Toggle(Toggle::Autostart));
@@ -374,9 +391,8 @@ impl Ui {
         b.out
     }
 
-    fn rows_fix(&self) -> Vec<Laid> {
-        let mut b = Builder::new();
-        b.push(page_title(Page::Fix));
+    /// The picker: button, hint, filter and window list.
+    pub fn push_pick(&self, b: &mut Builder) {
         b.push(Row::Header("Pick a window"));
         b.push(Row::Buttons(vec![
             Button::PickWindow,
@@ -389,6 +405,10 @@ impl Ui {
         let shown = self.visible_windows().len();
         b.push_h(Row::WindowList, list_height(shown.min(40)));
         b.push(Row::Toggle(Toggle::ShowTitles));
+    }
+
+    /// What can change for the picked window, the safe actions and the style receipt.
+    pub fn push_fix_card(&self, b: &mut Builder) {
         if let (Some(plan), Some(_)) = (&self.ext.fix, &self.ext.selected) {
             // The guided path: what this is, what can change, then the safe actions.
             b.push(Row::Header("Fix this app"));
@@ -441,6 +461,13 @@ impl Ui {
             b.push(Row::Lines(self.ext.receipt.clone()));
             b.push(Row::Buttons(vec![Button::CopyReport]));
         }
+    }
+
+    fn rows_fix(&self) -> Vec<Laid> {
+        let mut b = Builder::new();
+        b.push(page_title(Page::Fix));
+        self.push_pick(&mut b);
+        self.push_fix_card(&mut b);
         b.push(Row::Header("Full inspector report"));
         let lines = if self.ext.report_lines.is_empty() {
             vec!["Pick a window to see what AllBlack11 does with it, and why.".to_string()]
@@ -1071,7 +1098,7 @@ impl Ui {
         if client_x < self.nav_w {
             return true; // empty pane area: swallow the click
         }
-        let lx = client_x - self.nav_w;
+        let lx = client_x - self.content_x;
         let lw = self.lw(hwnd);
         let status_top = self.status_top();
         if self.trial_active() && ly >= status_top && ly < status_top + STATUS_H {
@@ -1351,8 +1378,36 @@ impl Ui {
             .collect()
     }
 
+    /// Tab and Shift+Tab. The navigation pane is one stop (arrow keys move inside it), the
+    /// content's controls follow it in reading order, and Tab from the last control comes back
+    /// to the pane, so focus is never trapped (Microsoft: keyboard accessibility).
     pub fn move_focus(&mut self, hwnd: HWND, backwards: bool) {
         let list = self.interactive_rows();
+        let has_nav = self.nav_w > 0;
+        if self.ext.nav_focus {
+            self.ext.nav_focus = false;
+            if list.is_empty() {
+                self.ext.focus = None;
+            } else {
+                self.ext.focus = Some(if backwards { list.len() - 1 } else { 0 });
+                self.ext.focus_sub = 0;
+                self.scroll_focus_into_view(hwnd);
+            }
+            return;
+        }
+        if has_nav {
+            let leaves_content = match (self.ext.focus, backwards) {
+                (None, false) => true,
+                (Some(index), false) => index + 1 >= list.len(),
+                (Some(0), true) | (None, true) => true,
+                _ => false,
+            };
+            if leaves_content || list.is_empty() {
+                self.ext.nav_focus = true;
+                self.ext.focus = None;
+                return;
+            }
+        }
         if list.is_empty() {
             return;
         }
@@ -1500,6 +1555,9 @@ impl Ui {
         if index >= 0 && (index as usize) < self.look_count() {
             self.ext.look_sel = Some(index as usize);
             self.update_look_diff();
+            if self.ext.setup.active {
+                self.setup_note_choice(index as usize);
+            }
         }
     }
 
@@ -2127,6 +2185,9 @@ impl Ui {
 
     /// Returns true when the action was handled here.
     pub fn run_button_ext(&mut self, id: Button) -> bool {
+        if self.setup_button(id) {
+            return true;
+        }
         match id {
             Button::PickWindow => {
                 self.status = "Press the button, drag onto a window, and let go.".into();

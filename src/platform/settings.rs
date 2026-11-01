@@ -112,9 +112,12 @@ const PREVIEW_H: i32 = 176;
 const STATUS_H: i32 = 40;
 const ID_FILTER: u16 = 107;
 const ID_LOOK: u16 = 108;
+const ID_HELP: u16 = 109;
 const TIMER_UI: usize = 1;
 const MARGIN: i32 = 20;
 const MIN_W: i32 = 480;
+/// Content stops growing here (logical px); wider windows get margin instead of long lines.
+const MAX_CONTENT: i32 = 880;
 const MIN_H: i32 = 520;
 const LIST_LINE: i32 = 24;
 
@@ -141,6 +144,7 @@ struct Edits {
     rule: HWND,
     exclude: HWND,
     look: HWND,
+    help: HWND,
 }
 
 /// One font per style in the type ramp, plus the icon font (null when none is installed).
@@ -174,6 +178,9 @@ struct Ui {
     pointer: controls::Pointer,
     /// Width of the navigation pane in logical px (0 while the setup flow is showing).
     nav_w: i32,
+    /// Left edge of the content in client logical px: the navigation pane's width, plus centering
+    /// when the content is capped (the setup flow).
+    content_x: i32,
     /// Client height in logical px, for anchoring the footer navigation item.
     client_lh: i32,
     status: String,
@@ -198,8 +205,12 @@ enum Slider {
 enum Row {
     Header(&'static str),
     Note(&'static str),
+    /// A teaching tip: a short heading and one or two sentences, shown inline on the page.
+    Tip(Vec<String>),
+    /// The search box on the Help page.
+    SearchField,
     /// Page title (28/36 semibold) and a one-line description under it.
-    PageTitle(&'static str, &'static str),
+    PageTitle(&'static str, String),
     Toggle(Toggle),
     Choice(Choice),
     Slider(Slider),
@@ -290,6 +301,21 @@ enum Button {
     UndoShell,
     OpenHarness,
     DemoMaterials,
+    SetupNext,
+    SetupBack,
+    SetupSkip,
+    SetupFinish,
+    SetupFinishHelp,
+    SetupKeepCurrent,
+    SetupTry,
+    SetupContinue,
+    SetupReplay,
+    TipBack,
+    TipNext,
+    TipDone,
+    TipClose,
+    /// Start walkthrough `n` (index into `crate::TUTORIALS`).
+    Tutorial(u8),
     OpenPalette,
     GoPalette,
     GoFix,
@@ -542,6 +568,27 @@ fn button_meta(id: Button) -> (&'static str, &'static str, &'static str) {
             "Opens two windows AllBlack11 owns with the same sample content: one left as Windows draws it, one with the look selected above (or your current look). It compares frame styling on windows we control. It does not capture or predict any other app.",
             "Compare",
         ),
+        Button::SetupNext => ("", "", "Next"),
+        Button::SetupBack => ("", "", "Back"),
+        Button::SetupSkip => ("", "", "Skip setup"),
+        Button::SetupFinish => ("", "", "Go to Home"),
+        Button::SetupFinishHelp => ("", "", "Open Help"),
+        Button::SetupKeepCurrent => ("", "", "Keep my current look"),
+        Button::SetupTry => ("", "", "Try the chosen look (15 s)"),
+        Button::SetupContinue => ("", "", "Continue setup"),
+        Button::SetupReplay => (
+            "Guided setup",
+            "Walk through choosing a look, trying it safely, picking an app and your preferences. Nothing is turned on unless you choose it.",
+            "Run setup",
+        ),
+        Button::TipBack => ("", "", "Back"),
+        Button::TipNext => ("", "", "Next tip"),
+        Button::TipDone => ("", "", "Done"),
+        Button::TipClose => ("", "", "Close tip"),
+        Button::Tutorial(index) => {
+            let tutorial = &crate::TUTORIALS[(index as usize).min(crate::TUTORIALS.len() - 1)];
+            (tutorial.title, tutorial.blurb, "Start")
+        }
         Button::GoPalette => ("", "", "Command palette"),
         Button::GoFix => ("", "", "Fix an app"),
         Button::GoScenes => ("", "", "Browse scenes"),
@@ -601,6 +648,11 @@ fn row_height(row: &Row) -> i32 {
     match row {
         Row::Header(_) => 44,
         Row::PageTitle(_, description) => 8 + 36 + 4 + 20 * lines(description, 78) + 12,
+        Row::Tip(parts) => {
+            let body = parts.get(1).map_or(0, |text| lines(text, 62));
+            20 + 20 + 20 * body + 12 + GAP
+        }
+        Row::SearchField => 52 + GAP,
         Row::Note(text) => 10 + 16 * lines(text, 58),
         Row::Toggle(id) => {
             let (_, desc) = toggle_meta(*id);
@@ -782,7 +834,7 @@ unsafe extern "system" fn wndproc(hwnd: HWND, msg: u32, wparam: WPARAM, lparam: 
             }
             // Hover for content controls: pointer in content coordinates (the same ones the
             // rows are painted in), repainting only when the control under it changes.
-            ui.pointer.set(Some((client_x - ui.nav_w, client_y)));
+            ui.pointer.set(Some((client_x - ui.content_x, client_y)));
             if ui.pointer.update_hover() {
                 InvalidateRect(hwnd, std::ptr::null(), 0);
             }
@@ -802,7 +854,7 @@ unsafe extern "system" fn wndproc(hwnd: HWND, msg: u32, wparam: WPARAM, lparam: 
                 ));
             }
             if let Some(slider) = ui.drag {
-                let lx = (lparam_x(lparam) as f32 / ui.k) as i32 - ui.nav_w;
+                let lx = (lparam_x(lparam) as f32 / ui.k) as i32 - ui.content_x;
                 ui.set_slider(hwnd, slider, lx);
                 InvalidateRect(hwnd, std::ptr::null(), 0);
             }
@@ -831,7 +883,10 @@ unsafe extern "system" fn wndproc(hwnd: HWND, msg: u32, wparam: WPARAM, lparam: 
         WM_COMMAND => {
             let id = (wparam & 0xFFFF) as u16;
             let code = ((wparam >> 16) & 0xFFFF) as u16;
-            if code == EN_CHANGE && id == ID_FILTER {
+            if code == EN_CHANGE && id == ID_HELP {
+                ui.ext.help_query = get_text(ui.edits.help);
+                ui.relayout(hwnd);
+            } else if code == EN_CHANGE && id == ID_FILTER {
                 ui.ext.filter = get_text(ui.edits.filter);
                 ui.relayout(hwnd);
             } else if code == EN_CHANGE {
@@ -860,6 +915,31 @@ unsafe extern "system" fn wndproc(hwnd: HWND, msg: u32, wparam: WPARAM, lparam: 
                     } else {
                         DestroyWindow(hwnd);
                     }
+                    return 0;
+                }
+                // F6 moves between the navigation pane and the content; Shift+F6 goes back.
+                0x75 if ui.nav_w > 0 => {
+                    ui.ext.nav_focus = !ui.ext.nav_focus;
+                    if ui.ext.nav_focus {
+                        ui.ext.focus = None;
+                    } else {
+                        ui.move_focus(hwnd, false);
+                    }
+                    InvalidateRect(hwnd, std::ptr::null(), 0);
+                    return 0;
+                }
+                // Inside the navigation pane the arrows choose the destination.
+                0x26 | 0x28 | 0x24 | 0x23 if ui.ext.nav_focus => {
+                    let count = Page::ALL.len();
+                    let current = Page::ALL.iter().position(|p| *p == ui.page).unwrap_or(0);
+                    let next = match wparam {
+                        0x26 => (current + count - 1) % count,
+                        0x28 => (current + 1) % count,
+                        0x24 => 0,
+                        _ => count - 1,
+                    };
+                    ui.set_page(hwnd, Page::ALL[next]);
+                    InvalidateRect(hwnd, std::ptr::null(), 0);
                     return 0;
                 }
                 0x4B if ctrl => {
@@ -1046,8 +1126,9 @@ impl Ui {
             rule: make_edit(hwnd, ID_RULE, fonts.body),
             exclude: make_edit(hwnd, ID_EXCLUDE, fonts.body),
             look: make_edit(hwnd, ID_LOOK, fonts.body),
+            help: make_edit(hwnd, ID_HELP, fonts.body),
         };
-        let ui = Self {
+        let mut ui = Self {
             hwnd,
             page: Page::Home,
             ext: pages::Ext::default(),
@@ -1060,6 +1141,7 @@ impl Ui {
             drag: None,
             pointer: controls::Pointer::default(),
             nav_w: crate::ui_metrics::NAV_EXPANDED,
+            content_x: crate::ui_metrics::NAV_EXPANDED,
             client_lh: 0,
             status: String::new(),
             config,
@@ -1074,6 +1156,7 @@ impl Ui {
             arch: sysinfo::arch_status(),
         };
         ui.push_colors_to_edits();
+        ui.init_onboarding();
         ui
     }
 
@@ -1143,7 +1226,7 @@ impl Ui {
         self.relayout(hwnd);
     }
 
-    fn all_edits(&self) -> [HWND; 8] {
+    fn all_edits(&self) -> [HWND; 9] {
         [
             self.edits.filter,
             self.edits.caption,
@@ -1153,6 +1236,7 @@ impl Ui {
             self.edits.rule,
             self.edits.exclude,
             self.edits.look,
+            self.edits.help,
         ]
     }
 
@@ -1164,7 +1248,9 @@ impl Ui {
 
     /// Width of the content area: everything right of the navigation pane.
     fn lw(&self, hwnd: HWND) -> i32 {
-        (self.client_lw(hwnd) - self.nav_w).max(MIN_W)
+        (self.client_lw(hwnd) - self.nav_w)
+            .min(MAX_CONTENT)
+            .max(MIN_W)
     }
 
     /// Navigation pane width for the current window width: icons and labels when there is
@@ -1187,6 +1273,11 @@ impl Ui {
 
     fn relayout(&mut self, hwnd: HWND) {
         self.nav_w = self.pick_nav_w(hwnd);
+        // Long lines are hard to read (Microsoft: 50 to 60 characters), so content stops growing
+        // at MAX_CONTENT. Pages stay left-aligned beside the pane; the setup flow, which has no
+        // pane, is centered.
+        let spare = (self.client_lw(hwnd) - self.nav_w - self.lw(hwnd)).max(0);
+        self.content_x = self.nav_w + if self.nav_w == 0 { spare / 2 } else { 0 };
         self.client_lh = (client_size(hwnd).1 as f32 / self.k) as i32;
         let view = self.view_height(hwnd);
         let max_scroll = (self.content_height() - view).max(0);
@@ -1197,7 +1288,7 @@ impl Ui {
 
     /// Mouse position to (logical x, content y). None above the scrolling region.
     fn to_content(&self, lparam: LPARAM) -> Option<(i32, i32)> {
-        let lx = (lparam_x(lparam) as f32 / self.k) as i32 - self.nav_w;
+        let lx = (lparam_x(lparam) as f32 / self.k) as i32 - self.content_x;
         let ly = (lparam_y(lparam) as f32 / self.k) as i32;
         if ly < self.top() || lx < 0 {
             return None;
@@ -1657,7 +1748,7 @@ impl Ui {
             let top = row.y - self.scroll + self.top();
             let spot = |l: i32, t: i32, w: i32, h: i32| {
                 let rect = (
-                    self.px(l + self.nav_w),
+                    self.px(l + self.content_x),
                     self.px(top + t),
                     self.px(w),
                     self.px(h),
@@ -1669,6 +1760,10 @@ impl Ui {
                 Row::Color(id) => self
                     .color_edit(id)
                     .map(|edit| (edit, spot(lw - MARGIN - PAD - 120, 14, 120, 24))),
+                Row::SearchField => Some((
+                    self.edits.help,
+                    spot(MARGIN + PAD + 100, 14, lw - 2 * MARGIN - 2 * PAD - 100, 24),
+                )),
                 Row::Filter => Some((
                     self.edits.filter,
                     spot(MARGIN + PAD + 70, 14, lw - 2 * MARGIN - 2 * PAD - 70, 24),
@@ -1878,7 +1973,7 @@ fn paint(hwnd: HWND, ui: &mut Ui) {
 
         // Everything right of the navigation pane is drawn in content coordinates: the
         // origin moves, and a clip keeps it out of the pane.
-        let nav_px = canvas.px(ui.nav_w);
+        let nav_px = canvas.px(ui.content_x);
         SetViewportOrgEx(dc, nav_px, 0, std::ptr::null_mut());
         IntersectClipRect(dc, 0, 0, w - nav_px, h);
 
@@ -1902,6 +1997,7 @@ fn paint(hwnd: HWND, ui: &mut Ui) {
                 continue;
             }
             paint_row(&canvas, ui, row, top, lw);
+            pages::paint_tutorial_highlight(&canvas, ui, row, top, lw);
             if focus_row == Some(index) {
                 pages::paint_focus_ring(&canvas, ui, row, top, lw);
             }
@@ -2004,6 +2100,7 @@ fn paint_row(c: &Canvas, ui: &Ui, row: &Laid, top: i32, lw: i32) {
                 DT_LEFT | DT_VCENTER | DT_SINGLELINE,
             );
         }
+        Row::Tip(parts) => pages::paint_tip(c, ui, parts, top, row.h, lw),
         Row::PageTitle(title, description) => {
             c.text(
                 MARGIN,
@@ -2299,6 +2396,7 @@ fn paint_row(c: &Canvas, ui: &Ui, row: &Laid, top: i32, lw: i32) {
         | Row::WindowList
         | Row::RecipeList
         | Row::LookList
+        | Row::SearchField
         | Row::Filter => {
             pages::paint_extra(c, ui, row, top, lw);
         }
@@ -2538,7 +2636,7 @@ fn paint_preview(c: &Canvas, ui: &Ui, lw_full: i32) {
     // its top-left corner, so `lw` below is the card's width.
     let lw = lw_full - 2 * MARGIN;
     let ph = PREVIEW_H - 16;
-    let (ox, oy) = (c.px(MARGIN + ui.nav_w), c.px(8));
+    let (ox, oy) = (c.px(MARGIN + ui.content_x), c.px(8));
     unsafe {
         SetViewportOrgEx(c.dc, ox, oy, std::ptr::null_mut());
         let outer = CreateRoundRectRgn(
@@ -2707,9 +2805,9 @@ fn paint_preview(c: &Canvas, ui: &Ui, lw_full: i32) {
     }
     // Hairline border around the card.
     c.round(
-        MARGIN + ui.nav_w,
+        MARGIN + ui.content_x,
         8,
-        MARGIN + ui.nav_w + lw,
+        MARGIN + ui.content_x + lw,
         8 + ph,
         crate::ui_metrics::OVERLAY_RADIUS,
         None,

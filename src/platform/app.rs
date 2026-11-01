@@ -538,7 +538,11 @@ fn run() -> Result<(), String> {
         return Err("Could not create the message window.".into());
     }
 
+    // Must be read before `load_config` writes a default config: no config file means a fresh
+    // install (first-run setup), a config file means an upgrade (never prompt).
+    let fresh_install = !config_path().exists();
     let (mut config, config_warning) = load_config();
+    init_onboarding(fresh_install);
     let (startup_mode, startup_marker) = begin_session();
     if startup_mode.is_safe() {
         config.experimental_dark_legacy = false;
@@ -654,6 +658,12 @@ fn run() -> Result<(), String> {
         shellwin::broadcast_immersive_color();
     }
 
+    // First run: open Settings straight into setup. Nothing is enabled by this; every choice in
+    // setup is the user's own.
+    let first_run = cfgio::load_onboarding().is_some_and(|state| state.should_prompt());
+    if first_run {
+        settings::open_page(hwnd, 0);
+    }
     if let Some(page) = std::env::args().find_map(|arg| {
         if arg == "--open-settings" {
             Some(0)
@@ -667,6 +677,19 @@ fn run() -> Result<(), String> {
     unsafe { message_loop(hwnd) };
     shutdown();
     Ok(())
+}
+
+/// Decide, once, whether this person gets first-run setup. An existing onboarding file is left
+/// exactly as it is; with none, a fresh install starts at the beginning and an upgrade is
+/// recorded as `existingUser` so no later launch ever prompts.
+fn init_onboarding(fresh_install: bool) {
+    if cfgio::load_onboarding().is_some() {
+        return;
+    }
+    let state = crate::onboarding_initial(fresh_install, None);
+    if let Err(err) = cfgio::save_onboarding(&state) {
+        log_line("warn", &format!("could not save onboarding.json: {err}"));
+    }
 }
 
 fn session_path() -> std::path::PathBuf {
