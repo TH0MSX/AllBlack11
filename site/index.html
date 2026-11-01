@@ -1,0 +1,250 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>AllBlack11: make Windows 11 truly black</title>
+<meta name="description" content="A small, free, open-source tray app that asks Windows 11 for black title bars, borders, taskbar, Start menu and notification center. Native ARM64 and x64, no admin rights, fully reversible.">
+<meta name="theme-color" content="#000000">
+<meta name="color-scheme" content="dark">
+<link rel="canonical" href="https://th0msx.github.io/AllBlack11/">
+<link rel="icon" href="assets/icon.svg" type="image/svg+xml">
+<link rel="apple-touch-icon" href="assets/apple-touch-icon.png">
+<link rel="stylesheet" href="style.css">
+<meta property="og:type" content="website">
+<meta property="og:site_name" content="AllBlack11">
+<meta property="og:title" content="AllBlack11: make Windows 11 truly black">
+<meta property="og:description" content="OLED-friendly, featherweight, fully reversible. Native ARM64 and x64. Free and open source.">
+<meta property="og:url" content="https://th0msx.github.io/AllBlack11/">
+<meta property="og:image" content="https://th0msx.github.io/AllBlack11/assets/social-preview.png">
+<meta property="og:image:width" content="1280">
+<meta property="og:image:height" content="640">
+<meta name="twitter:card" content="summary_large_image">
+</head>
+<body>
+<a class="skip" href="#main">Skip to content</a>
+
+<header class="site-header">
+  <div class="wrap">
+    <a class="brand" href="#top"><img src="assets/icon.svg" width="30" height="30" alt="">AllBlack11</a>
+    <nav class="nav" aria-label="Main">
+      <a href="#features">Features</a>
+      <a href="#download">Download</a>
+      <a href="#checked">Status</a>
+      <a href="#safety">Safety</a>
+      <a href="#faq">FAQ</a>
+      <a href="https://github.com/TH0MSX/AllBlack11">GitHub</a>
+    </nav>
+  </div>
+</header>
+
+<main id="main">
+<div id="top" class="hero">
+  <div class="wrap">
+    <p class="eyebrow">3.8 Preview &middot; free &middot; open source &middot; MIT</p>
+    <h1>Make Windows 11 truly black.</h1>
+    <p class="lead">Windows dark mode still paints gray title bars, a gray taskbar and a tinted Start menu. AllBlack11 asks Windows for black ones, lets you try any look for 15 seconds, and puts everything back whenever you say so.</p>
+    <div class="cta">
+      <a class="btn primary" href="#download">Download 3.8 Preview</a>
+      <a class="btn" href="https://github.com/TH0MSX/AllBlack11">View on GitHub</a>
+    </div>
+    <ul class="chips" aria-label="Highlights">
+      <li>Native ARM64 + x64</li>
+      <li>No administrator rights</li>
+      <li>No ads, no telemetry</li>
+      <li>Every change undoable</li>
+    </ul>
+    <img class="shot" src="assets/hero.webp" width="1800" height="1020" fetchpriority="high"
+         alt="AllBlack11 Settings floating over a black stage: Home with a search box, six categories and a Customize an app button, with the Apps and Wallpapers pages behind it">
+  </div>
+</div>
+
+<section aria-labelledby="why">
+  <div class="wrap">
+    <h2 id="why">A small tray app for a very black Windows</h2>
+    <p class="sub">It styles window frames and the shell through the settings Windows itself provides. It is not a theme engine and it does not touch other programs' code by default.</p>
+    <div class="grid g3">
+      <div class="card pillar">
+        <span class="big">True black</span>
+        <p>Black title bars, borders, taskbar, Start menu and notification center, plus eight original OLED wallpapers.</p>
+      </div>
+      <div class="card pillar">
+        <span class="big">Featherweight</span>
+        <p>Native ARM64 and x64. About 12 MB of RAM on a Snapdragon ZenBook (measured on 3.0 Preview), near-idle CPU, no timer while the PC is idle.</p>
+      </div>
+      <div class="card pillar">
+        <span class="big">Reversible</span>
+        <p>Every change is snapshotted and undone from the same place, with Undo, or by uninstalling.</p>
+      </div>
+    </div>
+  </div>
+</section>
+
+<section id="features" aria-labelledby="features-h">
+  <div class="wrap">
+    <h2 id="features-h">What you get</h2>
+    <p class="sub">Screenshots are 3.8 Preview on a Snapdragon (ARM64) Windows 11 PC. The arrangement, rounding and lighting are mockup styling; the windows themselves are not altered.</p>
+    <figure>
+      <img class="shot" src="assets/bento.webp" width="1838" height="1380" loading="lazy"
+           alt="AllBlack11 in six tiles: six clear categories, wallpapers made for OLED, a 15-second try-out, a look history that names each change, updates only when you ask, and customizing one app">
+    </figure>
+    <div class="grid g3" style="margin-top:28px">
+      <div class="card"><h3>Settings that work like Windows Settings</h3><p>Six categories, a landscape layout, a Back link on every page and a search box (Ctrl+K) that finds settings, scenes, packs, wallpapers and help. A result opens the page and marks the control; it never changes anything by itself.</p></div>
+      <div class="card"><h3>Per-window looks</h3><p>Dark caption, border, text color, corners and a backdrop (Mica, Mica Alt, Acrylic or tinted acrylic). Presets: Pure OLED, Accent glass, Classic Mica, Factory defaults.</p></div>
+      <div class="card"><h3>Try before you keep</h3><p>Every look runs as a 15-second trial. Press Keep, or wait and it goes back by itself.</p></div>
+      <div class="card"><h3>Scenes and a Look Book</h3><p>OLED Black, Graphite, Midnight Accent, Focus, Living Room, and looks you save. A palette from a picture, recipes you can import and export, and a remixer that refuses unreadable text.</p></div>
+      <div class="card"><h3>Customize one app</h3><p>Pick any window, see what can change and why, preview it for 20 seconds, then save it as a rule or leave it alone. Rules explain which one won and why.</p></div>
+      <div class="card"><h3>Eight OLED wallpapers</h3><p>Original, generated by a script in the repository, downloaded one at a time only when you press Download, and checked against a built-in checksum.</p></div>
+      <div class="card"><h3>An updater that only tells you</h3><p>Check, read the notes, download, verify the SHA-256, then choose Install. It never installs by itself, and there is no telemetry.</p></div>
+      <div class="card"><h3>Safe to experiment</h3><p>Look history with Undo, Pause, Reset all windows, a last-known-good config, and safe start after repeated crashes.</p></div>
+      <div class="card"><h3>The shell</h3><p>An OLED taskbar and an optional black Start menu and notification center, with a Restart Explorer button for when Windows needs a nudge. Off until you turn it on.</p></div>
+    </div>
+  </div>
+</section>
+
+<section aria-labelledby="context-h">
+  <div class="wrap">
+    <h2 id="context-h">Windows, in context</h2>
+    <p class="sub">The desktop, the Start menu and the notification center on the author's PC, cropped to the windows only.</p>
+    <figure>
+      <img class="shot" src="assets/windows-gallery.webp" width="2127" height="798" loading="lazy"
+           alt="Three crops from a Windows 11 ARM64 PC: AllBlack11 Settings beside Control Panel and Run with dark frames, a black Start menu, and the notification center calendar">
+      <figcaption>The black Start menu and notification center are an optional shell setting that is off until you turn it on. Control Panel's and Run's own pages stay light, because only their frames are styled.</figcaption>
+    </figure>
+  </div>
+</section>
+
+<section id="download" aria-labelledby="download-h">
+  <div class="wrap">
+    <h2 id="download-h">Download</h2>
+    <p class="sub"><strong>Recommended: 3.8 Preview.</strong> It replaces every older version and keeps your settings. Setup installs for your account only, with no administrator prompt. The binaries are unsigned, so SmartScreen may warn.</p>
+    <div class="grid g2">
+      <div class="card dl">
+        <h3>Snapdragon and other ARM64</h3>
+        <p class="tag">Windows 11 on ARM &middot; v3.8.0-preview.2</p>
+        <a class="btn primary" href="https://github.com/TH0MSX/AllBlack11/releases/download/v3.8.0-preview.2/AllBlack11-Setup-arm64.exe">Download installer (ARM64)</a>
+        <p class="alt"><a href="https://github.com/TH0MSX/AllBlack11/releases/download/v3.8.0-preview.2/AllBlack11-arm64.zip">Portable zip (ARM64)</a></p>
+      </div>
+      <div class="card dl">
+        <h3>Intel and AMD</h3>
+        <p class="tag">Windows 11 on x64 &middot; v3.8.0-preview.2</p>
+        <a class="btn primary" href="https://github.com/TH0MSX/AllBlack11/releases/download/v3.8.0-preview.2/AllBlack11-Setup-x64.exe">Download installer (x64)</a>
+        <p class="alt"><a href="https://github.com/TH0MSX/AllBlack11/releases/download/v3.8.0-preview.2/AllBlack11-x64.zip">Portable zip (x64)</a></p>
+      </div>
+    </div>
+    <ol class="steps">
+      <li><strong>Run Setup.</strong> If SmartScreen objects, choose <em>More info</em>, then <em>Run anyway</em>.</li>
+      <li><strong>Open Settings</strong> from the tray icon, pick a <em>Quick look</em> under Appearance, and watch the preview.</li>
+      <li>Press <strong>Keep</strong>, or wait 15 seconds and it goes back by itself.</li>
+    </ol>
+    <p class="sub" style="margin-top:20px">Older versions, checksums and release notes are on the <a href="https://github.com/TH0MSX/AllBlack11/releases">releases page</a>. Uninstall from Settings &gt; Apps; it puts the Windows settings it changed back first.</p>
+  </div>
+</section>
+
+<section id="checked" aria-labelledby="checked-h">
+  <div class="wrap">
+    <h2 id="checked-h">How far it has been checked</h2>
+    <div class="note">
+      <p><strong>3.8 Preview is a pre-release.</strong> The ARM64 build runs on its author's Windows 11 ARM64 PC. The x64 build is built and unit-tested on a real Windows x64 runner but has <strong>not been run on an x64 PC</strong>. Screen readers, the updater against real releases and wallpaper apply have not been tried on hardware.</p>
+    </div>
+    <div class="table-wrap">
+      <table>
+        <thead><tr><th scope="col">Area</th><th scope="col">Status</th></tr></thead>
+        <tbody>
+          <tr><td>ARM64 build on Windows 11 ARM64</td><td><strong class="ok">Run by the author.</strong> The Settings shell, hub pages, Effects, Safety with Look history, Settings with Updates and the Wallpapers page were seen working.</td></tr>
+          <tr><td>x64 build</td><td>Built and unit-tested on a Windows x64 CI runner. <strong class="todo">Not run on an x64 PC.</strong></td></tr>
+          <tr><td>Unit tests</td><td>367, on Linux and on both native Windows CI runners.</td></tr>
+          <tr><td>Updater, wallpaper download and apply, Store and Calculator</td><td><strong class="todo">Not yet checked on hardware.</strong> Store and Calculator showed no visible change on the author's PC, so those two packs are labeled experimental.</td></tr>
+          <tr><td>Screen readers</td><td><strong class="todo">Unverified.</strong> Names and roles are in place and self-tested, not heard.</td></tr>
+        </tbody>
+      </table>
+    </div>
+    <p class="sub" style="margin-top:20px">Feature by feature, what was run and what was only built is in the <a href="https://github.com/TH0MSX/AllBlack11/blob/main/docs/dev/EVIDENCE.md">evidence table</a>; the hardware checklist is the <a href="https://github.com/TH0MSX/AllBlack11/blob/main/docs/dev/SMOKE-TEST.md">smoke test</a>.</p>
+
+    <h3 style="margin-top:40px">Kept up to date, in the open</h3>
+    <p class="sub" style="margin-bottom:0">AllBlack11 received <strong>over 15 updates in November 2026 alone</strong> (<a href="https://github.com/TH0MSX/AllBlack11/commits/main/?since=2026-11-01&amp;until=2026-11-30">every one is a commit you can read</a>). The aim is <strong>at least one update every month</strong>, each with bug fixes, compatibility tweaks for Windows updates and new features. That is a target, not a promise, and every release says plainly what has and has not been checked.</p>
+  </div>
+</section>
+
+<section id="safety" aria-labelledby="safety-h">
+  <div class="wrap">
+    <h2 id="safety-h">Safety, and what it cannot do</h2>
+    <p class="sub">Everything is per-user. No administrator rights. The default path does not inject code into other programs: window events are out-of-context, and frames are messages to the Windows compositor.</p>
+    <div class="table-wrap">
+      <table>
+        <thead><tr><th scope="col">Layer</th><th scope="col">What it does</th><th scope="col">Reaches into other apps?</th></tr></thead>
+        <tbody>
+          <tr><td>A. Frame styling</td><td>Title bar, text and border colors, corners and backdrops, set through Windows' own window-frame attributes.</td><td>No</td></tr>
+          <tr><td>B. Legacy layer (opt-in, off by default)</td><td>Recolors the controls of classic dialogs (Run, old installers, property pages) from inside the app.</td><td>Yes, per dialog, only same-CPU and non-elevated, never games or the shell</td></tr>
+          <tr><td>C. App integrations</td><td>None ship yet. The Microsoft Store and Calculator packs are experiments.</td><td>No</td></tr>
+        </tbody>
+      </table>
+    </div>
+    <div class="grid g2" style="margin-top:20px">
+      <div class="card"><h3>Not recolored</h3><p>Apps that draw their own title bar (Chrome and many Electron apps), borderless full-screen games, and the insides of Store, Calculator and Settings pages. Those apps paint their own content; use the app's own theme option or Windows' app mode for that.</p></div>
+      <div class="card"><h3>Backed out, always</h3><p>Frame changes are remembered and put back on Exit, Disable or Reset. Shell changes are backed up and restored when you uncheck them or uninstall. High contrast pauses frame theming.</p></div>
+    </div>
+  </div>
+</section>
+
+<section id="faq" aria-labelledby="faq-h">
+  <div class="wrap">
+    <h2 id="faq-h">FAQ</h2>
+    <details>
+      <summary>Does it need an administrator account?</summary>
+      <div><p>No. The program runs as the current user and its registry writes are per-user.</p></div>
+    </details>
+    <details>
+      <summary>SmartScreen blocked it.</summary>
+      <div><p>The binaries are unsigned. Choose <em>More info</em>, then <em>Run anyway</em>. You can also check the SHA-256 shown on the release page.</p></div>
+    </details>
+    <details>
+      <summary>Chrome is unchanged.</summary>
+      <div><p>Chrome draws its own title bar. AllBlack11 only changes frames that Windows itself paints.</p></div>
+    </details>
+    <details>
+      <summary>The Store or Calculator did not change.</summary>
+      <div><p>Expected. Those windows are hosted by Windows' app frame and draw their own pages. The experimental packs ask only for frame colors that are close to the default look. For page colors, use the app's own theme option or Windows' app mode (Settings &gt; Personalization &gt; Colors).</p></div>
+    </details>
+    <details>
+      <summary>How do updates work?</summary>
+      <div><p>Settings &gt; Updates asks GitHub, only when you press Check (or once a day if you turn that on), whether a newer release exists. It never installs by itself: you read what is new, download, the checksum is verified, then you choose Install.</p></div>
+    </details>
+    <details>
+      <summary>The Start menu went black, then Windows put the color back.</summary>
+      <div><p>Changing the accent in Settings rebuilds Windows' palette. While <em>Black Start, taskbar &amp; notification center</em> is on, AllBlack11 watches for that and sets the three slots back to black.</p></div>
+    </details>
+    <details>
+      <summary>Where did PepaTheme go?</summary>
+      <div><p>Same program, new name. The first launch copies the old config and snapshots when the new ones are missing.</p></div>
+    </details>
+    <p class="sub" style="margin-top:20px">More answers, the configuration reference and the source are in the <a href="https://github.com/TH0MSX/AllBlack11#readme">README</a>.</p>
+  </div>
+</section>
+
+<section id="support" aria-labelledby="support-h">
+  <div class="wrap">
+    <h2 id="support-h">Free, and staying free</h2>
+    <p class="sub">AllBlack11 is MIT-licensed, with no locked features, no ads and no telemetry. If it saves you time and you want to say thanks, a <a href="https://paypal.me/peplinski00">tip through PayPal</a> is welcome. It is never required. Bug reports, screenshots and test results from your own PC help just as much: <a href="https://github.com/TH0MSX/AllBlack11/issues">open an issue</a>.</p>
+    <div class="cta" style="justify-content:flex-start">
+      <a class="btn" href="https://github.com/TH0MSX/AllBlack11/issues">Report a problem or share a result</a>
+      <a class="btn" href="https://paypal.me/peplinski00">Leave a tip</a>
+    </div>
+  </div>
+</section>
+</main>
+
+<footer class="site-footer">
+  <div class="wrap">
+    <nav aria-label="Footer">
+      <a href="https://github.com/TH0MSX/AllBlack11">Source on GitHub</a>
+      <a href="https://github.com/TH0MSX/AllBlack11/releases">Releases</a>
+      <a href="https://github.com/TH0MSX/AllBlack11/blob/main/CHANGELOG.md">Changelog</a>
+      <a href="https://github.com/TH0MSX/AllBlack11/blob/main/LICENSE">MIT license</a>
+    </nav>
+    <small>This page has no ads, cookies, analytics or third-party requests. AllBlack11 is an independent project, not affiliated with or endorsed by Microsoft. Windows is a trademark of Microsoft Corporation. &copy; 2026 Tomasz Pepli&#324;ski.</small>
+    <p class="made">Made with love by <a href="https://github.com/TH0MSX">TH0MSX</a></p>
+  </div>
+</footer>
+</body>
+</html>
