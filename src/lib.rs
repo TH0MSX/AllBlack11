@@ -48,6 +48,7 @@ mod uitheme;
 mod update;
 mod version;
 mod wallpaper;
+mod windowbounds;
 
 pub use accents::{key_for as accent_key, Accents, PALETTE as ACCENT_PALETTE};
 pub use arch::{classify, machine_name, ArchStatus, BUILD_MACHINE};
@@ -57,8 +58,8 @@ pub use brand::{
     NAME as BRAND_NAME, TAGLINE as BRAND_TAGLINE, VERIFICATION_STATUS,
 };
 pub use commands::{
-    commands as palette_commands, search as palette_search, Action as PaletteAction,
-    Command as PaletteCommand, Context as PaletteContext,
+    commands as palette_commands, destination as palette_destination, search as palette_search,
+    Action as PaletteAction, Command as PaletteCommand, Context as PaletteContext,
 };
 pub use compat::{Entry as CompatEntry, Notebook, Status as CompatStatus};
 pub use config::{
@@ -173,6 +174,10 @@ pub use uitheme::{
 };
 pub use uitheme::{metrics as ui_metrics, BODY, BODY_STRONG, CAPTION, SUBTITLE, TITLE};
 pub use version::display_version;
+pub use windowbounds::{
+    restore as restore_window_bounds, Bounds as WindowBounds, WorkArea,
+    DEFAULT_SIZE as WINDOW_DEFAULT_SIZE, MIN_SIZE as WINDOW_MIN_SIZE,
+};
 
 #[cfg(windows)]
 mod platform;

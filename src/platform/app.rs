@@ -303,7 +303,7 @@ fn help_text() -> String {
          AllBlack11.exe --restart-explorer  Restart the taskbar, Start and desktop\n\
          AllBlack11.exe --quiet   With --restore or --restart-explorer: no message box\n\
          AllBlack11.exe --safe    Start in safe mode: experimental features off for this run\n\
-         AllBlack11.exe --open-settings[=N]  Start and open Settings (page N, 0 = Home)\n\
+         AllBlack11.exe --open-settings[=ID]  Start and open Settings at a page, such as apps/packs\n\
          AllBlack11.exe --restore Quit, undo the shell tweaks and CaptionHeight, keep the config\n\
          AllBlack11.exe --version Print the version\n\
          AllBlack11.exe --help    Show this help\n\
@@ -683,17 +683,19 @@ fn run() -> Result<(), String> {
     // setup is the user's own.
     let first_run = cfgio::load_onboarding().is_some_and(|state| state.should_prompt());
     if first_run {
-        settings::open_page(hwnd, 0);
+        settings::open_page(hwnd, crate::Dest::Home, None);
     }
+    // `--open-settings` (Home), `--open-settings=apps/packs` (a destination id) or, as before 3.8,
+    // `--open-settings=N` (the old page numbers; see `Dest::from_legacy_index`).
     if let Some(page) = std::env::args().find_map(|arg| {
         if arg == "--open-settings" {
-            Some(0)
+            Some(crate::Dest::Home)
         } else {
             arg.strip_prefix("--open-settings=")
-                .and_then(|n| n.parse::<usize>().ok())
+                .map(|text| crate::Dest::parse_switch(text).unwrap_or(crate::Dest::Home))
         }
     }) {
-        settings::open_page(hwnd, page);
+        settings::open_page(hwnd, page, None);
     }
     unsafe { message_loop(hwnd) };
     shutdown();
@@ -995,7 +997,7 @@ unsafe extern "system" fn wndproc(hwnd: HWND, msg: u32, wparam: WPARAM, lparam: 
                     app.balloon(
                         "AllBlack11 update",
                         &format!(
-                            "{tag} is available ({}). Open Settings and help to see it. Nothing is downloaded until you choose.",
+                            "{tag} is available ({}). Open Settings to see it. Nothing is downloaded until you choose.",
                             if preview { "preview" } else { "stable" }
                         ),
                         false,
@@ -1202,7 +1204,7 @@ fn show_menu(hwnd: HWND) {
         hinted(
             CMD_PALETTE,
             "Command palette…",
-            "Search every action. Also Ctrl+K inside Settings.",
+            "Search every action, and run it. Settings has its own search box (Ctrl+K there).",
             ItemKind::Action,
             true,
         ),
@@ -2864,7 +2866,7 @@ impl App {
             } else {
                 self.balloon(
                     "AllBlack11",
-                    "Ctrl+Alt+Space is already used by another app, so the palette hotkey is off. The tray item and Ctrl+K in Settings still work.",
+                    "Ctrl+Alt+Space is already used by another app, so the palette hotkey is off. The tray item still works, and Settings has its own search box (Ctrl+K).",
                     true,
                 );
             }
@@ -2976,7 +2978,7 @@ impl App {
         self.try_windows.clear();
         self.restore_visuals();
         let _ = legacy::set_active(false, &legacy::LegacyOptions::default());
-        log_line("info", "paused from the Safety page or tray");
+        log_line("info", "paused from Settings or the tray");
         self.update_tray();
         settings::notify_external_change();
     }

@@ -214,7 +214,7 @@ impl Exclusion {
                 "This process is a shell host, a system service or AllBlack11 itself. It is protected: it is never styled, and no list changes that."
             }
             Exclusion::YourApp => {
-                "You listed this app under Never theme these apps. Remove it from that list on the Rules page to style it."
+                "You listed this app under Never theme these apps. Remove it from that list under Apps > Exclusions to style it."
             }
             Exclusion::ExplorerShell => {
                 "This is one of Explorer's shell windows. Only its file windows are styled."

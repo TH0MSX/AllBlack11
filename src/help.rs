@@ -5,21 +5,18 @@
 //! button that is not there, and no step asks for anything destructive. The UI shows a step as
 //! an inline tip on the page itself; nothing blocks input and nothing is simulated.
 
-/// Pages by index into the navigation order (Home, Fix this app, Appearance, Scenes, Rules,
-/// Safety, Diagnostics, Wallpapers, Settings and help).
-pub const HOME: usize = 0;
-pub const FIX: usize = 1;
-pub const APPEARANCE: usize = 2;
-pub const SCENES: usize = 3;
-pub const RULES: usize = 4;
-pub const SAFETY: usize = 5;
-#[cfg(test)]
-pub const DIAGNOSTICS: usize = 6;
-#[cfg(test)]
-pub const GALLERY: usize = 7;
-pub const HELP: usize = 8;
-#[cfg(test)]
-pub const PAGE_COUNT: usize = 9;
+use crate::destinations::Dest;
+
+/// The places walkthrough steps point at. Typed, so a reorganized Settings cannot send a step to
+/// the wrong page (the old numeric indices did).
+const HOME: Dest = Dest::Home;
+const FIX: Dest = Dest::AppsFix;
+const APPEARANCE: Dest = Dest::AppearanceEffects;
+const SCENES: Dest = Dest::AppearanceScenes;
+const TOOLS: Dest = Dest::AppearanceTools;
+const RULES: Dest = Dest::AppsRules;
+const SAFETY: Dest = Dest::Safety;
+const HELP: Dest = Dest::HelpTopics;
 
 /// A control a step points at. The UI outlines it; it stays fully usable.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -67,7 +64,7 @@ impl Condition {
 
 #[derive(Debug, Clone, Copy)]
 pub struct Step {
-    pub page: usize,
+    pub page: Dest,
     pub text: &'static str,
     pub target: Option<Target>,
     pub when: Option<Condition>,
@@ -81,7 +78,7 @@ pub struct Tutorial {
     pub steps: &'static [Step],
 }
 
-const fn step(page: usize, text: &'static str, target: Option<Target>) -> Step {
+const fn step(page: Dest, text: &'static str, target: Option<Target>) -> Step {
     Step {
         page,
         text,
@@ -90,7 +87,7 @@ const fn step(page: usize, text: &'static str, target: Option<Target>) -> Step {
     }
 }
 
-const fn step_if(page: usize, text: &'static str, target: Option<Target>, when: Condition) -> Step {
+const fn step_if(page: Dest, text: &'static str, target: Option<Target>, when: Condition) -> Step {
     Step {
         page,
         text,
@@ -128,7 +125,7 @@ pub const TUTORIALS: [Tutorial; 6] = [
         steps: &[
             step_if(FIX, "Pick the app you want to treat differently.", Some(Target::PickWindow), Condition::NeedsNoSelection),
             step_if(FIX, "Choose how the rule matches, then press Save as rule to give this app its own look. Press Exclude app to leave it alone.", Some(Target::SaveRule), Condition::NeedsSelection),
-            step(RULES, "Your rules are listed here. The most specific match wins, then the higher priority. Pick one, then edit its look on the Appearance page.", None),
+            step(RULES, "Your rules are listed here. The most specific match wins, then the higher priority. Pick one, then edit its look under Appearance > Effects and colors.", None),
         ],
     },
     Tutorial {
@@ -137,7 +134,7 @@ pub const TUTORIALS: [Tutorial; 6] = [
         blurb: "Share a look as a small data file, or keep one you like.",
         steps: &[
             step(SCENES, "Scenes and your saved looks live here. Type a name and press Save look to keep the current look.", Some(Target::SaveLook)),
-            step(SCENES, "Recipes are small data files that describe a look. They cannot run anything. Import checks the file and shows what it would change before you try it.", Some(Target::ImportRecipe)),
+            step(TOOLS, "Recipes are small data files that describe a look. They cannot run anything. Import checks the file and shows what it would change before you try it.", Some(Target::ImportRecipe)),
         ],
     },
     Tutorial {
@@ -194,10 +191,10 @@ pub const TOPICS: [Topic; 11] = [
         title: "Quick start",
         keywords: &["start", "begin", "first", "setup", "how"],
         body: &[
-            "1. Choose Fix this app, press Pick a window, and drag onto any app.",
+            "1. Choose Apps, then Customize an app, press Pick a window, and drag onto any app.",
             "2. Read what can change, then press Preview here to try your look for 20 seconds.",
-            "3. Press Save as rule to keep it for that app, or pick a scene on the Scenes page to change the default look.",
-            "You can run the guided setup again from Settings and help.",
+            "3. Press Save as rule to keep it for that app, or pick a scene under Appearance to change the default look.",
+            "You can run the guided setup again from Help & About.",
         ],
     },
     Topic {
@@ -230,7 +227,7 @@ pub const TOPICS: [Topic; 11] = [
         title: "Updates",
         keywords: &["update", "upgrade", "new version", "download", "preview", "stable", "release", "install", "github", "checksum"],
         body: &[
-            "Settings and help has an Updates card. Press Check for updates, or turn on the once-a-day check (off by default). AllBlack11 only asks GitHub whether a newer release exists; it sends no information about you.",
+            "Settings has an Updates card. Press Check for updates, or turn on the once-a-day check (off by default). AllBlack11 only asks GitHub whether a newer release exists; it sends no information about you.",
             "Nothing is downloaded or installed until you press a button. A download is checked against the checksum GitHub publishes, and a file that does not match is deleted. Install opens the downloaded Setup and closes AllBlack11 so it can be replaced; your settings are kept.",
             "Update channel: Automatic offers previews to a preview build and only stable releases to a stable build. Stable only and Include previews override that. Skip this version hides one release until a newer one appears.",
         ],
@@ -258,7 +255,7 @@ pub const TOPICS: [Topic; 11] = [
         keywords: &["why", "not", "change", "chrome", "edge", "electron", "limit", "opaque", "custom", "title bar"],
         body: &[
             "Many apps draw their own title bar, so caption colors cannot show. Apps with an opaque window hide a backdrop behind it.",
-            "Fix this app lists each part of the window with a reason. A successful call to Windows is not proof you can see the result, and AllBlack11 says so.",
+            "Customize an app lists each part of the window with a reason. A successful call to Windows is not proof you can see the result, and AllBlack11 says so.",
             "Protected system windows, elevated apps and games are left alone on purpose.",
         ],
     },
@@ -284,8 +281,8 @@ pub const TOPICS: [Topic; 11] = [
         keywords: &["keyboard", "tab", "shortcut", "narrator", "screen reader", "contrast", "text size", "access"],
         body: &[
             "Tab and Shift+Tab walk one ring: the page list, then the page's controls, then Keep and Revert while a look is being tried. Enter or Space presses the focused control. Esc reverts a look being tried, and otherwise closes Settings.",
-            "F6 and Shift+F6 jump between the page list and the page. In the page list, Up, Down, Home and End choose a page. Left and Right change a slider and move within a row of buttons or a list. Ctrl+Tab and Ctrl+Shift+Tab change page, and Ctrl+K opens the command palette. Page Up, Page Down, Home, End and the mouse wheel scroll the page.",
-            "AllBlack11's own windows follow Windows light, dark and high contrast, and the Text size setting. Choose Light or Dark for AllBlack11 itself under Settings and help.",
+            "F6 and Shift+F6 jump between the category list and the page. In the category list, Up, Down, Home and End choose a category. Left and Right change a slider and move within a row of buttons or a list. Ctrl+Tab and Ctrl+Shift+Tab change category, Alt+Left goes back from a subpage, and Ctrl+K moves to the search box, where Enter opens the first result and Escape clears it. Page Up, Page Down, Home, End and the mouse wheel scroll the page.",
+            "AllBlack11's own windows follow Windows light, dark and high contrast, and the Text size setting. Choose Light or Dark for AllBlack11 itself under Settings.",
         ],
     },
 ];
@@ -351,8 +348,8 @@ mod tests {
             assert!(!tutorial.steps.is_empty(), "{}", tutorial.id);
             for step in tutorial.steps {
                 assert!(
-                    step.page < PAGE_COUNT,
-                    "{}: page {}",
+                    step.page.searchable() && !step.page.is_hub(),
+                    "{}: a step belongs on a page with controls, not {:?}",
                     tutorial.id,
                     step.page
                 );

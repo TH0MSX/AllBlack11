@@ -462,6 +462,24 @@ pub const SETTINGS: &[Setting] = &[
     ),
 ];
 
+/// Where a result takes you. The Settings search only ever navigates: an action that changes
+/// something (pause, reset, restore, a scene) opens the page that holds its button, and the button
+/// stays the person's to press. The command palette, opened from the tray or its hotkey, is the
+/// place that runs actions.
+pub fn destination(action: &Action) -> (Dest, Option<&'static str>) {
+    match action {
+        Action::Go(dest, anchor) => (*dest, *anchor),
+        Action::Scene(_) => (Dest::AppearanceScenes, None),
+        Action::TogglePause => (Dest::Safety, Some("button:PauseAll")),
+        Action::UndoScene => (Dest::Safety, Some("button:UndoLook")),
+        Action::ResetWindows => (Dest::Safety, Some("button:ResetAllWindows")),
+        Action::RestoreLastKnownGood => (Dest::Safety, Some("button:RestoreLkg")),
+        Action::Diagnostics => (Dest::HelpDiagnostics, Some("button:Diagnostics")),
+        Action::OpenFolder => (Dest::HelpDiagnostics, Some("button:OpenFolder")),
+        Action::RestartExplorer => (Dest::AppearanceEffects, Some("button:RestartExplorer")),
+    }
+}
+
 /// Extra words that find a whole page.
 fn dest_keywords(dest: Dest) -> &'static str {
     match dest {
@@ -1038,6 +1056,31 @@ mod tests {
                 assert_eq!(c.path, dest.path(), "{}", c.title);
             }
         }
+    }
+
+    #[test]
+    fn the_settings_search_navigates_every_action_and_never_runs_one() {
+        let mut c = ctx();
+        c.can_undo_scene = true;
+        for command in commands(&c) {
+            let (dest, anchor) = destination(&command.action);
+            assert!(dest.searchable(), "{}", command.title);
+            if !matches!(command.action, Action::Go(..) | Action::Scene(_)) {
+                assert!(
+                    anchor.is_some(),
+                    "{} should land on its own button",
+                    command.title
+                );
+            }
+        }
+        assert_eq!(
+            destination(&Action::ResetWindows),
+            (Dest::Safety, Some("button:ResetAllWindows"))
+        );
+        assert_eq!(
+            destination(&Action::RestoreLastKnownGood),
+            (Dest::Safety, Some("button:RestoreLkg"))
+        );
     }
 
     #[test]

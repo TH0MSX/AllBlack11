@@ -148,7 +148,7 @@ fn run(hwnd: HWND, pal: &Pal) {
         PostMessageW(owner, WM_RUN_COMMAND, command as WPARAM, 0);
     };
     match action {
-        PaletteAction::Page(index) => open_page(owner, index),
+        PaletteAction::Go(dest, anchor) => open_page(owner, dest, anchor),
         PaletteAction::Scene(index) => send(CMD_SCENE_BASE + index as u32),
         PaletteAction::TogglePause => send(CMD_PAUSE),
         PaletteAction::UndoScene => send(CMD_SCENE_UNDO),

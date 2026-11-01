@@ -29,6 +29,10 @@ enum Do {
     TrialKeep,
     TrialRevert,
     Credit,
+    FocusSearch,
+    Go(Page),
+    Result(usize),
+    Section(&'static str),
 }
 
 struct Built {
@@ -75,7 +79,7 @@ impl Builder2<'_> {
     }
 
     fn key(&mut self, tag: &str) -> u64 {
-        let base = format!("{}|{tag}", self.ui.page.nav_label());
+        let base = format!("{}|{tag}", self.ui.page.title());
         let count = self.seen.entry(base.clone()).or_insert(0);
         *count += 1;
         fnv64(&format!("{base}#{count}"))
@@ -127,19 +131,34 @@ impl Ui {
         };
         // Navigation pane first: it is the first Tab stop.
         if self.nav_w > 0 {
-            for (index, page) in Page::ALL.iter().enumerate() {
-                let (l, t, r, bm) = pages::nav_item_rect(self, index);
-                let i = b.push(
-                    &format!("nav:{}", page.nav_label()),
-                    Role::TabItem,
-                    page.nav_label(),
-                    page.heading().1,
+            // The search box is a native edit with its own accessible name; the narrow rail shows
+            // a button instead.
+            if self.nav_w <= crate::ui_metrics::NAV_COMPACT {
+                let (l, t, r, bm) = pages::nav_search_rect(self);
+                b.push(
+                    "nav:search",
+                    Role::Button,
+                    "Search",
+                    "Search settings, actions, scenes and help",
                     b.screen_client(l, t, r, bm),
                     true,
-                    Do::Nav(*page),
+                    Do::FocusSearch,
                     None,
                 );
-                b.out[i].info.selected = Some(*page == self.page);
+            }
+            for (index, category) in crate::Category::ALL.iter().enumerate() {
+                let (l, t, r, bm) = pages::nav_item_rect(self, index);
+                let i = b.push(
+                    &format!("nav:{}", category.title()),
+                    Role::TabItem,
+                    category.title(),
+                    category.landing().description(),
+                    b.screen_client(l, t, r, bm),
+                    true,
+                    Do::Nav(category.landing()),
+                    None,
+                );
+                b.out[i].info.selected = Some(*category == self.page.category());
             }
         }
         let rows = self.rows();
@@ -247,6 +266,66 @@ impl Ui {
                         Do::Nothing,
                         None,
                     );
+                }
+                Row::Crumb => {
+                    let parent = self.page.parent().map(|p| p.title()).unwrap_or("");
+                    b.push(
+                        "crumb:back",
+                        Role::Button,
+                        &format!("Back to {parent}"),
+                        "Alt+Left also goes back",
+                        b.screen(cl, top, cr, top + row.h - GAP),
+                        true,
+                        Do::Go(self.page.parent().unwrap_or(Page::Home)),
+                        Some((row_index, 0)),
+                    );
+                }
+                Row::Link(dest) => {
+                    b.push(
+                        &format!("link:{}", dest.id()),
+                        Role::Button,
+                        dest.title(),
+                        dest.description(),
+                        card(&b),
+                        true,
+                        Do::Go(*dest),
+                        Some((row_index, 0)),
+                    );
+                }
+                Row::Result(index) => {
+                    if let Some(result) = self.ext.results.get(*index) {
+                        let place = if result.path.is_empty() {
+                            "Action".to_string()
+                        } else {
+                            result.path.clone()
+                        };
+                        b.push(
+                            &format!("result:{index}"),
+                            Role::Button,
+                            &format!("{}, {}", result.title, place),
+                            &result.hint,
+                            card(&b),
+                            true,
+                            Do::Result(*index),
+                            Some((row_index, 0)),
+                        );
+                    }
+                }
+                Row::Expander(title) => {
+                    let i = b.push(
+                        &format!("section:{title}"),
+                        Role::Toggle,
+                        title,
+                        "Show or hide the options in this section",
+                        card(&b),
+                        true,
+                        Do::Section(title),
+                        Some((row_index, 0)),
+                    );
+                    b.out[i].info.toggled = Some(self.section_open(title));
+                }
+                Row::GlobalSearch => {
+                    // The native search box is the control; the card around it is decoration.
                 }
                 Row::Toggle(id) => {
                     let (label, desc) = toggle_meta(*id);
@@ -574,9 +653,9 @@ impl Ui {
             });
         }
         if self.ext.nav_focus {
-            return built
-                .iter()
-                .position(|b| matches!(b.action, Do::Nav(page) if page == self.page));
+            return built.iter().position(
+                |b| matches!(b.action, Do::Nav(page) if page.category() == self.page.category()),
+            );
         }
         let ordinal = self.ext.focus?;
         let (row_index, _) = *self.interactive_rows().get(ordinal)?;
@@ -653,6 +732,10 @@ impl Ui {
             Do::TrialKeep => self.trial_keep(),
             Do::TrialRevert => self.trial_revert(),
             Do::Credit => self.open_credit(),
+            Do::FocusSearch => self.focus_search(hwnd),
+            Do::Go(page) => self.set_page(hwnd, page),
+            Do::Result(index) => self.open_result(hwnd, index),
+            Do::Section(title) => self.toggle_section(title),
         }
         self.relayout(hwnd);
         true
