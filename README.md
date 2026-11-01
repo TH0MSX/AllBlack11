@@ -297,6 +297,10 @@ Built by Tomasz Pepliński ([@TH0MSX](https://github.com/TH0MSX)) with AI coding
 
 Window frames use the public DWM attribute APIs. Tinted acrylic uses `SetWindowCompositionAttribute`, the same user32 entry TranslucentTB uses on the taskbar, called from this process only. Icons are Segoe Fluent Icons, used from the font Windows provides; the AllBlack11 mark and the wallpapers are original.
 
+## Support
+
+AllBlack11 is free, MIT-licensed and has no locked features, no ads and no telemetry. If it saves you time and you want to say thanks, a tip is welcome through [PayPal](https://paypal.me/peplinski00). It is never required, and bug reports, screenshots and test results from your own PC help just as much.
+
 ## License
 
 [MIT](LICENSE). Copyright (c) 2026 Tomasz Pepliński.
