@@ -101,7 +101,7 @@ What the 3.5 and 3.6 previews add:
 
 **Everything in 3.6 is unverified on real Windows hardware** and ships only as a pre-release; see `docs/dev/EVIDENCE.md`.
 
-Honest limits: Chromium, Electron, WinUI and many modern apps draw their own opaque client area and often their own title bar, so a backdrop cannot show through them and caption colors may not apply. AllBlack11 does not change whole-window opacity, and no feature here is universal. Screen readers cannot yet read the custom-drawn Settings controls (keyboard access works).
+Honest limits: Chromium, Electron, WinUI and many modern apps draw their own opaque client area and often their own title bar, so a backdrop cannot show through them and caption colors may not apply. AllBlack11 does not change whole-window opacity, and no feature here is universal. Settings is custom drawn: it has full keyboard access and a UI Automation provider for screen readers, but that provider has not yet been tried with Narrator, so treat screen reader support as unverified.
 
 ## ⬇️ Download
 
@@ -161,7 +161,9 @@ Exit
 
 Menu items carry a one-line explanation of what they do. A check mark means that item is on. In dark mode the menu is dark, with padded rows and rounded corners. Light mode stays light. High contrast uses the normal system menu.
 
-**Settings** is a native window in the same near-black as the rest. Every option sits on its own card: the name and a plain-language explanation on the left, the control on the right. A **live preview** is pinned at the top. It redraws a mock window, Start menu and taskbar from your current config, so you can see what a backdrop, corner style, border, tint or shell toggle does before you look at a real window. It also has the presets, per-app rules, exclusions, **Restart Explorer**, and an **About** card that says whether you are running natively on ARM64.
+**Settings** is a native window. A left pane has eight pages: **Home** (is customization on, the current look, what to do next, Pause), **Fix this app** (pick a window, see what can change, preview, keep or undo), **Appearance** (a live preview of a mock window, Start menu and taskbar, plus every look option), **Scenes**, **Rules**, **Safety**, **Diagnostics**, and **Settings & help** (walkthroughs, searchable help, replay the first-run setup, and a System / Light / Dark choice for AllBlack11's own windows, which never changes what it applies to other apps). Every option sits on its own card: the name and a plain-language explanation on the left, the control on the right. **Restart Explorer** is under the shell options on Appearance, and the **About** card on Settings & help says whether you are running natively on ARM64.
+
+> The Settings screenshot in the feature table above is from the 3.0 Preview. The 3.6.0-preview.2 interface has not been photographed on Windows yet; `docs/dev/UI-GUIDELINES.md` says what it follows and where it deviates.
 
 | Item | What it does |
 | --- | --- |

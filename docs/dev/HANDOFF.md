@@ -1,4 +1,4 @@
-# AllBlack11 development handoff (3.6 preview)
+# AllBlack11 development handoff (3.6 preview, UI pass)
 
 Keep this file current. It exists so the work survives a context reset.
 
@@ -6,7 +6,7 @@ Keep this file current. It exists so the work survives a context reset.
 
 - Baseline: `7b65598` (3.0.0-preview.2 plus two docs/banner merges). Tag `v3.0.0-preview.2`.
 - Crates: root exe, `hook/` (DLL, built for both CPUs), `setup/` (installer), `harness/` (test dialog, two manifests), `helper/` (x64-only helper shipped in the ARM64 package).
-- Branches: `claude/peaceful-archimedes-ppfhwb` is the **3.5.0-preview.1 checkpoint** (head `7372140`, untouched). `claude/next-preview-3.6` continues from it: **3.6.0-preview.1** (prerelease only; nothing merged, tagged or published).
+- Branches: `claude/peaceful-archimedes-ppfhwb` is the **3.5.0-preview.1 checkpoint** (head `7372140`, untouched). `claude/next-preview-3.6` continues from it: **3.6.0-preview.1** (head `9911cd3`, the recoverable 3.6 checkpoint; CI green; prerelease only). **`claude/ui-polish-fluent`** branches from that and is **3.6.0-preview.2**: the UI pass. Nothing is merged, tagged or published; no pull request exists.
 - Toolchain: Rust stable, `cargo-xwin` for ARM64/x64 Windows cross-builds from Linux. `./build.sh [arm64|x64|all]`.
 - Nothing can be *run* in this environment. Every Windows behavior is "cross-compiled" at best.
   See the evidence table in `docs/dev/EVIDENCE.md`.
@@ -46,9 +46,42 @@ Keep this file current. It exists so the work survives a context reset.
 12. **Features** (`config.features`, all off by default, each independent): `identityAccents`
     (`accents.rs`, `accents.json`), `dayNight` (`schedule.rs`; one timer for the next boundary,
     re-checked on resume/time change), `paletteHotkey` (`RegisterHotKey`, no keyboard hook).
-13. **Settings pages**: Overview, Effects, Apps, Scenes, Legacy, Safety. Run
+13. **Settings pages** (preview.2): Home, Fix this app, Appearance, Scenes, Rules, Safety, Diagnostics, Settings & help, in a left pane. Run
     `python3 scripts/check-controls.py` after any page change; it fails if a control is on no page.
 14. **Command palette** (`src/commands.rs` + `platform/cmdpal.rs`, a child module of `settings`).
+
+## Added in preview.2 (the UI pass; read `UI-GUIDELINES.md` first)
+
+15. **Design system**: `src/uitheme.rs` (pure: palettes, type ramp, metrics, contrast math, tests),
+    `platform/uistyle.rs` (fonts, icon font, thread-local theme `th()`), `platform/controls.rs`
+    (one button, one focus ring, pointer hover/pressed registry). Pages never pick a color or draw a
+    button themselves. `config.ui.appearance` (System/Light/Dark) is AllBlack11's own and is
+    separate from every look it applies.
+16. **Row model with measured heights**: a page is a `Vec<Laid>` of `Row`s. Heights come from
+    `row_height`, which measures wrapped text with `DrawText(DT_CALCRECT)` inside a
+    `MeasureScope` that holds the fonts, scale and content width. Painting uses the same
+    `*_text_w` and `*_heights` functions; if you change one side, change the other. A new text row
+    needs: a `Row` variant, `row_height`, `paint_row`, and the UI Automation arm in `uia_ui.rs`.
+17. **Onboarding** (`src/onboarding.rs` pure state machine, `onboarding.json`; `platform/setup_ui.rs`
+    screens): `fresh_install` is "no config file when this version first ran"; an upgrade is marked
+    `existingUser` and never shown setup. **Help and walkthroughs** (`src/help.rs`, pure): steps
+    name a real page and control, adapt to `Capabilities`, and are shown as an inline tip.
+18. **UI Automation** (`platform/uia.rs` COM, `platform/uia_ui.rs` tree from the same rows):
+    marshaled to the UI thread with a window message; events only when a client is listening;
+    `ALLBLACK11_NO_UIA=1` disables it; `ALLBLACK11_UIA_SELFTEST=1` runs an in-process vtable
+    self-test and writes a report (used under Wine).
+19. **Trial bar** is part of the Tab ring and of the UI Automation tree (`ext.trial_focus`,
+    `trial_message`). Enter or Space during a trial moves focus to Keep.
+20. **Wine harness** (`scripts/ui-shot.sh`, `scripts/ui-drive.sh`): runs the x64 exe under Wine +
+    Xvfb and takes screenshots / sends clicks and keys. It is for layout only; Wine is not Windows.
+    `AB_W`/`AB_H` set the window size; the registry value `TextScaleFactor` simulates text size.
+
+## UI deferred or open (see `UI-GUIDELINES.md` > Deviations and Known gaps)
+
+- Edit boxes have no programmatic label; rows scrolled out of view are not marked off-screen.
+- Setup / uninstall (`setup/`) is not on the design system. System message boxes are unchanged.
+- `PAGE_MARGIN` (24) and the drawn margin (20) disagree.
+- Not run on Windows at all: Narrator, high contrast, multi-monitor DPI, hover/pressed feel.
 
 ## Deferred in 3.6 (not stubs: nothing for them is in the UI or the code)
 
@@ -71,4 +104,5 @@ See the task list in the PR description / `docs/dev/EVIDENCE.md`. Update the che
 - Run the ordered pass at the top of `docs/dev/SMOKE-TEST.md` on ARM64 (native and the x64 build
   under emulation) and native x64.
 - Fix what it finds, update `EVIDENCE.md`, then decide whether 3.5 can leave pre-release.
-- Known gaps: UI Automation for the custom-drawn Settings; whole-window opacity not offered.
+- Known gaps: UI Automation has never been exercised by a real client; whole-window opacity not offered.
+- Run section **U** of `SMOKE-TEST.md` first (25 minutes), then the 3.6 pass.
