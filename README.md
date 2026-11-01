@@ -1,147 +1,94 @@
-<p align="center"><img src="docs/banner.png" alt="AllBlack11: make Windows 11 truly black. Native ARM64 and x64. 3.7 Preview." width="100%"></p>
+<p align="center"><img src="docs/banner.png" alt="AllBlack11: pitch-black Windows 11. Native ARM64 and x64. Free and open source." width="100%"></p>
 
 <div align="center">
 
-# AllBlack11
-
 **Make Windows 11 truly black.** OLED-friendly, featherweight, fully reversible.
 
-<a href="https://github.com/TH0MSX/AllBlack11/releases/tag/v3.7.0-preview.1"><img src="https://img.shields.io/github/v/release/TH0MSX/AllBlack11?include_prereleases&style=for-the-badge&color=5bb4f0&labelColor=000000" alt="Latest release"></a>
-<a href="https://github.com/TH0MSX/AllBlack11/releases/tag/v3.7.0-preview.1"><img src="https://img.shields.io/github/downloads/TH0MSX/AllBlack11/total?style=for-the-badge&color=5bb4f0&labelColor=000000" alt="Downloads"></a>
+<a href="https://github.com/TH0MSX/AllBlack11/releases/tag/v3.8.0-preview.2"><img src="https://img.shields.io/github/v/release/TH0MSX/AllBlack11?include_prereleases&style=for-the-badge&color=5bb4f0&labelColor=000000&label=latest" alt="Latest release"></a>
 <img src="https://img.shields.io/badge/native-ARM64%20%2B%20x64-5bb4f0?style=for-the-badge&labelColor=000000" alt="ARM64 and x64 native">
 <img src="https://img.shields.io/badge/admin-not%20required-5bb4f0?style=for-the-badge&labelColor=000000" alt="No admin">
 <a href="LICENSE"><img src="https://img.shields.io/github/license/TH0MSX/AllBlack11?style=for-the-badge&color=5bb4f0&labelColor=000000" alt="MIT license"></a>
 
-[**⬇️ Download**](#-download) · [**🚀 Quick start**](#-quick-start) · [**✨ Features**](#-features) · [**🖱️ Settings**](#️-tray-menu-and-settings) · [**⚙️ Config**](#️-configuration) · [**🛡️ Safety**](#️-safety-and-uninstall) · [**❓ FAQ**](#-faq)
+[**Download**](#download) · [**See it**](#see-it) · [**Features**](#what-you-get) · [**How far it is checked**](#how-far-it-has-been-checked) · [**Safety**](#safety-and-uninstall) · [**FAQ**](#faq)
 
 </div>
 
+<p align="center"><img src="docs/hero.png" alt="AllBlack11 Settings floating over a black stage: Home with a search box, six categories and a Customize an app button, with the Apps and Wallpapers pages behind it" width="100%"></p>
+
+## A small tray app for a very black Windows
+
+Windows 11 dark mode still paints gray title bars, a gray taskbar and a tinted Start menu. AllBlack11 asks Windows for black ones, lets you try any look for 15 seconds before you keep it, and puts everything back whenever you say so.
+
+| True black | Featherweight | Reversible |
+| --- | --- | --- |
+| Black title bars, borders, taskbar, Start menu and notification center, plus eight original OLED wallpapers. | Native ARM64 and x64. About 12 MB of RAM on a Snapdragon ZenBook (measured on 3.0 Preview), near-idle CPU, no polling. | Every change is snapshotted and undone from the same place, by Undo, or by uninstalling. |
+
 > [!IMPORTANT]
-> **Use 3.7 Preview.** It is the version to install: it replaces 3.0 Preview and keeps everything in it, and adds a new icon, a redesigned Settings with first-run setup and Help, scenes and a Look Book, a window picker that explains what AllBlack11 did and why, a look history with Undo, a rule playground and safer recovery. **[Download 3.7 Preview](https://github.com/TH0MSX/AllBlack11/releases/tag/v3.7.0-preview.1)**.
->
-> **How far it has been checked, plainly:** the ARM64 build has been run by its author on a Windows 11 ARM64 PC. The x64 build is built and unit-tested on a real Windows x64 runner but has **not yet been run on an x64 PC**, and the full hardware checklist is not finished. See [what is verified](docs/dev/EVIDENCE.md) and the [smoke test](docs/dev/SMOKE-TEST.md). It is labelled a pre-release because that checking is not finished. Everything it changes can be undone.
->
-> Made by [@TH0MSX](https://github.com/TH0MSX) with AI assistance (Cursor, and Claude), tested on real ARM64 hardware.
+> **Use 3.8 Preview.** It replaces every older version and keeps your settings. It is a **pre-release**, and this is how far it has been checked: the ARM64 build runs on its author's Windows 11 ARM64 PC (the screenshots on this page are from it); the x64 build is built and unit-tested on a real Windows x64 runner but has **not been run on an x64 PC**; screen readers, the updater against real releases and wallpaper apply have not been tried on hardware. Details: [what is verified](docs/dev/EVIDENCE.md). The binaries are unsigned, so SmartScreen may warn.
 
-## 🌙 Why
+### Kept up to date, in the open
 
-Windows 11 dark mode still paints gray title bars, a gray taskbar, and a tinted Start menu. AllBlack11 is a small tray program that fixes that.
+AllBlack11 received **over 15 updates in November 2026 alone** ([every one is a commit you can read](https://github.com/TH0MSX/AllBlack11/commits/main/?since=2026-11-01&until=2026-11-30)). The aim is **at least one update every month**, each with bug fixes, compatibility tweaks for Windows updates and new features. That is a target, not a promise: every release says plainly what has and has not been checked, and the in-app updater only ever tells you; it never installs by itself.
 
-| 🖤 True black | 🪶 Featherweight | ↩️ Reversible |
-| --- | --- | --- |
-| Black taskbar, Start menu, notification center, and darker window frames. | Native ARM64 and x64. About 12 MB of RAM on a Snapdragon ZenBook (measured on 3.0 Preview), near-idle CPU. | Every change is snapshotted and undone from the same menu, or by uninstalling. |
+## Download
 
-## 🚀 Quick start
-
-1. **Download** the Setup for your PC from the [3.7 Preview release](https://github.com/TH0MSX/AllBlack11/releases/tag/v3.7.0-preview.1).
-2. **Run it.** No administrator prompt. If SmartScreen objects, choose **More info**, then **Run anyway**.
-3. **Open Settings** from the tray icon, pick a **Quick look**, and watch the preview.
-
-## ✨ Features
-
-<table>
-  <tr>
-    <td width="50%" align="center">
-      <img src="docs/screenshots/3.7-home.png" alt="AllBlack11 Settings Home: is customization on, the current scene, what to do next" width="100%">
-      <br><strong>Home</strong>
-      <br>Is customization on, which look is active, what to do next, and Pause one click away.
-    </td>
-    <td width="50%" align="center">
-      <img src="docs/screenshots/3.7-fix-this-app.png" alt="AllBlack11 Fix this app: pick a window and see what can change" width="100%">
-      <br><strong>Fix this app</strong>
-      <br>Pick any window, see what can change and why, preview it, then keep it or undo it.
-    </td>
-  </tr>
-  <tr>
-    <td colspan="2" align="center">
-      <img src="docs/screenshots/3.7-windows.png" alt="Control Panel, Run and File Explorer with black frames next to AllBlack11 Settings" width="100%">
-      <br><strong>Black frames across apps</strong>
-      <br>Control Panel, Run and File Explorer, with AllBlack11 Settings. 3.7 Preview on a Snapdragon (ARM64) PC.
-    </td>
-  </tr>
-  <tr>
-    <td colspan="2" align="center">
-      <img src="docs/screenshots/start-menu.png" alt="Black Start menu with Phone Link and an OLED taskbar" width="100%">
-      <br><strong>Black Start and an OLED taskbar</strong>
-      <br>Start, the taskbar, and Phone Link share one black surface.
-    </td>
-  </tr>
-  <tr>
-    <td width="50%" align="center">
-      <img src="docs/screenshots/notification-center.png" alt="Black notification center and calendar" width="62%">
-      <br><strong>Notification center</strong>
-      <br>The shade and the calendar follow the same palette.
-    </td>
-    <td width="50%" align="center">
-      <img src="docs/screenshots/3.7-tray-menu.png" alt="The AllBlack11 tray menu" width="62%">
-      <br><strong>Tray menu</strong>
-      <br>Presets, scenes, the command palette and Pause, one right-click away.
-    </td>
-  </tr>
-</table>
-
-- 🎨 **Per-window look:** dark captions, border, text color, corners, and backdrop (Mica, Mica Alt, Acrylic, or tinted acrylic).
-- 🪄 **Presets:** Pure OLED, Accent glass, Classic Mica, Factory defaults.
-- 🖥️ **Shell:** OLED taskbar, black Start and notification center, and a **Restart Explorer** button for when Windows needs a nudge.
-- 🧩 **Per-app rules and exclusions:** by exe name, with a built-in skip list for the shell, games, and launchers.
-- 🪶 **Quiet:** event-driven, no polling loop while the PC is idle.
-- 🔁 **Undo everywhere:** original frame attributes go back on Exit, Disable, or Reset. Shell tweaks are HKCU only, snapshotted, and undone from the same menu or the uninstaller.
-- 🧪 **Optional and off by default:** **Dark legacy windows**. A same-architecture hook DLL recolors classic dialogs such as Run. See [Safety](#️-safety-and-uninstall).
-
-## 🧪 What is new in 3.7 Preview (and since 3.0)
-
-AllBlack11 works in three honest layers. Knowing which one a window is in explains most "why didn't it change?" questions.
-
-| Layer | What it does | Reaches into other apps? |
-| --- | --- | --- |
-| **A. Frame styling** | Title bar, text and border colors, corners, Mica, Mica Alt, Acrylic and experimental tinted Acrylic, set through Windows' own window-frame attributes. | No |
-| **B. Legacy layer** (opt-in) | Recolors the controls of *classic dialogs* (Run, old installers, property pages) from inside the app: labels, edit boxes, buttons, check boxes, combo and list boxes, list views, tree views. | Yes, per dialog, only same-CPU, non-elevated, never games or shell |
-| **C. App integrations** | None ship yet. | No |
-
-What 3.7 adds:
-
-- **A new icon and identity.** An original moon-and-window mark (not the Windows logo), a one-color tray mark that follows the taskbar theme, and a filled moon when styling is on and an outline when it is off or paused.
-- **Look history with Undo (3.7).** Safety lists your recent changes by name and **Undo last change** steps back one at a time. It is separate from Reset all windows, which puts windows back as Windows draws them.
-- **Rule playground (3.7).** Type an app, or use the window you picked, and see which rule would win and why, without applying anything.
-- **Contrast check (3.7).** Measures the colors a look uses against the contrast guidance, says Passes or Fails, and offers the nearest fix.
-- **Safer recovery (3.7).** A config only becomes the "last known good" copy after it has actually run for a minute, and files are flushed to disk before they replace the old ones.
-- **A calmer Exit (3.7).** Quitting asks only when it would revert a trial, remove the classic-dialog layer or stop the helper.
-
-What 3.6.0-preview.2 added:
-
-- **A redesigned Settings.** A left navigation pane (Home, Fix this app, Appearance, Scenes, Rules, Safety, Diagnostics, Settings & help), one design system with Light, Dark and high contrast, **first-run setup**, six walkthroughs, searchable Help, full keyboard access (Keep and Revert included) and a UI Automation provider for screen readers.
-
-What the 3.5 and 3.6 previews added:
-
-- **Legacy dark mode that holds up.** Each control family has its own technique, states stay readable, controls that cannot be darkened safely are left alone and reported, and Explorer, Control Panel and dialogs with embedded web or Explorer views are never touched. A built-in **control harness** lets you check it without relying on another app.
-- **Window picker and inspector.** Drag a crosshair onto any window to see its executable, class, CPU type, which rule applied and why, where each setting came from, and what Windows answered. The report says "accepted by Windows; appearance not verified" and never claims more.
-- **Effects Studio.** Per-app looks, Focus Look, Reduce effects on battery saver or remote sessions, and a demonstration window that shows how materials behave.
-- **Rules that explain themselves.** Match by executable, class, path, package or (optionally) title, with clear precedence and conflict warnings.
-- **Safe to experiment.** Presets and recipes run as a 15-second trial; a broken config falls back to the last known good one; shell restores skip anything you changed yourself.
-- **Experimental on ARM64:** an on-demand x64 helper for emulated x64 dialogs. It has not been run on hardware yet.
-- **Fix this app (3.6).** Pick a window and see, per surface (title bar, border, backdrop, app content, classic controls), what can change and why, then preview it for 20 seconds, save it as a rule, exclude the app, or restore it.
-- **Scenes and a Look Book (3.6).** OLED Black, Graphite, Midnight Accent, Focus and Living Room, plus looks you save. Switching a scene never touches your per-app rules. Build a look from a picture, compare before and after on windows AllBlack11 owns, and switch from the tray or the **command palette** (Ctrl+K in Settings).
-- **Safety page (3.6).** Emergency pause, reset, undo shell changes, last known good, safe start after repeated crashes, and the status of every experimental piece. Identity accents, Day / Night scenes and the palette hotkey are optional and off by default.
-
-**Verification:** the ARM64 build has been run on a Windows 11 ARM64 PC by its author; the x64 build, Narrator, and the full hardware checklist are still to do. `docs/dev/EVIDENCE.md` says feature by feature what has and has not been checked, and `docs/dev/INVENTORY-3.7.md` lists what exists and what is deliberately not built yet.
-
-Honest limits: Chromium, Electron, WinUI and many modern apps draw their own opaque client area and often their own title bar, so a backdrop cannot show through them and caption colors may not apply. AllBlack11 does not change whole-window opacity, and no feature here is universal. Settings is custom drawn: it has full keyboard access and a UI Automation provider for screen readers, but that provider has not yet been tried with Narrator and the native text boxes still lack an accessible label, so treat screen reader support as unverified.
-
-## ⬇️ Download
-
-**Recommended: [3.7 Preview](https://github.com/TH0MSX/AllBlack11/releases/tag/v3.7.0-preview.1).** Grab the files for your PC:
+**Recommended: [3.8 Preview](https://github.com/TH0MSX/AllBlack11/releases/tag/v3.8.0-preview.2).** Pick the files for your PC:
 
 | Your PC | Installer (recommended) | Portable zip |
 | --- | --- | --- |
-| **Snapdragon** and other ARM64 | [`AllBlack11-Setup-arm64.exe`](https://github.com/TH0MSX/AllBlack11/releases/download/v3.7.0-preview.1/AllBlack11-Setup-arm64.exe) | [`AllBlack11-arm64.zip`](https://github.com/TH0MSX/AllBlack11/releases/download/v3.7.0-preview.1/AllBlack11-arm64.zip) |
-| **Intel and AMD** | [`AllBlack11-Setup-x64.exe`](https://github.com/TH0MSX/AllBlack11/releases/download/v3.7.0-preview.1/AllBlack11-Setup-x64.exe) | [`AllBlack11-x64.zip`](https://github.com/TH0MSX/AllBlack11/releases/download/v3.7.0-preview.1/AllBlack11-x64.zip) |
+| **Snapdragon** and other ARM64 | [`AllBlack11-Setup-arm64.exe`](https://github.com/TH0MSX/AllBlack11/releases/download/v3.8.0-preview.2/AllBlack11-Setup-arm64.exe) | [`AllBlack11-arm64.zip`](https://github.com/TH0MSX/AllBlack11/releases/download/v3.8.0-preview.2/AllBlack11-arm64.zip) |
+| **Intel and AMD** | [`AllBlack11-Setup-x64.exe`](https://github.com/TH0MSX/AllBlack11/releases/download/v3.8.0-preview.2/AllBlack11-Setup-x64.exe) | [`AllBlack11-x64.zip`](https://github.com/TH0MSX/AllBlack11/releases/download/v3.8.0-preview.2/AllBlack11-x64.zip) |
 
-Running Setup over an older version updates it in place and keeps your config. The older [3.0 Preview](https://github.com/TH0MSX/AllBlack11/releases/tag/v3.0.0-preview.2) is still available but no longer recommended.
+Setup installs for your account only (no administrator prompt) and updates an older version in place. On an ARM64 PC pick the ARM64 files; About tells you when a build is running under emulation. The older [3.7 Preview](https://github.com/TH0MSX/AllBlack11/releases/tag/v3.7.0-preview.1) is still available.
 
-> [!TIP]
-> On an ARM64 PC, pick the ARM64 files. The x64 build works through emulation and Settings > About will tell you when that is happening.
+1. **Run Setup.** If SmartScreen objects: **More info**, then **Run anyway**.
+2. **Open Settings** from the tray icon, pick a **Quick look** under Appearance, and watch the preview.
+3. Press **Keep**, or wait 15 seconds and it goes back by itself.
 
-## 🛠️ Install
+## See it
+
+<p align="center"><img src="docs/bento.png" alt="AllBlack11 in six tiles: six clear categories, wallpapers made for OLED, a 15-second try-out, a look history that names each change, updates only when you ask, and customizing one app" width="100%"></p>
+
+<sub>Screenshots are AllBlack11 3.8 Preview on a Snapdragon (ARM64) Windows 11 PC. The arrangement, rounding and lighting are mockup styling; the windows themselves are not altered. Source: [`docs/mockup-source`](docs/mockup-source).</sub>
+
+## What you get
+
+- **A Settings app that works like Windows Settings.** Six categories (Home, Appearance, Apps, Safety, Settings, Help & About), landscape layout, a Back link on every subpage, and a **search box** that finds settings, scenes, packs, wallpapers and help (Ctrl+K). A result opens the right page and marks the control; it never changes anything by itself.
+- **Per-window looks:** dark caption, border, text color, corners, and a backdrop (Mica, Mica Alt, Acrylic or tinted acrylic). Presets: Pure OLED, Accent glass, Classic Mica, Factory defaults.
+- **Scenes and a Look Book:** OLED Black, Graphite, Midnight Accent, Focus, Living Room, and looks you save. A palette from a picture, recipes you can import and export, a remixer that refuses unreadable text.
+- **Customize one app:** pick any window, see what can change and why, preview it for 20 seconds, save it as a rule or leave it alone. Rules explain which one won and why.
+- **Eight original OLED wallpapers**, generated by a script in this repository, downloaded one at a time only when you press Download, checked against a built-in checksum.
+- **An updater that only tells you.** Check, read the notes, download, verify the SHA-256, then install. Stable or include previews. No telemetry.
+- **Safe to experiment:** every look runs as a 15-second trial; Look history with Undo; Pause; Reset all windows; a last-known-good config; safe start after repeated crashes.
+- **The shell:** OLED taskbar, black Start and notification center, and a Restart Explorer button for when Windows needs a nudge.
+- **Quiet:** event-driven, no timer while the PC is idle.
+- **Optional and off by default:** dark classic dialogs (a same-architecture hook for windows like Run), emulated x64 coverage on ARM64, identity accents, Day / Night scenes.
+
+AllBlack11 works in three honest layers; knowing which one a window is in explains most "why didn't it change?" questions:
+
+| Layer | What it does | Reaches into other apps? |
+| --- | --- | --- |
+| **A. Frame styling** | Title bar, text and border colors, corners and backdrops, set through Windows' own window-frame attributes. | No |
+| **B. Legacy layer** (opt-in) | Recolors the controls of *classic dialogs* (Run, old installers, property pages) from inside the app. | Yes, per dialog, only same-CPU, non-elevated, never games or shell |
+| **C. App integrations** | None ship yet. The Microsoft Store and Calculator packs are experiments (see [limitations](#limitations)). | No |
+
+### New in 3.8 Preview
+
+A new Settings shell with global search; an updater; compatibility packs (experimental); the wallpaper gallery; an exclusion manager; a recipe remixer; named text boxes for screen readers; and one typed registry for every page, which fixed the command palette opening the wrong page. The full list is in the [changelog](CHANGELOG.md); what moved where is in [`INVENTORY-3.8-stabilization.md`](docs/dev/INVENTORY-3.8-stabilization.md).
+
+## How far it has been checked
+
+| Area | Status |
+| --- | --- |
+| ARM64 build on a Windows 11 ARM64 PC | **Run by the author.** The Settings shell, hub pages, Effects, Safety with Look history, Settings with Updates, and the Wallpapers page were seen working (the screenshots above). |
+| x64 build | Built and unit-tested on a Windows x64 CI runner. **Not run on an x64 PC.** |
+| Unit tests | 367, on Linux and on both native Windows CI runners. |
+| Updater against real releases, wallpaper download and apply, Store and Calculator behavior | **Not yet checked on hardware.** Store and Calculator showed no visible change on the author's PC, so those two packs are labeled experimental. |
+| Screen readers (Narrator, NVDA) | **Unverified.** Names and roles are in place and self-tested, not heard. |
+
+`docs/dev/EVIDENCE.md` says, feature by feature, what was run and what was only built; `docs/dev/SMOKE-TEST.md` is the checklist.
+
+## Install
 
 **Setup.exe.** Run the installer for your CPU. It installs for your account only, so there is no administrator prompt. It adds a Start menu shortcut and an entry in Settings > Apps, and it can start AllBlack11 at sign-in. Running a newer Setup updates in place and keeps your config. To uninstall, use Settings > Apps, or run Setup again and choose **Uninstall**. Uninstall puts the Windows settings AllBlack11 changed back first, then asks whether to keep your config.
 
@@ -164,16 +111,16 @@ If `%APPDATA%\PepaTheme\config.json` is still there and the new config is not, t
 
 The binaries are unsigned. SmartScreen may say it protected your PC. Choose **More info**, then **Run anyway**.
 
-## 🖱️ Tray menu and Settings
+## Settings and the tray menu
 
-Right-click the icon for the menu. A single left-click opens it too. Double-click opens Settings.
+Right-click the tray icon for the menu (a single left-click opens it too; double-click opens Settings).
 
 ```
-AllBlack11 3.7 Preview · ARM64
+AllBlack11 3.8 Preview · ARM64
 ──────────
 Enabled                  Master switch for dark title bars, borders and backdrops.
 Settings…                Every option, with a live preview and an explanation.
-Command palette…         Search every action. Also Ctrl+K inside Settings.
+Command palette…         Search every action and run it. Settings has its own search box (Ctrl+K there).
 Presets  ›               Pure OLED · Accent glass · Classic Mica · Factory defaults
 Scenes  ›                OLED Black · Graphite · Midnight Accent · Focus · Living Room, and your saved looks
 Pause all styling        Emergency stop: puts every window back and stops the legacy layer.
@@ -188,28 +135,34 @@ Start with Windows
 Exit
 ```
 
-Menu items carry a one-line explanation of what they do. A check mark means that item is on. In dark mode the menu is dark, with padded rows and rounded corners. Light mode stays light. High contrast uses the normal system menu. The tray icon is a one-color moon that follows the taskbar theme: filled when styling is on, an outline when it is off or paused.
+**Settings** is a native, custom-drawn window with a navigation pane on the left and a search box above it:
 
-**Settings** is a native window. A left pane has eight pages: **Home** (is customization on, the current look, what to do next, Pause), **Fix this app** (pick a window, see what can change, preview, keep or undo), **Appearance** (a live preview of a mock window, Start menu and taskbar, plus every look option), **Scenes**, **Rules**, **Safety**, **Diagnostics**, and **Settings & help** (walkthroughs, searchable help, replay the first-run setup, and a System / Light / Dark choice for AllBlack11's own windows, which never changes what it applies to other apps). Every option sits on its own card: the name and a plain-language explanation on the left, the control on the right. **Restart Explorer** is under the shell options on Appearance, and the **About** card on Settings & help says whether you are running natively on ARM64.
+| Category | What is in it |
+| --- | --- |
+| **Home** | Is customization on, the current look, **Customize an app**, Pause, saved looks, update badge. |
+| **Appearance** | Scenes and looks, Effects and colors (with a live preview), Wallpapers, Schedule and accents, Palette and recipes. |
+| **Apps** | Customize an app (the window picker), Per-app rules, Compatibility packs, Exclusions. |
+| **Safety** | Try, keep or revert; Undo and Look history; Pause and reset; last known good; Experimental features. |
+| **Settings** | AllBlack11's own theme, start with Windows, shortcuts, Updates. |
+| **Help & About** | Help and tutorials, Diagnostics and support, About (version, CPU type, verification status, credits and licenses). |
 
-> The screenshots above are 3.7 Preview on a Snapdragon (ARM64) PC. `docs/dev/UI-GUIDELINES.md` says which Microsoft design guidance Settings follows and where it deviates.
+Settings follows the Windows 11 Settings pattern, with full keyboard access and a UI Automation provider; `docs/dev/UI-GUIDELINES.md` says which Microsoft guidance it follows and where it deviates.
 
-| Item | What it does |
+| Menu item | What it does |
 | --- | --- |
 | **Enabled** | Window-frame pass. Off restores frames and is saved in the config. |
 | **Presets** | One-click looks. They rewrite the default look; rules and exclusions are kept. |
 | **OLED taskbar** | `UseOLEDTaskbarTransparency` = 1. |
 | **Black Start, taskbar & notification center** | Black shell palette, transparency on, light theme off. |
-| **Restart Explorer…** | Ends `explorer.exe` and lets Windows start it again. Open File Explorer windows close, so it asks first. Use it when a shell change does not show up. |
+| **Restart Explorer…** | Ends `explorer.exe` and lets Windows start it again. Open File Explorer windows close, so it asks first. |
 | **Reload / Open config / Open data folder** | Reads `config.json` again, or opens it or its folder. |
 | **Write diagnostics report** | Writes `check.txt` (version, CPU type, Windows build, settings) and opens it. |
 | **Reset all windows** | Puts frames back until you reload or turn Enabled on again. |
-| **Start with Windows** | The HKCU Run value. |
 | **Exit** | Restores frames and quits. Shell toggles stay until you uncheck them or uninstall. |
 
-Command line: `AllBlack11.exe --check` prints the diagnostics report, `--restart-explorer` restarts the shell, and `--restore` quits the app and undoes the shell tweaks and CaptionHeight without needing the tray (add `--quiet` for scripts).
+Command line: `AllBlack11.exe --check` prints the diagnostics report, `--restart-explorer` restarts the shell, `--open-settings=apps/packs` opens Settings on a page, and `--restore` quits the app and undoes the shell tweaks and CaptionHeight without needing the tray (add `--quiet` for scripts).
 
-## ⚙️ Configuration
+## Configuration
 
 Defaults live in `default`. A rule overrides only the fields it names. Full key list: **[docs/CONFIG.md](docs/CONFIG.md)**.
 
@@ -234,7 +187,7 @@ Control Panel (`mmc.exe`) with a darker tinted acrylic, keeping the black captio
 
 `borderColor: "accent"` follows `AccentColorMenu`. `0xFF748501` is RGB `#018574`.
 
-## 🔍 How it works
+## How it works
 
 <details>
 <summary>DWM frames, tinted acrylic, and window events</summary>
@@ -258,7 +211,7 @@ On the author's Snapdragon ZenBook the process sat at about 12 MB of RAM.
 
 </details>
 
-## 🛡️ Safety and uninstall
+## Safety and uninstall
 
 Everything is per-user. No administrator rights. The default path does not inject: window events are out-of-context, and frames are DWM messages.
 
@@ -276,7 +229,7 @@ That exits the app, restores `shell-backup.json` and `CaptionHeight` from `metri
 
 By hand: Exit from the tray, uncheck the Shell items, delete the exe, delete `%APPDATA%\AllBlack11`, and delete the `AllBlack11` Run value.
 
-## ⚠️ Limitations
+## Limitations
 
 <details>
 <summary>What AllBlack11 cannot recolor</summary>
@@ -287,11 +240,13 @@ With that switch on, standard dialog controls (`#32770`, static text, buttons, e
 
 Custom title bars ignore caption and border colors. That includes Chrome and a lot of Electron apps. Borderless DirectComposition windows and full-screen games are skipped. A windowed game with a normal caption can still be themed; add its exe under `exclude`. GeForce NOW and the usual launchers are excluded in the default config.
 
+**Microsoft Store and Calculator.** Their frames can only be asked for colors, and nothing visible has been shown to change, so the two built-in packs for them are labeled experimental and are not recommended. The pages inside those apps are drawn by the apps and cannot be recolored from outside; use an app's own theme option, or Windows' app mode, for that.
+
 Elevated windows that refuse a limited process query are left alone. High contrast pauses frame theming.
 
 </details>
 
-## ❓ FAQ
+## FAQ
 
 <details>
 <summary>Common questions</summary>
@@ -311,27 +266,32 @@ Changing the accent in Settings rebuilds `AccentPalette`. While **Black Start, t
 **I unchecked a Shell item and nothing changed.**
 If those registry values were already at the target when you first enabled the toggle, there was no older snapshot. Uncheck now falls back to the Windows defaults described above. If `shell-backup.json` already had originals from before that, those are what get restored.
 
+**The Store or Calculator did not change.**
+Expected. Those windows are hosted by Windows' app frame and draw their own pages. The experimental packs under Apps > Compatibility packs ask only for frame colors that are close to the default look, and **Check now** shows where the request stops. For the page colors, use the app's own theme option or Windows' app mode (Settings > Personalization > Colors).
+
+**How do updates work?**
+Settings > Updates asks GitHub (only when you press Check, or once a day if you turn that on) whether a newer release exists. It never installs by itself: you read what is new, download, the checksum is verified, then you choose Install.
+
 **Where did PepaTheme go?**
 Same program, new name. The first launch copies the old config and snapshots when the new ones are missing.
 
 </details>
 
-## 🗺️ Roadmap
+## Roadmap
 
+- The two-week stabilization freeze after 3.8: only critical regression and security fixes.
+- Run the x64 build on an x64 PC, and finish the hardware checklist (`docs/dev/SMOKE-TEST.md`), including a Narrator pass.
 - A signed build, if a certificate is available.
-- Run the x64 build on an x64 PC and finish the hardware checklist (`docs/dev/SMOKE-TEST.md`).
-- Accessible labels for the native text boxes, then a Narrator pass.
-- Next features: an exclusion manager, helper health counters, a styling timeline, Recipe Remixer and palette locking (see `docs/dev/INVENTORY-3.7.md`).
-- Covering x64-emulated apps with the experimental dark-dialog hook on ARM64 (needs a helper process).
-- More per-app recipes in the default config, still opt-in.
+- Investigate, on real hardware, whether Windows applies frame colors to the Store and Calculator windows; until then the packs stay experimental.
+- Later: palette locking, display-aware scenes and a window anatomy view (see `docs/dev/INVENTORY-3.8.md`).
 
-## 👤 Credits
+## Credits
 
 Built by Tomasz Pepliński ([@TH0MSX](https://github.com/TH0MSX)) with AI coding assistance from Cursor's agent (credited as `cursoragent` in the commit history) and Claude (credited in commit trailers). Every feature was directed, tested and used daily by Tomasz on a Snapdragon ASUS ZenBook A14 (Windows 11 ARM64).
 
-Window frames use the public DWM attribute APIs. Tinted acrylic uses `SetWindowCompositionAttribute`, the same user32 entry TranslucentTB uses on the taskbar, called from this process only.
+Window frames use the public DWM attribute APIs. Tinted acrylic uses `SetWindowCompositionAttribute`, the same user32 entry TranslucentTB uses on the taskbar, called from this process only. Icons are Segoe Fluent Icons, used from the font Windows provides; the AllBlack11 mark and the wallpapers are original.
 
-## 📄 License
+## License
 
 [MIT](LICENSE). Copyright (c) 2026 Tomasz Pepliński.
 

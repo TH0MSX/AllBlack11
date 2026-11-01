@@ -250,3 +250,26 @@ Corrections to earlier rows: in 3.8.0-preview.1 the two packs were described as 
 they are now "Experimental (no visible effect shown)". The UI Automation provider reported every
 element as on-screen; it now reports scrolled-out content as off-screen.
 
+## Owner screenshots of 3.8.0-preview.2 on Windows 11 ARM64 (2026-11-01)
+
+The owner ran the ARM64 installer on a Snapdragon Windows 11 ARM64 PC and sent eleven screenshots
+(the app windows from these are the images in `docs/mockup-source/shots`; the desktop shots also
+showed notifications and personal data and are **not** kept or published). They are runtime
+evidence for what they show, and for nothing else.
+
+**Seen working on Windows (ARM64):** the six-category shell with the search box and Fluent icons
+in the pane; the selected item marked by a filled row and an outline; the hub pages (Appearance,
+Apps, Help & About) with cards and chevrons; the Back link on a subpage ("‹ Appearance"); Effects and
+colors with the live preview and Quick looks; Safety with **Look history naming real changes**
+("Installed the Microsoft Store pack", "Removed the Calculator pack", "Scene: OLED Black", "Changed the
+default look"); Settings with the Updates card showing "AllBlack11 3.8.0-preview.2 (preview)"; the
+Wallpapers page with all eight preview tiles; the Settings window itself styled black while the
+Control Panel frame behind it also showed a dark title bar and the Run dialog body stayed light
+(the classic-dialogs layer is off by default).
+
+**Not shown, so still unverified:** search results and the focus/mark on a result; keyboard
+navigation; Narrator or NVDA; an actual update check, download or install; a wallpaper download,
+apply or put back; whether the Store or Calculator pack changed any window (the history shows the
+packs were installed and removed, and the owner reported no visible change); DPI other than the
+captured one; the x64 build.
+
