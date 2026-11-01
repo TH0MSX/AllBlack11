@@ -18,7 +18,7 @@ for _ in $(seq 1 40); do
   id="$(xdotool search --name 'AllBlack11 Settings' 2>/dev/null | head -1 || true)"; [ -n "$id" ] && break; sleep 0.5
 done
 [ -n "${id:-}" ] || { echo "no window" >&2; exit 1; }
-xdotool windowmove "$id" 0 0; xdotool windowsize "$id" 1100 800; sleep 2
+xdotool windowmove "$id" 0 0; xdotool windowsize "$id" ${AB_W:-1100} ${AB_H:-800}; sleep 2
 for action in "$@"; do
   set -- $action
   case "$1" in

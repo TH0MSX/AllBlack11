@@ -643,25 +643,175 @@ fn button_meta(id: Button) -> (&'static str, &'static str, &'static str) {
     }
 }
 
-/// Rows include the gap under their card. Wrap estimates assume the narrowest window
-/// (about 6.5 logical px per character at 13 px), so text is never clipped.
-fn lines(text: &str, per_line: usize) -> i32 {
-    ((text.chars().count() + per_line - 1) / per_line).max(1) as i32
+// ---------------------------------------------------------------------------
+// Row heights: measured, not guessed
+// ---------------------------------------------------------------------------
+
+/// Which font a block of text is painted with.
+#[derive(Clone, Copy, PartialEq, Eq)]
+enum Face {
+    Body,
+    Small,
 }
 
+/// What row layout needs to measure text: a device context and the fonts the rows are painted
+/// with, the DPI scale and the current content width. Set for the duration of one layout or
+/// paint pass by [`MeasureScope`].
+#[derive(Clone, Copy)]
+struct Measure {
+    dc: HDC,
+    k: f32,
+    lw: i32,
+    body: HFONT,
+    small: HFONT,
+}
+
+thread_local! {
+    static MEASURE: std::cell::Cell<Option<Measure>> = const { std::cell::Cell::new(None) };
+}
+
+struct MeasureScope {
+    own_dc: Option<HDC>,
+    previous: Option<Measure>,
+}
+
+impl MeasureScope {
+    /// Measure with `ui`'s fonts at content width `lw`. Without a `dc`, a throwaway memory DC
+    /// is used (layout outside painting).
+    fn new(ui: &Ui, dc: Option<HDC>, lw: i32) -> Self {
+        let own_dc = match dc {
+            Some(_) => None,
+            None => Some(unsafe { CreateCompatibleDC(std::ptr::null_mut()) }),
+        };
+        let measure = Measure {
+            dc: dc.or(own_dc).unwrap_or(std::ptr::null_mut()),
+            k: ui.k,
+            lw,
+            body: ui.fonts.body,
+            small: ui.fonts.small,
+        };
+        let previous = MEASURE.with(|cell| cell.replace(Some(measure)));
+        Self { own_dc, previous }
+    }
+}
+
+impl Drop for MeasureScope {
+    fn drop(&mut self) {
+        MEASURE.with(|cell| cell.set(self.previous));
+        if let Some(dc) = self.own_dc {
+            unsafe { DeleteDC(dc) };
+        }
+    }
+}
+
+/// Content width rows are laid out for: the real one while a scope is active, the narrowest
+/// supported one otherwise.
+fn layout_width() -> i32 {
+    MEASURE.with(|cell| cell.get().map_or(MIN_W, |m| m.lw))
+}
+
+/// Height in logical pixels of `text` word-wrapped to `width` logical pixels, measured with the
+/// same font and flags it is painted with, so a row is exactly as tall as its text whatever the
+/// window width, text size or language. Never less than `line`. With no measuring context (no
+/// window yet) it falls back to a conservative character-count estimate.
+fn wrapped_height(text: &str, face: Face, width: i32, line: i32) -> i32 {
+    if text.is_empty() {
+        return 0;
+    }
+    MEASURE.with(|cell| match cell.get() {
+        Some(m) if !m.dc.is_null() => unsafe {
+            let font = if face == Face::Body { m.body } else { m.small };
+            let old = SelectObject(m.dc, font);
+            let wide = to_wide(text);
+            let mut rect = RECT {
+                left: 0,
+                top: 0,
+                right: ((width.max(1)) as f32 * m.k).round() as i32,
+                bottom: 0,
+            };
+            DrawTextW(
+                m.dc,
+                wide.as_ptr(),
+                -1,
+                &mut rect,
+                DT_CALCRECT | DT_WORDBREAK | DT_NOPREFIX | DT_LEFT,
+            );
+            SelectObject(m.dc, old);
+            ((rect.bottom as f32 / m.k).ceil() as i32).max(line)
+        },
+        _ => {
+            let per_line = ((width as f32 / 6.5) as usize).max(1);
+            line * ((text.chars().count() + per_line - 1) / per_line).max(1) as i32
+        }
+    })
+}
+
+// Text columns. Painting and measuring use the same functions so they cannot disagree.
+
+/// Page title description, notes: the content column.
+fn column_w(lw: i32) -> i32 {
+    lw - 2 * MARGIN
+}
+
+/// Inside a card.
+fn card_text_w(lw: i32) -> i32 {
+    lw - 2 * (MARGIN + PAD)
+}
+
+/// Beside a switch and its On/Off word.
+fn toggle_text_w(lw: i32) -> i32 {
+    card_text_w(lw) - 120
+}
+
+/// Beside the action button of an action card.
+fn action_text_w(id: Button, lw: i32) -> i32 {
+    let (l, ..) = action_pill(id, lw, 0);
+    l - 16 - (MARGIN + PAD)
+}
+
+/// Space under the title line of a card before the description, and below it.
+const DESC_TOP: i32 = 30;
+const DESC_BOTTOM: i32 = 12;
+/// Gap between the lines of a status card.
+const PARAGRAPH: i32 = 4;
+
+/// Heights of the lines of a status card: the first in body size, the rest small.
+fn about_line_heights(lines: &[String], lw: i32) -> Vec<i32> {
+    lines
+        .iter()
+        .enumerate()
+        .map(|(index, line)| {
+            let (face, nominal) = if index == 0 {
+                (Face::Body, 20)
+            } else {
+                (Face::Small, 16)
+            };
+            wrapped_height(line, face, card_text_w(lw), nominal).max(nominal) + PARAGRAPH
+        })
+        .collect()
+}
+
+/// Rows include the gap under their card.
 fn row_height(row: &Row) -> i32 {
+    let lw = layout_width();
     match row {
         Row::Header(_) => 44,
-        Row::PageTitle(_, description) => 8 + 36 + 4 + 20 * lines(description, 78) + 12,
+        Row::PageTitle(_, description) => {
+            8 + 36 + 4 + wrapped_height(description, Face::Body, column_w(lw), 20) + 12
+        }
         Row::Tip(parts) => {
-            let body = parts.get(1).map_or(0, |text| lines(text, 62));
-            20 + 20 + 20 * body + 12 + GAP
+            let body = parts.get(1).map_or(0, |text| {
+                wrapped_height(text, Face::Body, card_text_w(lw), 20)
+            });
+            32 + body + 12 + GAP
         }
         Row::SearchField => 52 + GAP,
-        Row::Note(text) => 10 + 16 * lines(text, 58),
+        Row::Note(text) => 2 + wrapped_height(text, Face::Small, column_w(lw) - 2, 16) + 8,
         Row::Toggle(id) => {
             let (_, desc) = toggle_meta(*id);
-            (40 + 16 * lines(desc, 40)).max(56) + GAP
+            (DESC_TOP + wrapped_height(desc, Face::Small, toggle_text_w(lw), 16) + DESC_BOTTOM)
+                .max(56)
+                + GAP
         }
         Row::Choice(_) => (40 + 16 * 2).max(56) + GAP,
         Row::Slider(_) => 92 + GAP,
@@ -673,16 +823,29 @@ fn row_height(row: &Row) -> i32 {
             if desc.is_empty() {
                 60 + GAP
             } else {
-                (40 + 16 * lines(desc, 30)).max(60) + GAP
+                (DESC_TOP
+                    + wrapped_height(desc, Face::Small, action_text_w(*id, lw), 16)
+                    + DESC_BOTTOM)
+                    .max(60)
+                    + GAP
             }
         }
         Row::AddField(_) => 52 + GAP,
-        Row::Lines(items) => 20 + items.iter().map(|line| 16 * lines(line, 64)).sum::<i32>() + GAP,
+        Row::Lines(items) => 20 + lines_block_height(items, lw) + GAP,
         Row::Buttons(_) => 52 + GAP,
         Row::WindowList | Row::RecipeList | Row::LookList => 0, // sized by the caller
         Row::Filter => 52 + GAP,
-        Row::About(lines) => 24 + 20 * lines.len() as i32 + GAP,
+        Row::About(lines) => 24 + about_line_heights(lines, lw).iter().sum::<i32>() + GAP,
     }
+}
+
+/// Height of the paragraphs of a `Lines` card.
+fn lines_block_height(items: &[String], lw: i32) -> i32 {
+    items.iter().map(|line| line_height(line, lw)).sum()
+}
+
+fn line_height(line: &str, lw: i32) -> i32 {
+    wrapped_height(line, Face::Small, card_text_w(lw), 16).max(16)
 }
 
 // ---------------------------------------------------------------------------
@@ -1966,6 +2129,7 @@ const DT_RIGHT: u32 = 0x0002;
 const DT_VCENTER: u32 = 0x0004;
 const DT_SINGLELINE: u32 = 0x0020;
 const DT_WORDBREAK: u32 = 0x0010;
+const DT_CALCRECT: u32 = 0x0400;
 const DT_NOPREFIX: u32 = 0x0800;
 const DT_END_ELLIPSIS: u32 = 0x8000;
 
@@ -2082,6 +2246,8 @@ fn paint(hwnd: HWND, ui: &mut Ui) {
 
         let canvas = Canvas { dc, k: ui.k };
         let lw = ui.lw(hwnd);
+        // Rows are measured with this DC and these fonts, exactly as they are painted.
+        let _measure = MeasureScope::new(ui, Some(dc), lw);
         ui.pointer.begin_frame();
 
         // Everything right of the navigation pane is drawn in content coordinates: the
@@ -2538,8 +2704,10 @@ fn paint_row(c: &Canvas, ui: &Ui, row: &Laid, top: i32, lw: i32) {
         }
         Row::About(lines) => {
             card(c, top, row.h, lw);
-            for (index, line) in lines.iter().enumerate() {
-                let y = top + 12 + index as i32 * 20;
+            let mut y = top + 12;
+            for (index, (line, height)) in
+                lines.iter().zip(about_line_heights(lines, lw)).enumerate()
+            {
                 let (font, color) = if index == 0 {
                     (fonts.body, th().text)
                 } else {
@@ -2549,12 +2717,13 @@ fn paint_row(c: &Canvas, ui: &Ui, row: &Laid, top: i32, lw: i32) {
                     left,
                     y,
                     right,
-                    y + 20,
+                    y + height,
                     line,
                     color,
                     font,
-                    DT_LEFT | DT_VCENTER | DT_SINGLELINE | DT_END_ELLIPSIS,
+                    DT_LEFT | DT_WORDBREAK,
                 );
+                y += height;
             }
         }
     }

@@ -197,6 +197,7 @@ fn list_height(len: usize) -> i32 {
 
 impl Ui {
     pub fn rows_for_page(&self) -> Vec<Laid> {
+        let _measure = MeasureScope::new(self, None, self.lw(self.hwnd));
         if self.ext.setup.active {
             return self.rows_setup();
         }
@@ -1829,7 +1830,7 @@ pub fn paint_extra(c: &Canvas, ui: &Ui, row: &Laid, top: i32, lw: i32) {
             card(c, top, row.h, lw);
             let mut y = top + 10;
             for line in lines {
-                let height = 16 * lines_needed(line, 64);
+                let height = line_height(line, lw);
                 let (font, color) = if line.is_empty() {
                     (fonts.small, th().muted)
                 } else {
@@ -2036,10 +2037,6 @@ pub fn paint_extra(c: &Canvas, ui: &Ui, row: &Laid, top: i32, lw: i32) {
         }
         _ => {}
     }
-}
-
-pub fn lines_needed(text: &str, per_line: usize) -> i32 {
-    super::lines(text, per_line)
 }
 
 /// Focus ring around the keyboard-focused row.
