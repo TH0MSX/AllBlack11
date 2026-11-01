@@ -1,13 +1,14 @@
-# Evidence for 3.6.0-preview.2
+# Evidence for 3.7.0-preview.1
 
 What was actually done to each feature. Categories, strongest last:
 
 - **Static review**: read and reasoned about, nothing executed.
-- **Unit-tested**: pure logic covered by `cargo test --lib` (225 tests, run on Linux). These test
+- **Unit-tested**: pure logic covered by `cargo test --lib` (269 tests, run on Linux). These test
   decisions, parsers and state machines, never a window.
 - **Cross-compiled**: type-checked and linked for ARM64 and x64 from Linux (`./build.sh`). This
   proves it builds. It proves nothing about behavior.
-- **Wine-rendered** (new in preview.2): the real x64 `AllBlack11.exe` was run under Wine 9.0 on Linux
+- **Native CI** (new in 3.7): `cargo test --lib` and a build of every crate on real Windows ARM64 and x64 runners. It proves the Windows-only code compiles and the pure tests pass there; it exercises no window.
+- **Wine-rendered** (preview.2): the real x64 `AllBlack11.exe` was run under Wine 9.0 on Linux
   with a virtual display, and screenshots and synthetic clicks and keys were used to look at layout
   and basic interaction. **Wine is not Windows**: its font substitution, DWM, DPI handling,
   theming and UI Automation client support are all different, so this proves the layout code
@@ -120,6 +121,38 @@ the build script needs).
   probably Wine's `DrawText`; unconfirmed. Check on Windows.
 - "AllBlack11 did not exit cleanly the last N times": the safe-start marker doing its job, because
   the test harness kills the process between screenshots.
+
+## Added in 3.7.0-preview.1
+
+| Area | Unit-tested | Cross-compiled | Native CI | Wine-rendered | Runtime Windows |
+| --- | --- | --- | --- | --- | --- |
+| Brand icon geometry, 10 sizes, tray marks, SVG; contrast of palette and mono marks | `brand_icon.py check` (also in CI) | yes | yes (check job) | PNG renders inspected at 16 to 256 px on four backgrounds | **not tested**: taskbar, Start, Alt+Tab, shortcut, installer, theme swap |
+| Icon resources linked (ids 1, 10 to 13), `LoadIconWithScaleDown`, class icons | no | yes | yes (builds) | tray not drivable; nav mark and Home icon seen | not tested |
+| Brand tokens in `Palette` (contrast-tested); Home header; nav mark; credit row | yes (tokens, `brand.rs` 4 tests) | yes | yes | yes: Home in Dark and Light, focus ring on the link | not tested; link launch and Narrator not tested |
+| Credit link URL rules | yes | yes | yes | no | browser launch not tested |
+| `lkg::Promotion` (known good only after a real run) and its wiring | yes (6); wiring no | yes | yes | not exercised (needs 60 s and a clean exit) | not tested |
+| `atomic.rs` (flushed write, failed write, stale temp, failed rename) | yes (5, on Linux) | yes | yes | n/a | power-loss behavior cannot be tested here |
+| Look history and undo | yes (9 + 1) | yes | yes | yes: Keep recorded, Undo restored the earlier `default` look and was not re-recorded | not tested |
+| Rule playground, exclusion reasons | yes (6 + 2; includes a test that `exclusion_for` agrees with `decide`) | yes | yes | yes: protected app skipped with reason; plain app shows sources | not tested |
+| Contrast Lab | yes (7) | yes | yes | yes (render only) | not tested |
+| Tray tooltip text; exit consequences | yes (6) | yes | yes | no (tray) | not tested |
+| Exit confirmation dialog | no | yes | yes | no | not tested |
+| Native Windows x64 CI job (MSVC `rc`/`cvtres` fallback) | n/a | n/a | **yes: run 41267253779 passed on `windows-latest`** | n/a | n/a |
+| Installer header | no | yes (`./build.sh`) | not built natively (needs the payload) | not run | not tested |
+
+### Defects found and fixed in 3.7
+
+1. **A config became "last known good" the moment it parsed**, at startup and on every reload, before anything was applied. A config that parsed but misbehaved would have replaced the recovery copy.
+2. **Writes were not flushed before the rename**, so a power cut could leave an empty file in place of the config on some file systems.
+3. **A kept trial would not have been recorded in any history**: the host's config already equaled the file when the Keep reload arrived. Found while testing the history under Wine; fixed by recording from the trial's saved "before".
+4. **Wrapped text was sliced** by Wine's `DrawText` when its break came later than the measured one (seen in 3 screenshots); wrapped text is now drawn without the rectangle clip.
+
+### Still unproven or open
+
+- Native edit boxes have no accessible label (Q01).
+- The icon and tray behavior on Windows; the tray icon swap on theme change.
+- `AppUserModelID` is not set.
+- The helper was re-read, not run.
 
 ## Audit findings fixed in 3.6 (all were real in 3.5)
 

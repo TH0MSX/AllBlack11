@@ -1,18 +1,59 @@
 # Hardware smoke test
 
-**Nothing in 3.6.0-preview.2 has been run on Windows by the author.** It is unit-tested on Linux
-(225 tests), cross-compiled for ARM64 and x64, rendered under Wine for layout (Wine is not
+**Nothing in 3.7.0-preview.1 has been run on Windows by the author.** It is unit-tested on Linux
+(269 tests), cross-compiled for ARM64 and x64, rendered under Wine for layout (Wine is not
 Windows), and checked on a Windows ARM64 runner in CI for compilation only. Every item below is
 therefore **unverified until you tick it**. Mark each line pass or fail and attach the diagnostics
 report (Settings > Diagnostics > Write report) to any failure.
 
-Do **section U first** (about 25 minutes): it covers the interface redesign and is where a
+Do **section 3.7 first** (about 30 minutes: icon, credit, recovery, new pages), then **section U** (about 25 minutes): it covers the interface redesign and is where a
 screen, a keyboard or a screen reader will disagree with what was rendered under Wine. Then the
 3.6 pass below. In preview.2 the six old tabs became eight pages: Overview is **Home**; Effects is
 **Appearance**; Apps is **Fix this app** (pick and inspect) and **Rules** (rules, exclusions,
 notebook, classic dialogs); Scenes is **Scenes**; Legacy moved into **Rules**; Safety is
 **Safety**; the report, support table and tools are on **Diagnostics**; About and the
 command palette are on **Settings & help**. Steps below that say "tab" mean "page".
+
+## 3.7. The brand, recovery and new pages (3.7.0-preview.1)
+
+Expected outcomes are in italics. Mark each line pass or fail; note exactly what you see or hear.
+
+1. **Icon everywhere**
+   - [ ] Install with the new Setup (or run the portable exe). *Setup's header shows the moon-and-window mark and a blue line; its title-bar and taskbar icon are the same mark.*
+   - [ ] Start menu shortcut, Apps and features entry, `AllBlack11.exe` in Explorer at small, medium and large icon views, Alt+Tab, the taskbar button of Settings. *The silver moon with a window-shaped bite and a blue frame, crisp at 16, 24 and 32 px; not the old four-pane tile. Note any size that looks blurry or wrong (the sizes are tuned separately).*
+   - [ ] On a light desktop wallpaper and a dark one, and at 100%, 150%, 200% display scaling. *Recognizable on both; the dark plate edge is faint on a dark desktop (known, 1.6:1).*
+2. **Tray icon**
+   - [ ] Windows set to dark taskbar: *a white mark; a filled moon when styling is on.* Pause all styling: *the same mark as an outline.* Resume: *filled again.*
+   - [ ] Switch Windows to a light taskbar while AllBlack11 runs (Settings > Personalization > Colors > Choose your mode, "Windows mode"). *The tray mark changes to near-black without restarting; no blank icon.* Switch back.
+   - [ ] A contrast theme (Aquatic, then Night sky). *The mark stays visible against the taskbar in both.*
+   - [ ] Hover the icon. *The tooltip reads "AllBlack11: N windows", plus "(trying a look, ...)" during a trial, "safe mode" after a Shift start, "classic dialogs on" when that layer is on.*
+3. **Home and the credit**
+   - [ ] Open Settings. *Home shows the colored icon beside "AllBlack11" and one plain line; the navigation pane has the small mark; at the foot of Home: "Made with love by TH0MSX" with TH0MSX underlined in blue.*
+   - [ ] Tab to the credit. *A visible focus ring around TH0MSX only.* Press Enter, then try Space and a mouse click. *Each opens `https://github.com/TH0MSX` in the default browser, nothing else, no extra parameters; the status line says it opened.* Nothing may open when you merely hover or arrive at the page.
+   - [ ] Settings & help > About. *The same credit, and a line saying the build is a pre-release not yet verified on hardware.* Edit nothing; just read it.
+   - [ ] Narrator on, Tab to the credit. *It announces "TH0MSX - creator's GitHub profile", link.* Note the exact words.
+   - [ ] Narrow the window to its minimum. *The link moves to its own line; nothing overlaps; start a trial and confirm the trial bar and countdown are not covered.*
+   - [ ] Set AllBlack11 to Light (Settings & help > AllBlack11 itself), then a contrast theme. *Light: dark mark, dark-blue link. Contrast theme: no icon on Home or in the pane; the link uses the system link color.*
+4. **Last known good needs a real run**
+   - [ ] Note the time of `config.lkg.json` in the data folder. Change a setting and keep it. *The file does not change right away.* Wait 70 seconds (styling on, not paused, not in safe mode). *Now it equals `config.json`.*
+   - [ ] Change a setting, then quit from the tray within 5 seconds. *`config.lkg.json` is unchanged (too short a run).* Change another, wait 15 seconds, quit from the tray. *It now matches (clean exit after 10 s).*
+   - [ ] Start with Shift held (safe mode), change a setting, wait 70 seconds. *`config.lkg.json` is not updated.*
+5. **Look history**
+   - [ ] Appearance > Quick looks > Accent glass, then Keep. Safety > Look history. *One line, "Changed the default look" (or "Scene: ..." for a scene), a few seconds old.*
+   - [ ] Press **Undo last change**. *The previous look comes back, Settings follows, the list is empty again, and the tray tooltip and windows update.* Repeat with two different changes: *Undo goes back one at a time, newest first.*
+   - [ ] Press Undo with nothing listed. *"There is nothing to undo yet..." and no change.*
+   - [ ] Confirm Reset all windows is unchanged and still means "as Windows draws them".
+6. **Rule playground**
+   - [ ] Rules > type `notepad.exe` in the rule box > **Test typed app**. *"Testing notepad.exe. Nothing is applied." and where each setting comes from; no rule is added; `config.json` is unchanged.*
+   - [ ] Test `dwm.exe` and an app in your never-theme list. *"Skipped." with the reason; protected ones say no list changes it.*
+   - [ ] Add two overlapping rules and test an app both match. *The winner, the loser and "priority N beats priority M" or the specificity sentence.*
+   - [ ] Pick a window on Fix this app, then **Test picked window**. *The answer matches the Fix this app report's "which rule won".*
+7. **Contrast check**
+   - [ ] Appearance > bottom. *"All 8 measured pairs pass" for the shipped look.* Set the title bar text to a dim gray on a dark title bar. *A "Fails: ..." line with a suggested hex that passes; apply it and re-check.*
+8. **Exit choice**
+   - [ ] Tray > Exit with nothing special running. *It just exits.* Start a trial, then Exit from the tray. *A question listing that the trial will be reverted; the default button keeps AllBlack11 running.* Turn on the dark classic dialogs layer, Exit. *It mentions removing that layer.*
+9. **Native x64 and ARM64**
+   - [ ] Run the x64 exe on an x64 PC and the ARM64 exe on the ARM64 laptop. *Same behavior; About names the architecture.*
 
 ## U. The UI pass (preview.2)
 

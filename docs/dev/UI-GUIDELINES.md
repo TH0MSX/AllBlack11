@@ -235,12 +235,20 @@ WinUI behavior. Each is a known cost, not a hidden one.
 | 14 | Motion principles | None implemented | See Motion | Nothing to evaluate |
 | 15 | High contrast: system colors | Palette is exactly the system colors; selection uses `COLOR_HIGHLIGHT`; focus ring uses `COLOR_HOTLIGHT` | As guidance | Not run on a real high-contrast theme |
 
+## Brand (3.7)
+
+Brand tokens extend the existing palette (`Palette::brand`) rather than adding a theme layer. The
+mark leads the navigation pane and the Home header; the creator credit is a real link row. High
+contrast removes the decoration. See `BRAND.md` for the icon, the palette figures and what is
+unverified. The brand blue is a restrained accent used for the link and the installer line; the
+user's Windows accent still drives the primary button and the selected-page bar.
+
 ## Known gaps in this pass
 
 - No part of the UI has run on Windows; every visual statement in EVIDENCE.md is "Wine-rendered"
   at best (Wine ≠ Windows: fonts, DWM, DPI handling and UI Automation clients differ).
-- `PAGE_MARGIN` in `uitheme::metrics` is 24 while Settings draws a 20 px margin; reconcile on
-  Windows once the pages have been seen.
+- (Resolved in 3.7: `PAGE_MARGIN` is 20 and Settings takes its margin, card gap and padding from
+  `ui_metrics`.)
 - A trailing period was clipped at a wrap boundary in one Wine screenshot (Scenes description at
   the minimum width). The measured height and painted wrap agreed (same function, font, flags and
   width). Not seen to repeat; check on Windows.

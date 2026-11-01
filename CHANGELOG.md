@@ -1,5 +1,31 @@
 # Changelog
 
+## 3.7.0-preview.1
+
+A **pre-release** on top of 3.6.0-preview.2: a new icon and brand, a first batch of the workbench features, and two recovery fixes. **Nothing in it has been run on Windows by the author.** It is unit-tested (269 tests on Linux), cross-compiled, built and unit-tested natively on Windows ARM64 and x64 CI runners, and rendered under Wine for layout (Wine is not Windows). `docs/dev/INVENTORY-3.7.md` lists, item by item, what exists and what was deliberately left undone; `docs/dev/SMOKE-TEST.md` section 3.7 is the hardware pass.
+
+**Brand**
+- A new original icon: a silver moon eclipsed by a window, on a graphite plate. It replaces the four-pane icon, which looked too much like the Windows logo. Ten pixel-tuned sizes, an editable SVG, and a reproducible generator (`assets/brand/brand_icon.py`; see `docs/dev/BRAND.md`).
+- The tray icon is now a one-color mark that follows the taskbar theme, filled when styling is on and an outline when it is off or paused. It reloads when Windows switches between light and dark.
+- Home has a brand header and the credit **Made with love by TH0MSX**, with TH0MSX a keyboard-reachable link to `https://github.com/TH0MSX` (also in About). The brand mark leads the navigation pane and the installer header. High contrast removes the decoration.
+
+**Recovery fixes (both were real)**
+- A config no longer becomes the "last known good" copy just because it parsed. It must run for a minute, or exit cleanly after ten seconds, and never from safe mode, a trial, a pause or with styling off.
+- Config and other files are flushed to disk before the rename that replaces them, with tests for failed writes, stale temporary files and failed renames.
+
+**Features**
+- **Look history** (Safety): your last changes this session, named, with **Undo last change** one step at a time. A kept trial is recorded with the config from before the trial. It is separate from Reset all windows.
+- **Rule playground** (Rules): type an app, or use the window picked on Fix this app, and see which rule would win, why, and where each setting comes from, without applying anything. Protected and listed apps say so.
+- **Contrast check** (Appearance): measures the title bar text, the border and every classic-dialog palette pair; says Passes or Fails first; offers the nearest hue-preserving fix.
+
+**Quality of life**
+- Tray tooltip names a look being tried, safe mode, reduced effects and the classic layer. **Exit** asks only when quitting would revert a trial, remove the classic layer or stop the helper.
+- About states the version, build architecture and that the build is not yet verified on hardware.
+- Help's keyboard reference matches the code. Page margin and card spacing share one set of constants. Wrapped text is no longer sliced at the edge by a renderer that breaks lines late.
+- **CI**: a native Windows x64 job (the build scripts fall back to MSVC's `rc` and `cvtres`), alongside ARM64.
+
+**Not in this version** (deferred, not stubbed): Window Anatomy, display-aware scenes, Living Room, Recipe Remixer, scene layers, palette locking and boards, scene variants, workspaces, profiles, version guards, drift review, control overrides, state playground, exclusion manager UI, screenshot sessions, contact sheets, lineage, bundles, styling timeline, helper counters, performance monitor, conflict troubleshooter, adapter test mode, CLI, compatibility packs, and all five wizards. Labeling the native edit boxes for UI Automation is still open.
+
 ## 3.6.0-preview.2
 
 A **pre-release**: the 3.6 feature set with a redesigned interface, guided setup, walkthroughs and a UI Automation provider. **Nothing in it has been run on Windows by the author.** The layout was rendered under Wine on Linux (Wine is not Windows: fonts, DWM, DPI handling and accessibility clients differ), the logic is unit-tested (225 tests on Linux), and it is cross-compiled for ARM64 and x64. Behavior, config format and recovery are unchanged; `docs/dev/UI-GUIDELINES.md` records which Microsoft guidance was followed and every deviation, `docs/dev/EVIDENCE.md` what was checked, and `docs/dev/SMOKE-TEST.md` starts with the UI pass to run on Windows.

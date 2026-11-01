@@ -1,4 +1,4 @@
-# AllBlack11 development handoff (3.6 preview, UI pass)
+# AllBlack11 development handoff (3.7 preview)
 
 Keep this file current. It exists so the work survives a context reset.
 
@@ -6,7 +6,7 @@ Keep this file current. It exists so the work survives a context reset.
 
 - Baseline: `7b65598` (3.0.0-preview.2 plus two docs/banner merges). Tag `v3.0.0-preview.2`.
 - Crates: root exe, `hook/` (DLL, built for both CPUs), `setup/` (installer), `harness/` (test dialog, two manifests), `helper/` (x64-only helper shipped in the ARM64 package).
-- Branches: `claude/peaceful-archimedes-ppfhwb` is the **3.5.0-preview.1 checkpoint** (head `7372140`, untouched). `claude/next-preview-3.6` continues from it: **3.6.0-preview.1** (head `9911cd3`, the recoverable 3.6 checkpoint; CI green; prerelease only). **`claude/ui-polish-fluent`** branches from that and is **3.6.0-preview.2**: the UI pass. Nothing is merged, tagged or published; no pull request exists.
+- Branches: `claude/peaceful-archimedes-ppfhwb` is the **3.5.0-preview.1 checkpoint** (head `7372140`, untouched). `claude/next-preview-3.6` continues from it: **3.6.0-preview.1** (head `9911cd3`, the recoverable 3.6 checkpoint; CI green; prerelease only). **`claude/ui-polish-fluent`** branches from that and is **3.6.0-preview.2** (head `9ef0ea2`, the UI-pass checkpoint, CI green). **`claude/workbench-3.7`** branches from it and is **3.7.0-preview.1**: brand, recovery fixes and the first workbench features. Nothing is merged, tagged or published; no pull request exists.
 - Toolchain: Rust stable, `cargo-xwin` for ARM64/x64 Windows cross-builds from Linux. `./build.sh [arm64|x64|all]`.
 - Nothing can be *run* in this environment. Every Windows behavior is "cross-compiled" at best.
   See the evidence table in `docs/dev/EVIDENCE.md`.
@@ -75,6 +75,20 @@ Keep this file current. It exists so the work survives a context reset.
 20. **Wine harness** (`scripts/ui-shot.sh`, `scripts/ui-drive.sh`): runs the x64 exe under Wine +
     Xvfb and takes screenshots / sends clicks and keys. It is for layout only; Wine is not Windows.
     `AB_W`/`AB_H` set the window size; the registry value `TextScaleFactor` simulates text size.
+
+## Added in 3.7 (read `INVENTORY-3.7.md` and `BRAND.md` first)
+
+21. **Brand pipeline**: `assets/brand/brand_icon.py` is the single source (geometry to SVG, ICOs, PNGs, mono tray marks; `check` runs in CI). Resources 1 and 10 to 13 in `assets/allblack11.rc`. `icon.rs` loads them; the tray picks white or near-black from `SystemUsesLightTheme` and reloads on `ImmersiveColorSet`. Do not edit the `.ico` files by hand: change the generator and run `build`.
+22. **Credit**: `brand.rs` (pure, tested) holds the sentence, the URL and the accessible name; `Row::Credit` draws it, `registry::open_url` opens it after re-checking the URL. A new text row needs a `Row` variant, `row_height`, `paint_row` and a `uia_ui.rs` arm.
+23. **Last known good** is a *candidate* (`lkg::Promotion`) offered on parse and promoted after 60 s or a clean exit after 10 s, only from an eligible run (`App::lkg_eligible`). Do not call `cfgio::save_lkg` anywhere else except `promote_lkg`.
+24. **`write_atomic`** lives in `atomic.rs` (pure, flushes before rename); `platform::wide::write_atomic` forwards to it.
+25. **Look history** (`history.rs`, `SESSION`): the host records in `apply_external_config` and, for kept trials, in `trial_end` (`history_kept` stops the Keep reload recording twice). Undo is in `settings_pages.rs::undo_look`.
+26. **Playground and Contrast Lab** are pure (`playground.rs`, `contrast_lab.rs`) and shown as rows; `policy::exclusion_for` is tested against `decide`.
+27. **CI** has `windows-arm64` and `windows-x64`; the build scripts try `llvm-rc`/`llvm-cvtres` then MSVC `rc`/`cvtres`.
+
+## Next batch (see the end of `INVENTORY-3.7.md`)
+
+Run section 3.7 of the smoke test first. Then Q01 (edit box names) on Windows, the exclusion manager UI, helper counters and the styling timeline, then Recipe Remixer and palette locking.
 
 ## UI deferred or open (see `UI-GUIDELINES.md` > Deviations and Known gaps)
 
