@@ -37,6 +37,9 @@ pub enum Verdict {
     Supported,
     /// Only part of the window can change; `reason` says which part cannot.
     Partial,
+    /// Kept as a diagnostic: the request is made and the evidence is shown, but no visible effect
+    /// has been demonstrated, so it is never offered as a recommended template.
+    Experimental,
     /// Nothing can be done from outside. No rule is added, whatever the look says.
     Unsupported,
 }
@@ -46,6 +49,7 @@ impl Verdict {
         match self {
             Verdict::Supported => "Supported",
             Verdict::Partial => "Partly supported",
+            Verdict::Experimental => "Experimental (no visible effect shown)",
             Verdict::Unsupported => "Not supported",
         }
     }
@@ -201,9 +205,11 @@ pub fn parse_pack(text: &str) -> Result<Pack, String> {
                 return Err("an unsupported pack must say why in reason".into());
             }
         }
-        Verdict::Partial => {
+        Verdict::Partial | Verdict::Experimental => {
             if pack.reason.trim().is_empty() {
-                return Err("a partial pack must say what cannot change in reason".into());
+                return Err(
+                    "a partial or experimental pack must say what cannot change in reason".into(),
+                );
             }
             if empty_look {
                 return Err("a partial pack needs a look".into());
@@ -223,35 +229,37 @@ pub fn parse_pack(text: &str) -> Result<Pack, String> {
 // ---------------------------------------------------------------------------------------------
 
 const STORE: &str = r##"{
-  "schema": 1, "id": "microsoft-store", "name": "Microsoft Store", "version": "1",
-  "description": "Dark title bar and border for the Microsoft Store window.",
+  "schema": 1, "id": "microsoft-store", "name": "Microsoft Store", "version": "2",
+  "description": "Experimental test: asks Windows for a black title bar on the Microsoft Store window. It has not been shown to change anything you can see.",
   "author": "AllBlack11",
   "targets": [ { "package": "Microsoft.WindowsStore_*", "class": "ApplicationFrameWindow" } ],
-  "verdict": "partial",
-  "reason": "Only the window frame (title bar and border) can change. Everything inside the window is drawn by the Store itself.",
+  "verdict": "experimental",
+  "reason": "On the PC this was first tried on, installing it produced no visible change. It can only ask for window-frame colors, and its values are close to the default look, so a change would be hard to see even if Windows accepts it. Use Check now to see where the request stops.",
   "look": { "darkMode": true, "captionColor": "#000000", "textColor": "#FFFFFF", "borderColor": "none" },
   "limits": [
     "Client content of the Store app is rendered by the app itself and cannot be recolored externally.",
-    "No backdrop is requested: the Store paints an opaque surface over it, so a backdrop would not show."
+    "This does not make the Store dark. Its pages are drawn by the app; Windows' app mode (Settings > Personalization > Colors) is what most Microsoft Store apps follow, and an app's own theme option, if it has one, is in that app's settings.",
+    "No backdrop is requested: the Store paints an opaque surface over it."
   ],
   "notes": [ "The window is found by the app's package identity, read from the app inside the frame." ],
-  "tested": [ "Not yet tested on Windows hardware. If caption colors turn out not to apply to this window, this pack will be changed to Not supported with the observed reason." ]
+  "tested": [ "Installed on the owner's Windows PC: no visible change. Not yet investigated further on Windows hardware." ]
 }"##;
 
 const CALCULATOR: &str = r##"{
-  "schema": 1, "id": "windows-calculator", "name": "Calculator", "version": "1",
-  "description": "Dark title bar and border for Windows Calculator.",
+  "schema": 1, "id": "windows-calculator", "name": "Calculator", "version": "2",
+  "description": "Experimental test: asks Windows for a black title bar on the Calculator window. It has not been shown to change anything you can see.",
   "author": "AllBlack11",
   "targets": [ { "package": "Microsoft.WindowsCalculator_*", "class": "ApplicationFrameWindow" } ],
-  "verdict": "partial",
-  "reason": "Only the window frame (title bar and border) can change. The keys and display are drawn by Calculator itself.",
+  "verdict": "experimental",
+  "reason": "On the PC this was first tried on, installing it produced no visible change. It can only ask for window-frame colors, and its values are close to the default look, so a change would be hard to see even if Windows accepts it. Use Check now to see where the request stops.",
   "look": { "darkMode": true, "captionColor": "#000000", "textColor": "#FFFFFF", "borderColor": "none" },
   "limits": [
     "Calculator's content is drawn by the app's own XAML and cannot be recolored from outside. Calculator being open source does not change that: this pack never touches its code.",
+    "This does not make Calculator dark. Calculator's own settings (in its menu) have an app theme option; that is the supported way to change how it looks inside.",
     "No backdrop is requested: Calculator paints an opaque surface over it."
   ],
-  "notes": [ "Calculator follows the Windows app theme for its own content; set the app theme in Windows if you want that dark too." ],
-  "tested": [ "Not yet tested on Windows hardware. If caption colors turn out not to apply to this window, this pack will be changed to Not supported with the observed reason." ]
+  "notes": [ "Calculator follows its own app theme setting, or the Windows app mode when it is set to follow the system." ],
+  "tested": [ "Installed on the owner's Windows PC: no visible change. Not yet investigated further on Windows hardware." ]
 }"##;
 
 const CATALOG_JSON: [&str; 2] = [STORE, CALCULATOR];
@@ -477,6 +485,197 @@ pub fn preview(config: &Config, pack: &Pack, windows_build: u32) -> Vec<String> 
     }
 }
 
+// ---------------------------------------------------------------------------------------------
+// Evidence: how far a pack's request got, and what is known about the result
+// ---------------------------------------------------------------------------------------------
+
+/// Where a pack's request stops, from the evidence in hand. The order of the checks is the order
+/// of the chain: find the window, match the rule, win over the others, be applied, be accepted by
+/// Windows, and only then what a person saw.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Evidence {
+    /// No open window matched the pack's target (app closed, or its package could not be read).
+    TargetNotDetected,
+    /// The window is one AllBlack11 never styles (protected or on your exclusion lists).
+    Excluded,
+    /// A window was found but the pack's rule is not among the rules that match it.
+    RuleDidNotMatch,
+    /// The pack's rule matches, and another rule (yours, normally) wins.
+    OverriddenByOtherRule,
+    /// Nothing has been asked of the window: styling is off, paused, reduced or skipped for it.
+    NotAppliedYet,
+    /// Windows rejected at least one request.
+    OperationFailed,
+    /// Windows accepted every request. What is on screen has not been checked.
+    AcceptedUnverified,
+    /// You looked and saw no change.
+    UserVerifiedNoChange,
+    /// You looked and saw a change.
+    VerifiedVisibleChange,
+}
+
+impl Evidence {
+    pub fn label(self) -> &'static str {
+        match self {
+            Evidence::TargetNotDetected => "Target not detected",
+            Evidence::Excluded => "Window is excluded",
+            Evidence::RuleDidNotMatch => "Rule did not match",
+            Evidence::OverriddenByOtherRule => "Overridden by another rule",
+            Evidence::NotAppliedYet => "Not applied right now",
+            Evidence::OperationFailed => "Windows rejected a request",
+            Evidence::AcceptedUnverified => "Accepted by Windows; visual result unverified",
+            Evidence::UserVerifiedNoChange => "You verified no visible change",
+            Evidence::VerifiedVisibleChange => "Verified visible change",
+        }
+    }
+}
+
+/// What the app could see about one open window that might be the pack's target.
+#[derive(Debug, Clone, Default)]
+pub struct Observed {
+    pub exe: String,
+    pub class: String,
+    /// The package family read from the app inside the frame; empty when it could not be read.
+    pub package: String,
+    /// Why AllBlack11 leaves this window alone, if it does.
+    pub excluded: Option<String>,
+    /// The pack's own rule is among the rules matching this window.
+    pub rule_matched: bool,
+    /// ... and it is the winner.
+    pub pack_wins: bool,
+    /// Label of the winning rule, for the sentence.
+    pub winner: String,
+    /// The style engine decided to apply a look to this window.
+    pub applied: bool,
+    /// Requests Windows rejected, as "name (0x...)".
+    pub rejected: Vec<String>,
+}
+
+/// What the person told us they saw.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Deserialize, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub enum Mark {
+    SawChange,
+    SawNothing,
+}
+
+/// The status and one plain sentence that says what to do about it.
+pub fn assess(observed: Option<&Observed>, mark: Option<Mark>) -> (Evidence, String) {
+    let Some(seen) = observed else {
+        return (
+            Evidence::TargetNotDetected,
+            "No open window matched. Open the app, then press Check now. If it is open, AllBlack11 could not read its package name, so no rule can name it.".into(),
+        );
+    };
+    if let Some(reason) = &seen.excluded {
+        return (
+            Evidence::Excluded,
+            format!("AllBlack11 does not style this window. {reason}"),
+        );
+    }
+    if !seen.rule_matched {
+        return (
+            Evidence::RuleDidNotMatch,
+            format!(
+                "Found {} (class {}, package {}), but the pack's rule is not among the rules matching it. Install the pack, or check that its package and class match.",
+                seen.exe,
+                seen.class,
+                if seen.package.is_empty() { "unreadable" } else { &seen.package }
+            ),
+        );
+    }
+    if !seen.pack_wins {
+        return (
+            Evidence::OverriddenByOtherRule,
+            format!(
+                "The pack's rule matches, but \"{}\" wins. Your own rules always beat a pack.",
+                seen.winner
+            ),
+        );
+    }
+    if !seen.applied {
+        return (
+            Evidence::NotAppliedYet,
+            "The pack's rule wins, but no look is being applied to this window right now (styling is off, paused, reduced, or the app was skipped). See Customize an app for the reason.".into(),
+        );
+    }
+    if !seen.rejected.is_empty() {
+        return (
+            Evidence::OperationFailed,
+            format!("Windows rejected: {}.", seen.rejected.join(", ")),
+        );
+    }
+    match mark {
+        Some(Mark::SawNothing) => (
+            Evidence::UserVerifiedNoChange,
+            "Windows accepted every request and you saw no change. The app is probably drawing its own frame over the request. This pack will not help here.".into(),
+        ),
+        Some(Mark::SawChange) => (
+            Evidence::VerifiedVisibleChange,
+            "Windows accepted every request and you saw a change.".into(),
+        ),
+        None => (
+            Evidence::AcceptedUnverified,
+            "Windows accepted every request. Whether anything changed on screen is not checked: look at the window, then say what you see.".into(),
+        ),
+    }
+}
+
+/// What installing this pack would change compared with the default look, field by field. An empty
+/// list means the pack asks for exactly what is already in force, so nothing visible could change.
+pub fn delta(config: &Config, pack: &Pack) -> Vec<String> {
+    let recipe = crate::recipes::Recipe {
+        schema: crate::recipes::SCHEMA,
+        id: "pack-delta".into(),
+        name: pack.name.clone(),
+        description: String::new(),
+        author: String::new(),
+        min_build: None,
+        look: pack.look.clone(),
+        matcher: None,
+        notes: Vec::new(),
+    };
+    crate::recipes::preview(config, &recipe)
+        .iter()
+        .map(|change| format!("{}: {} → {}", change.field, change.from, change.to))
+        .collect()
+}
+
+/// The marks, by pack id. Small, local, and damaged files are "nothing marked".
+#[derive(Debug, Clone, Default, PartialEq, Eq, Deserialize, Serialize)]
+#[serde(default)]
+pub struct Marks {
+    pub marks: Vec<(String, Mark)>,
+}
+
+impl Marks {
+    pub fn parse(text: &str) -> Marks {
+        let mut marks: Marks = serde_json::from_str(text).unwrap_or_default();
+        marks.marks.truncate(32);
+        marks
+    }
+    pub fn to_json(&self) -> String {
+        serde_json::to_string_pretty(self).unwrap_or_else(|_| "{}".into()) + "\n"
+    }
+    pub fn get(&self, id: &str) -> Option<Mark> {
+        self.marks
+            .iter()
+            .find(|(known, _)| known == id)
+            .map(|(_, m)| *m)
+    }
+    pub fn set(&mut self, id: &str, mark: Option<Mark>) {
+        self.marks.retain(|(known, _)| known != id);
+        if let Some(mark) = mark {
+            self.marks.push((id.to_string(), mark));
+        }
+    }
+}
+
+/// Whether `rule` belongs to the pack called `name`.
+pub fn owns(rule: &Rule, name: &str) -> bool {
+    owned_by(rule, name)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -507,14 +706,28 @@ mod tests {
                     || limits.contains("cannot be recolored from outside"),
                 "{limits}"
             );
-            assert!(pack.reason.contains("drawn by"), "{}", pack.reason);
+            assert_eq!(
+                pack.verdict,
+                Verdict::Experimental,
+                "no demonstrated value yet: never recommended"
+            );
+            assert!(pack.reason.contains("no visible change"), "{}", pack.reason);
+            let words = format!("{} {}", pack.description, pack.limits.join(" ")).to_lowercase();
+            assert!(
+                !words.contains("make the store darker") && !words.contains("dark calculator"),
+                "{words}"
+            );
+            assert!(
+                words.contains("does not make"),
+                "says plainly what it does not do: {words}"
+            );
             assert!(
                 pack.look.backdrop.is_none(),
                 "no backdrop is claimed for opaque XAML apps"
             );
             assert!(
-                pack.tested.iter().any(|t| t.contains("Not yet tested")),
-                "must not claim a test"
+                pack.tested.iter().any(|t| t.contains("no visible change")),
+                "the owner's result is recorded, and no success is claimed"
             );
             assert!(pack.targets.iter().all(
                 |t| t.package.is_some() && t.class.as_deref() == Some("ApplicationFrameWindow")
@@ -767,5 +980,147 @@ mod tests {
             "no empty process is written"
         );
         assert_eq!(installed(&again).len(), 2);
+    }
+
+    fn observed() -> Observed {
+        Observed {
+            exe: "ApplicationFrameHost.exe".into(),
+            class: "ApplicationFrameWindow".into(),
+            package: "Microsoft.WindowsCalculator_8wekyb3d8bbwe".into(),
+            excluded: None,
+            rule_matched: true,
+            pack_wins: true,
+            winner: "Pack: Calculator".into(),
+            applied: true,
+            rejected: vec![],
+        }
+    }
+
+    #[test]
+    fn each_stage_where_a_request_can_stop_has_its_own_status() {
+        let (status, text) = assess(None, None);
+        assert_eq!(status, Evidence::TargetNotDetected);
+        assert!(text.contains("Open the app"));
+        let mut o = observed();
+        o.excluded = Some("Protected.".into());
+        assert_eq!(assess(Some(&o), None).0, Evidence::Excluded);
+        let mut o = observed();
+        o.rule_matched = false;
+        let (status, text) = assess(Some(&o), None);
+        assert_eq!(status, Evidence::RuleDidNotMatch);
+        assert!(
+            text.contains("ApplicationFrameHost.exe") && text.contains("Calculator_8wekyb3d8bbwe")
+        );
+        let mut o = observed();
+        o.pack_wins = false;
+        o.winner = "my rule".into();
+        let (status, text) = assess(Some(&o), None);
+        assert_eq!(status, Evidence::OverriddenByOtherRule);
+        assert!(text.contains("my rule"));
+        let mut o = observed();
+        o.applied = false;
+        assert_eq!(assess(Some(&o), None).0, Evidence::NotAppliedYet);
+        let mut o = observed();
+        o.rejected = vec!["Caption color (0x80070057)".into()];
+        let (status, text) = assess(Some(&o), None);
+        assert_eq!(status, Evidence::OperationFailed);
+        assert!(text.contains("0x80070057"));
+    }
+
+    #[test]
+    fn accepted_is_never_called_verified_without_a_person_looking() {
+        let o = observed();
+        let (status, text) = assess(Some(&o), None);
+        assert_eq!(status, Evidence::AcceptedUnverified);
+        assert!(status.label().contains("unverified") && text.contains("not checked"));
+        assert_eq!(
+            assess(Some(&o), Some(Mark::SawNothing)).0,
+            Evidence::UserVerifiedNoChange
+        );
+        assert_eq!(
+            assess(Some(&o), Some(Mark::SawChange)).0,
+            Evidence::VerifiedVisibleChange
+        );
+        // A mark never hides an earlier failure in the chain.
+        let mut failed = observed();
+        failed.rejected = vec!["x (0x1)".into()];
+        assert_eq!(
+            assess(Some(&failed), Some(Mark::SawChange)).0,
+            Evidence::OperationFailed
+        );
+        let mut missing = observed();
+        missing.rule_matched = false;
+        assert_eq!(
+            assess(Some(&missing), Some(Mark::SawChange)).0,
+            Evidence::RuleDidNotMatch
+        );
+        // Seven plus two distinct labels.
+        let labels = [
+            Evidence::TargetNotDetected,
+            Evidence::Excluded,
+            Evidence::RuleDidNotMatch,
+            Evidence::OverriddenByOtherRule,
+            Evidence::NotAppliedYet,
+            Evidence::OperationFailed,
+            Evidence::AcceptedUnverified,
+            Evidence::UserVerifiedNoChange,
+            Evidence::VerifiedVisibleChange,
+        ]
+        .map(Evidence::label);
+        let mut sorted = labels.to_vec();
+        sorted.sort();
+        sorted.dedup();
+        assert_eq!(sorted.len(), 9);
+    }
+
+    #[test]
+    fn the_built_in_packs_barely_differ_from_the_default_look_which_explains_a_silent_result() {
+        let config = parse_config("{}").unwrap();
+        for pack in catalog() {
+            let changes = delta(&config, &pack);
+            assert!(changes.len() <= 3, "{changes:?}");
+            assert!(
+                changes.iter().all(|c| c.starts_with("title bar color")
+                    || c.starts_with("text color")
+                    || c.starts_with("border color")),
+                "{changes:?}"
+            );
+        }
+        // Against a default look that already matches the pack, nothing could change.
+        let same = parse_config(
+            r##"{"default":{"darkMode":true,"captionColor":"#000000","textColor":"#FFFFFF","borderColor":"none"}}"##,
+        )
+        .unwrap();
+        assert!(delta(&same, &catalog()[0]).is_empty());
+    }
+
+    #[test]
+    fn marks_round_trip_and_a_damaged_file_means_nothing_is_marked() {
+        let mut marks = Marks::default();
+        marks.set("windows-calculator", Some(Mark::SawNothing));
+        marks.set("windows-calculator", Some(Mark::SawChange));
+        assert_eq!(marks.marks.len(), 1);
+        assert_eq!(
+            Marks::parse(&marks.to_json()).get("windows-calculator"),
+            Some(Mark::SawChange)
+        );
+        marks.set("windows-calculator", None);
+        assert_eq!(marks.get("windows-calculator"), None);
+        assert_eq!(Marks::parse("{ nope"), Marks::default());
+    }
+
+    #[test]
+    fn experimental_packs_install_but_say_so_and_unsupported_ones_cannot() {
+        let pack = &catalog()[0];
+        assert_eq!(pack.verdict, Verdict::Experimental);
+        assert!(
+            unavailable(pack, 26_300).is_none(),
+            "an experiment can still be run"
+        );
+        assert!(pack.verdict.label().contains("no visible effect"));
+        let mut config = parse_config("{}").unwrap();
+        assert!(install(&mut config, pack, 26_300).is_ok());
+        // The rule name did not change, so rules installed by 3.8.0-preview.1 are still found.
+        assert_eq!(installed(&config)[0].name, "Microsoft Store");
     }
 }

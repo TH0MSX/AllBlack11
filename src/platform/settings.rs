@@ -335,6 +335,10 @@ enum Button {
     PackInstall,
     PackRemove,
     ImportPack,
+    PackCheck,
+    PackSeesChange,
+    PackSeesNothing,
+    PackOpenColors,
     RemoveExcludedClass,
     WallDownload,
     WallCancel,
@@ -626,6 +630,14 @@ fn button_meta(id: Button) -> (&'static str, &'static str, &'static str) {
         Button::PackInstall => ("", "", "Install pack"),
         Button::PackRemove => ("", "", "Remove pack"),
         Button::ImportPack => ("", "", "Import pack…"),
+        Button::PackCheck => ("", "", "Check now"),
+        Button::PackSeesChange => ("", "", "I see a change"),
+        Button::PackSeesNothing => ("", "", "I see no change"),
+        Button::PackOpenColors => (
+            "Windows color settings",
+            "Most Microsoft Store apps follow the Windows app mode. This opens Settings > Personalization > Colors, where you can choose it. An app with its own theme option has it in its own settings.",
+            "Open",
+        ),
         Button::RemoveExcludedClass => ("", "", "Remove class"),
         Button::WallDownload => ("", "", "Download image"),
         Button::WallCancel => ("", "", "Cancel download"),
@@ -1687,7 +1699,7 @@ impl Ui {
         ui.refresh_looks();
         unsafe {
             // EM_SETCUEBANNER: grey "Search" text while the box is empty, even when it has focus.
-            let cue = to_wide("Search settings");
+            let cue = to_wide("Search");
             SendMessageW(ui.edits.search, 0x1501, 1, cue.as_ptr() as LPARAM);
         }
         for edit in ui.all_edits() {

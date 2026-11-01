@@ -188,6 +188,12 @@ fn shell_open(url: &str) -> Result<(), String> {
 
 /// Open a web address in the default browser. Only the creator's GitHub profile address passes
 /// (`brand::is_safe_profile_url`); call this only in response to a click or key press.
+/// Open Windows Settings > Personalization > Colors (a documented `ms-settings:` page). The text
+/// is fixed here; nothing from a file or the network can reach it.
+pub fn open_windows_colors() -> Result<(), String> {
+    shell_open("ms-settings:colors")
+}
+
 pub fn open_url(url: &str) -> Result<(), String> {
     if !crate::is_safe_profile_url(url) {
         return Err("that address is not one AllBlack11 opens".into());

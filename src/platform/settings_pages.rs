@@ -65,6 +65,11 @@ pub struct Ext {
     pub wall_loaded: bool,
     /// What the last pack install or removal did, in plain lines. Never saved.
     pub pack_report: Vec<String>,
+    /// The last "Check now": the status line and what it found. Never saved.
+    pub pack_check: Vec<String>,
+    /// A matching window was found by the last check (so "I see ..." has something to be about).
+    pub pack_found: bool,
+    pub pack_marks: crate::packs::Marks,
     pub recipe_diff: Vec<String>,
     /// 0 executable, 1 executable + class, 2 package, 3 class only.
     pub rule_scope: u8,
@@ -259,7 +264,10 @@ impl Ui {
     /// Search results: a card per result, each opening its place. Nothing here changes a setting.
     fn rows_search(&self) -> Vec<Laid> {
         let mut b = Builder::new();
-        b.push(Row::GlobalSearch);
+        // On the narrow rail the search box has no room in the pane, so it sits here.
+        if self.nav_w <= crate::ui_metrics::NAV_COMPACT {
+            b.push(Row::GlobalSearch);
+        }
         push_head(&mut b, Page::Search);
         if self.ext.query.trim().is_empty() {
             b.push(Row::Note("Type a setting, an action, a scene or a help topic. Results open the place; nothing changes until you do it there."));
@@ -1437,7 +1445,7 @@ pub fn paint_nav(c: &Canvas, ui: &Ui) {
         }
         if expanded {
             c.text(
-                l + 44,
+                l + if fonts.icon.is_null() { 12 } else { 44 },
                 t,
                 r - 4,
                 b,
@@ -3386,10 +3394,14 @@ impl Ui {
 
     /// Compatibility packs: pick one, read what it does and what it cannot, install or remove it.
     fn push_packs(&self, b: &mut Builder) {
-        b.push(Row::Header("Compatibility packs"));
+        b.push(Row::Header("Packs"));
         b.push(Row::Note(
             "A pack is a small data file that tells AllBlack11 how to treat one app, and says plainly what it cannot do. It adds ordinary rules; it runs nothing. Your own rules always win over a pack.",
         ));
+        b.push(Row::About(vec![
+            "Recommended templates: none yet.".to_string(),
+            "The two built-in packs are experiments. They only ask Windows to color the window frame, and no visible effect has been shown. Use Check now to see where the request stops.".to_string(),
+        ]));
         b.push(Row::Choice(Choice::Pack));
         if let Some((pack, imported)) = self.ext.packs.get(self.ext.pack_sel) {
             let installed = crate::pack_is_installed(&self.config, pack);
@@ -3439,7 +3451,19 @@ impl Ui {
             if let Some(reason) = crate::pack_unavailable(pack, self.build) {
                 lines.push(format!("Unavailable: {reason}"));
             }
+            let changes = crate::packs::delta(&self.config, pack);
+            lines.push(if changes.is_empty() {
+                "Compared with your default look: it asks for exactly what is already in force, so no visible change is possible from this pack.".to_string()
+            } else {
+                format!(
+                    "Compared with your default look, it would change: {}.",
+                    changes.join("; ")
+                )
+            });
             b.push(Row::Lines(lines));
+            if !self.ext.pack_check.is_empty() {
+                b.push(Row::Lines(self.ext.pack_check.clone()));
+            }
         } else {
             b.push(Row::Note("No packs are available."));
         }
@@ -3451,6 +3475,13 @@ impl Ui {
             Button::PackRemove,
             Button::ImportPack,
         ]));
+        let mut check = vec![Button::PackCheck];
+        if self.ext.pack_found {
+            check.push(Button::PackSeesChange);
+            check.push(Button::PackSeesNothing);
+        }
+        b.push(Row::Buttons(check));
+        b.push(Row::Action(Button::PackOpenColors));
         b.push(Row::Note(
             "Install and Remove are saved like any other change. They appear under Look history and Undo takes them back.",
         ));
@@ -3485,6 +3516,117 @@ impl Ui {
         }
     }
 
+    fn marks_path() -> std::path::PathBuf {
+        config_dir().join("pack-marks.json")
+    }
+
+    /// Record what the person saw on the window the last check found.
+    fn mark_pack(&mut self, mark: Option<crate::packs::Mark>) {
+        let Some((pack, _)) = self.ext.packs.get(self.ext.pack_sel).cloned() else {
+            return;
+        };
+        self.ext.pack_marks.set(&pack.id, mark);
+        let _ = write_atomic(&Self::marks_path(), &self.ext.pack_marks.to_json());
+        self.check_selected_pack();
+    }
+
+    /// Walk the chain for the selected pack against the windows open right now: found, matched,
+    /// winning, applied, accepted. Reads only; nothing is changed or applied.
+    fn check_selected_pack(&mut self) {
+        let Some((pack, _)) = self.ext.packs.get(self.ext.pack_sel).cloned() else {
+            return;
+        };
+        if self.ext.pack_marks.marks.is_empty() {
+            if let Ok(text) = std::fs::read_to_string(Self::marks_path()) {
+                self.ext.pack_marks = crate::packs::Marks::parse(&text);
+            }
+        }
+        let observed = self.observe_pack(&pack);
+        let mark = self.ext.pack_marks.get(&pack.id);
+        let (status, sentence) = crate::packs::assess(observed.as_ref(), mark);
+        self.ext.pack_found = observed.is_some();
+        let mut lines = vec![format!("Check: {}", status.label()), sentence];
+        if !crate::pack_is_installed(&self.config, &pack) {
+            lines.push("The pack is not installed, so no rule of it exists yet.".to_string());
+        }
+        self.ext.pack_check = lines;
+        self.status = format!("{}: {}.", pack.name, status.label());
+    }
+
+    fn observe_pack(&self, pack: &crate::Pack) -> Option<crate::packs::Observed> {
+        for entry in inspect::list_windows().into_iter().take(300) {
+            let class_ok = pack.targets.iter().any(|t| {
+                t.class
+                    .as_deref()
+                    .map_or(true, |c| crate::glob_match(c, &entry.class))
+                    && t.process
+                        .as_deref()
+                        .map_or(true, |p| crate::glob_match(p, &entry.exe))
+            });
+            if !class_ok {
+                continue;
+            }
+            let hwnd = entry.key as isize as HWND;
+            let (path, package) = super::super::procinfo::path_and_package_of_window(
+                hwnd, entry.pid, &entry.exe, true,
+            );
+            let target_ok = pack.targets.iter().any(|t| {
+                t.package.as_deref().map_or(true, |p| {
+                    !package.is_empty() && crate::glob_match(p, &package)
+                })
+            });
+            if !target_ok {
+                continue;
+            }
+            let identity = crate::WindowIdentity {
+                exe: &entry.exe,
+                class: &entry.class,
+                path: &path,
+                package: &package,
+                title: None,
+            };
+            let ranked = crate::rank(&self.config.rules, &identity);
+            let pack_rule = |index: usize| {
+                self.config
+                    .rules
+                    .get(index)
+                    .is_some_and(|rule| crate::packs::owns(rule, &pack.name))
+            };
+            let rule_matched = ranked.iter().any(|m| pack_rule(m.index));
+            let winner = ranked.first();
+            let report = super::super::app::report_for(entry.key);
+            let rejected: Vec<String> = report
+                .as_ref()
+                .map(|r| {
+                    r.attempts
+                        .iter()
+                        .filter_map(|a| match a.confirm {
+                            crate::Confirm::Rejected(hr) => {
+                                Some(format!("{} (0x{:08X})", a.name, hr as u32))
+                            }
+                            _ => None,
+                        })
+                        .collect()
+                })
+                .unwrap_or_default();
+            return Some(crate::packs::Observed {
+                exe: entry.exe.clone(),
+                class: entry.class.clone(),
+                package,
+                excluded: crate::exclusion_why(&entry.exe, &entry.class, &self.config),
+                rule_matched,
+                pack_wins: winner.is_some_and(|m| pack_rule(m.index)),
+                winner: winner
+                    .and_then(|m| self.config.rules.get(m.index))
+                    .map(|rule| rule.label())
+                    .unwrap_or_default(),
+                applied: report.as_ref().is_some_and(|r| r.explanation.applied),
+                rejected,
+            });
+        }
+        None
+    }
+
     fn install_selected_pack(&mut self) {
         if self.trial_active() {
             self.status = "Keep or revert the trial look first.".into();
@@ -3498,7 +3640,14 @@ impl Ui {
             Ok(lines) => {
                 self.ext.pack_report = lines;
                 self.rule = None;
-                self.status = format!("Installed the {} pack. Undo takes it back.", pack.name);
+                self.status = if pack.verdict == crate::PackVerdict::Experimental {
+                    format!(
+                        "Installed the {} pack as an experiment. It may show no visible change: press Check now. Undo takes it back.",
+                        pack.name
+                    )
+                } else {
+                    format!("Installed the {} pack. Undo takes it back.", pack.name)
+                };
                 self.commit();
             }
             Err(reason) => {
@@ -3800,6 +3949,8 @@ impl Ui {
                     self.ext.pack_sel = (self.ext.pack_sel + 1) % self.ext.packs.len();
                 }
                 self.ext.pack_report.clear();
+                self.ext.pack_check.clear();
+                self.ext.pack_found = false;
             }
             Choice::UpdateChannel => {
                 self.config.updates.channel = self.config.updates.channel.next();
@@ -3977,6 +4128,15 @@ impl Ui {
             | Button::WallPutBack => self.wall_action(id),
             Button::TryRemix => self.try_remix(),
             Button::SaveRemix => self.save_remix(),
+            Button::PackCheck => self.check_selected_pack(),
+            Button::PackSeesChange => self.mark_pack(Some(crate::packs::Mark::SawChange)),
+            Button::PackSeesNothing => self.mark_pack(Some(crate::packs::Mark::SawNothing)),
+            Button::PackOpenColors => {
+                self.status = match registry::open_windows_colors() {
+                    Ok(()) => "Opened Windows color settings.".into(),
+                    Err(message) => message,
+                };
+            }
             Button::PackInstall => self.install_selected_pack(),
             Button::PackRemove => self.remove_selected_pack(),
             Button::ImportPack => self.import_pack(),
