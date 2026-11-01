@@ -10,6 +10,7 @@ mod commands;
 mod compat;
 mod config;
 mod contrast_lab;
+mod destinations;
 mod download;
 mod effects;
 mod exclusions;
@@ -69,6 +70,7 @@ pub use contrast_lab::{
     check as contrast_check, lines as contrast_lines, palette_pairs as contrast_palette_pairs,
     style_pairs as contrast_style_pairs,
 };
+pub use destinations::{Category, Dest};
 pub use effects::{focus_style, reduce_reason, reduced, Explicit, SystemState};
 pub use exclusions::{
     add_class as add_excluded_class, precedence as exclusion_precedence,

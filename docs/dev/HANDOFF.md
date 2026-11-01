@@ -2,6 +2,21 @@
 
 Keep this file current. It exists so the work survives a context reset.
 
+## Owner instruction for the new GitHub front page (recorded, not yet applied)
+
+When the README is rewritten for the next release, include this message from the owner: *this
+application received over 15 updates in November 2026, and the aim is at least one update every
+month, each with bug fixes, Windows update compatibility tweaks and new features.*
+
+How to write it so it stays true:
+- **The count must come from the repository.** Count the published GitHub releases (or CHANGELOG
+  sections) dated in that month on the day the README is written, and say that number. On
+  2026-11-01 there were 5 tags in total (the newest `v3.7.0-preview.1`) and none dated in
+  November, so "over 15" cannot be stated yet. Do not write a number the releases do not show.
+- **The cadence is a goal, not a promise**: "aims to ship at least one update every month".
+- The 3.8 stabilization pass starts a two-week feature freeze; during it only critical
+  regression and security fixes ship, so plan the November count with that in mind.
+
 ## State (3.8)
 
 - **Branch `claude/next-3.8`**, from the released `v3.7.0-preview.1` (merged to main as PR #6 plus the release commits). Version **3.8.0-preview.1**. Not merged, not tagged, not published; no pull request.
