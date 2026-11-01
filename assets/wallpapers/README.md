@@ -56,5 +56,5 @@ It is checked again immediately before it is applied.
 
 **Release step (owner):** after `generate.py`, attach the eight `allblack11-wallpaper-*.png` files
 from `target/wallpapers/` to the release whose tag matches the app version (for example
-`v3.8.0-preview.1`). Until they are attached the gallery says so instead of failing silently.
+`v3.8.0-preview.2`). Until they are attached the gallery says so instead of failing silently.
 Check `generate.py --verify` first: the digests must match `manifest.json`.

@@ -279,3 +279,13 @@ user's Windows accent still drives the primary button and the selected-page bar.
 
 `python3 scripts/check-controls.py` checks that every control that existed before the page
 restructure (94 now, including the walkthrough and setup controls) is still reachable on a page.
+
+## 3.8 shell (stabilization pass)
+
+- Landscape: navigation pane (search box, then six categories) and one content pane; start at 1120x760 logical, minimum 720x520, content capped at 960.
+- A category's landing page is cards that open subpages (`Row::Link`); a subpage starts with a Back link (`Row::Crumb`); Alt+Left goes back. Advanced options go in `Row::Expander` sections, closed by default.
+- Every place is a `Dest` in `src/destinations.rs` (id, title, description, parent, icon). Add a destination there first; the exhaustive `match` in the page builder and the tests then require everything else.
+- Search: add an entry to `SETTINGS` in `src/commands.rs` with an exact anchor (`toggle:Name`, `button:Name`, `header:Section`...); `scripts/check-controls.py` fails the build if the anchor is not on the page named.
+- A search result navigates; it never changes a setting or runs an action.
+- Icons: Segoe Fluent Icons only, from the registry, beside a text label.
+

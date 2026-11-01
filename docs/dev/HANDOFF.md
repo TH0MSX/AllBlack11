@@ -2,6 +2,13 @@
 
 Keep this file current. It exists so the work survives a context reset.
 
+## Stabilization checkpoint (3.8.0-preview.2) and the two-week feature freeze
+
+- Branch `claude/stabilize-3.8` (from `claude/next-3.8` `0b275e7`, which is untouched and is the recoverable baseline). Details: `INVENTORY-3.8-stabilization.md`; owner checklist: `SMOKE-TEST.md` section S.
+- **Freeze:** for two weeks after this lands, only critical regression and security fixes. No new features, no roadmap items, no new systems. Nothing here schedules anything.
+- Not ready to publish until section S has been run on Windows. The wallpaper files must be attached to the release whose tag equals the app version (`v3.8.0-preview.2` for this build).
+- Wine harness: `scripts/ui-drive.sh PAGE ...` now takes a destination id (`apps/packs`) or the old number.
+
 ## Owner instruction for the new GitHub front page (recorded, not yet applied)
 
 When the README is rewritten for the next release, include this message from the owner: *this

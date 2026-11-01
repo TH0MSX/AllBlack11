@@ -1410,7 +1410,7 @@ unsafe extern "system" fn wndproc(hwnd: HWND, msg: u32, wparam: WPARAM, lparam: 
         // Alt+Left: back from a subpage to its category, as in Windows Settings.
         0x0104 if wparam == 0x25 => {
             if let Some(parent) = ui.page.parent() {
-                ui.set_page(hwnd, parent);
+                ui.navigate(hwnd, parent);
             }
             0
         }
@@ -2077,10 +2077,10 @@ impl Ui {
                 Row::WallGrid => self.click_wall_grid(lw, lx, local),
                 Row::Crumb => {
                     if let Some(parent) = self.page.parent() {
-                        self.set_page(hwnd, parent);
+                        self.navigate(hwnd, parent);
                     }
                 }
-                Row::Link(dest) => self.set_page(hwnd, *dest),
+                Row::Link(dest) => self.navigate(hwnd, *dest),
                 Row::Result(index) => self.open_result(hwnd, *index),
                 Row::Expander(title) => self.toggle_section(title),
                 Row::RuleList => self.pick_rule((local - 8) / LIST_LINE),

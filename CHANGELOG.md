@@ -1,5 +1,17 @@
 # Changelog
 
+## 3.8.0-preview.2
+
+A **pre-release** stabilization checkpoint on top of 3.8.0-preview.1. **No feature was added.** Nothing in it has been run on Windows yet (`docs/dev/SMOKE-TEST.md` section S is the owner's checklist); it is unit-tested on Linux (366 tests, also native on Windows ARM64 and x64 CI), cross-compiled, and rendered under Wine for layout (Wine is not Windows). What changed and what moved, control by control: `docs/dev/INVENTORY-3.8-stabilization.md`.
+
+- **A landscape, Windows 11 Settings-style shell.** The window starts about 1120x760 (clamped to the screen), remembers where you put it and restores it safely when monitors change. Six categories in the left pane: Home, Appearance, Apps, Safety, Settings, Help & About. Appearance, Apps and Help & About open cards for their subpages; every subpage has a Back link (and Alt+Left). Advanced options sit in closed sections.
+- **Search at the top of the pane** (Ctrl+K): settings, actions, scenes and looks, compatibility packs, wallpapers and help, with synonyms (blur, restore, updates, wallpaper, store, black...). A result opens the right page, scrolls to the control, focuses it and marks it; it never changes a setting, and actions such as Reset or Restore only take you to their button. Local only.
+- **One typed registry for every place in Settings.** This fixes a real bug: the command palette's "Fix an app" opened Appearance because it used a stale page number. Help walkthroughs, first-run setup, `--open-settings=<id>` and Settings itself now use it (the old numbers still work).
+- **Microsoft Store and Calculator packs are now labeled experimental** and are no longer recommended: installing them changed nothing visible on the owner's PC, and compared with the default look they ask for a difference of about 10% of one dark gray. The page shows that comparison, a **Check now** that says where the request stops (target not detected, rule did not match, overridden, rejected by Windows, accepted but unverified, or what you saw), and a link to Windows' Colors page. They never claimed to make an app dark and still do not.
+- Consistent Fluent icons from one table; "Made with love by TH0MSX" kept on Home and About; the text boxes (including search) have accessible names, Tab leaves them, and UI Automation now reports controls scrolled out of view as off-screen (it always said on-screen before).
+- Moved, not removed: the classic-dialogs layer and the x64 helper are under Safety > Experimental features; the rules page is split into rules, exclusions and packs; Settings & help is split into Settings, Help and tutorials, and About.
+- Known limits: nothing here is verified on Windows; Store and Calculator behavior is unknown beyond the owner's report; Windows keeps one wallpaper fit for all displays.
+
 ## 3.8.0-preview.1
 
 A **pre-release** on top of 3.7.0-preview.1: an in-app updater, two compatibility packs, an exclusion manager, labels for the Settings text boxes, and a wallpaper gallery. **None of the new Windows-facing behavior has been run on Windows yet** (the updater against real GitHub, the download and install handoff, the pack behavior on the Store and Calculator, the wallpaper service, screen-reader names). It is unit-tested on Linux (337 tests, also run natively on Windows ARM64 and x64 CI runners), cross-compiled for ARM64 and x64, and rendered under Wine for layout (Wine is not Windows). `docs/dev/INVENTORY-3.8.md` lists what exists and what was left undone; `docs/dev/SMOKE-TEST.md` section 3.8 is the hardware pass, in order.

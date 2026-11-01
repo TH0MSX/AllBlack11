@@ -6,13 +6,49 @@ Windows), and checked on a Windows ARM64 runner in CI for compilation only. Ever
 therefore **unverified until you tick it**, whatever the screenshots showed. Mark each line pass or fail and attach the diagnostics
 report (Settings > Diagnostics > Write report) to any failure.
 
-Do **section 3.8 first** (about 40 minutes: updater, packs, exclusion manager, text-box names, wallpapers; none of it has run on Windows), then **section 3.7** (about 30 minutes: icon, credit, recovery, new pages), then **section U** (about 25 minutes): it covers the interface redesign and is where a
+Do **section S first** (about 50 minutes: the new shell, search, and the Store/Calculator findings), then **section 3.8** (about 40 minutes: updater, packs, exclusion manager, text-box names, wallpapers; none of it has run on Windows), then **section 3.7** (about 30 minutes: icon, credit, recovery, new pages), then **section U** (about 25 minutes): it covers the interface redesign and is where a
 screen, a keyboard or a screen reader will disagree with what was rendered under Wine. Then the
 3.6 pass below. In preview.2 the six old tabs became eight pages: Overview is **Home**; Effects is
 **Appearance**; Apps is **Fix this app** (pick and inspect) and **Rules** (rules, exclusions,
 notebook, classic dialogs); Scenes is **Scenes**; Legacy moved into **Rules**; Safety is
 **Safety**; the report, support table and tools are on **Diagnostics**; About and the
 command palette are on **Settings & help**. Steps below that say "tab" mean "page".
+
+## S. Stabilization pass (3.8.0-preview.2): the owner acceptance checklist
+
+Nothing here has been run on Windows. Do it before section 3.8 (this one tells you whether the new
+shell can be trusted at all). Where things moved: see `INVENTORY-3.8-stabilization.md` section 2.
+Mark pass or fail and write down exactly what you see or hear.
+
+**Shell and navigation (about 10 minutes)**
+1. [ ] Start AllBlack11, open Settings. *A landscape window about 1120x760 (smaller on a small screen), the pane on the left with Search and six items: Home, Appearance, Apps, Safety, Settings, Help & About; one scrolling area; no horizontal scrollbar.*
+2. [ ] Click each category. *Appearance, Apps and Help & About show cards for their subpages; Home, Safety and Settings show their controls.* Open a subpage. *A "‹ Parent" link leads the page; click it, press Enter on it, and press Alt+Left: each goes back.*
+3. [ ] Icons. *The same icon family everywhere (Segoe Fluent Icons), each beside a label; none is a box or an emoji.* Note any item with no icon.
+4. [ ] Resize to the smallest size, then maximize, then restore. *Nothing overlaps or clips; below about 720 logical pixels the pane becomes an icon rail with a magnifier button.*
+5. [ ] Move and resize the window, close it, open it again. *It comes back where it was.* Close it on a second monitor, unplug that monitor, open it. *It opens fully on screen.* Maximize, close, reopen. *Still maximized.*
+6. [ ] Increase Windows text size (Settings > Accessibility > Text size) and display scale to 125%, 150% and 200%; drag the window between monitors with different scaling. *No clipped, overlapping or unreachable controls; long names and paths wrap or end in an ellipsis.*
+
+**Search (about 10 minutes)**
+7. [ ] Press Ctrl+K. *The caret is in the Search box.* Type `blur`. *A results page: "Blur while dragging", "Backdrop material" and others, each with an icon, a path and a line of text.*
+8. [ ] Press Enter. *Appearance > Effects and colors opens, scrolled to the first result's control, which is focused and marked with a double outline, a bar and the word "Found" for about two seconds. **Nothing is switched.***
+9. [ ] Type `restore`, `reset`, `updates`, `version`, `wallpaper`, `background`, `store`, `calculator`, `black`, `dark`, each from Ctrl+K. *Each finds the places named in the inventory (recovery buttons, the update settings, the gallery, the packs page, scenes and the dark title bar).* Open "Reset all windows" from a result. *The Safety page opens at that button; **nothing is reset until you press it.***
+10. [ ] In a result list press Down, Up, Enter, Escape; also Tab and Shift+Tab from the box. *Down enters the list; Escape clears the box and returns to the page you were on; Tab goes to the categories; Shift+Tab to the last control.* Press the clear (x) button. *Same as Escape.*
+11. [ ] Open a result that lives in a closed section (search `contrast`). *The section opens and the control is shown.*
+12. [ ] Narrator: reach Search, type, move through results. *The box is announced as "Search"; each result as "title, path" with its description; the focused result is the one highlighted.* Record the exact words.
+
+**Existing behavior that must still work (about 20 minutes)**
+13. [ ] Appearance > Effects and colors > Quick looks > Pure OLED. *A 15-second trial with a Keep/Revert bar; Keep saves; Revert (or waiting) goes back; Esc reverts.* Safety > Look history shows the kept change; Undo takes it back.
+14. [ ] Safety: Pause all styling, Resume; Reset all windows; Restore last known good config (read the confirmation). *Each does what its label says; Home shows Pause/Resume as well.*
+15. [ ] Settings > Updates: Check for updates, then Cancel a download if one is offered. *As in section 3.8 A.*
+16. [ ] Appearance > Wallpapers: preview, Apply, Put back previous. *As in section 3.8 D.*
+17. [ ] Turn on Safety > Experimental features > Cover emulated x64 apps (ARM64) and turn it off. *The helper process starts and then exits (Task Manager).*
+18. [ ] Tray icon: every menu item (open Settings, pause, scenes, palette, exit). *As before; Exit asks only when something would revert.*
+19. [ ] Close and reopen Settings; check your scene, rules, exclusions and saved looks are unchanged; `config.json` still loads (Help & About > Diagnostics > Write report).
+
+**Store and Calculator (about 10 minutes)**
+20. [ ] Apps > Compatibility packs. *"Recommended templates: none yet"; the two packs are labeled "Experimental (no visible effect shown)"; each says what it would change compared with your default look (a dark gray title bar and a text white, nothing more).*
+21. [ ] Open Calculator, press **Check now** for the Calculator pack. *Record the status line. Without the pack installed: "Rule did not match" or "Target not detected" (and which).* Install the pack, press Check now again. *Record the status and, if it says "Accepted by Windows", look at the title bar and press "I see no change" or "I see a change".* Do the same for the Store. If a status says the package is unreadable, run Customize an app on that window and copy its report.
+22. [ ] Remove the pack. *Its rule goes; your own rules are untouched.* Press "Open" under Windows color settings. *Windows Settings opens on Colors.*
 
 ## 3.8. Updater, packs, exclusions, labels, wallpapers (3.8.0-preview.1)
 
@@ -21,7 +57,7 @@ pass or fail and note exactly what you see or hear. Do the steps in order: the u
 a published release newer than the running build (publish 3.8.0-preview.1 first, then test with
 the 3.7.0-preview.1 build installed, or the reverse for "up to date").
 
-**A. Updater (Settings & help > Updates)**
+**A. Updater (Settings > Updates)**
 1. [ ] Open the page with no network (airplane mode), press **Check for updates**. *A plain "could not reach GitHub" line within about 15 seconds; no dialog; Check again works; styling is unaffected.*
 2. [ ] With network, on 3.7.0-preview.1, channel **Automatic**, press Check. *"A newer version is available: 3.8.0-preview.1 (preview)", notes excerpt, release page link. The Home page shows a badge row. A tray balloon appears once.*
 3. [ ] Set the channel to **Stable only** and check again. *"You have the latest stable version" (a preview is not offered).* Back to Automatic.
@@ -34,7 +70,7 @@ the 3.7.0-preview.1 build installed, or the reverse for "up to date").
 10. [ ] Turn on the daily check, restart. *Nothing is contacted until about a day passes (or press Check); with it off nothing runs.* Confirm in a firewall log or Resource Monitor that only github.com is contacted.
 11. [ ] Narrator on the Updates card. *Each button and the channel choice are announced with their names.*
 
-**B. Compatibility packs (Rules > Compatibility packs)**
+**B. Compatibility packs (Apps > Compatibility packs)**
 12. [ ] Pick **Microsoft Store**, read the details. *Verdict "Partly supported", the limit "Client content of the Store app is rendered by the app itself and cannot be recolored externally.", "Not yet tested on Windows hardware".*
 13. [ ] Open the Store, then **Install pack**. *Report line "Added rule Pack: Microsoft Store ... priority -10". Look history shows "Installed the Microsoft Store pack".* Look at the window. *Record exactly what changed: title bar color, border, text color. If nothing changed, note the build and open Fix this app on the Store window: the package should read Microsoft.WindowsStore_..., not ApplicationFrameHost.* This decides whether the pack must become "Not supported".
 14. [ ] **Remove pack**. *The rule disappears; the window returns to how Windows draws it after a refresh; Undo (Safety) brings the pack back.*
@@ -42,17 +78,17 @@ the 3.7.0-preview.1 build installed, or the reverse for "up to date").
 16. [ ] Add your own rule for the same package with a different title bar color, then install the pack. *The report says "Your rule N also matches ... and wins"; the window uses your color.*
 17. [ ] **Import pack...** with a valid file (copy a built-in from the docs), then with: an unknown field, an oversized file (over 24 KB), a `look` key outside the allowed set, an unsupported pack with a look. *Each bad file is refused with a plain reason; nothing is saved.*
 
-**C. Exclusion manager and text-box names**
-18. [ ] Rules > Exclusion manager. *Counts of protected classes and programs, your lists, rules that switch styling off, and the five numbered layers.*
+**C. Exclusions and text-box names**
+18. [ ] Apps > Exclusions (the exclusion manager is on the same page). *Counts of protected classes and programs, your lists, rules that switch styling off, and the five numbered layers.*
 19. [ ] Type `class=Notepad` in the "Never theme" box and press Add. *"Windows of class Notepad are now left alone"; Notepad (if styled) returns to normal after a refresh; the class shows in the list; Remove class takes it away.* Try `class=Shell_TrayWnd` (*already protected*) and `class=a*b` (*refused*).
 20. [ ] Narrator, Tab to each text box on Fix this app, Appearance, Rules, Scenes and Help. *Each says its name ("Filter windows", "Title bar color", "New rule or test", "App to leave alone", "Look name", "Search help") and role. Record any box that is announced as just "edit".* Check with NVDA and Accessibility Insights if available. If names are missing, the property service did not apply: report it, do not assume it works.
 
-**C2. Recipe Remixer (Scenes > Recipes)**
+**C2. Recipe Remixer (Appearance > Palette and recipes)**
 - [ ] Pick Graphite, then under **Remix two recipes** set Take from = Black frames, Take = Frame colors. *"Result: Graphite + Black frames (frame colors)" and a list of what would change.* Press **Try remix (15 s)**. *Windows change for 15 seconds, then Keep or Revert; look history shows it only after Keep.* Press **Save remix**. *A new recipe appears in the list and survives a restart.*
 - [ ] Try a mix that makes the title text hard to read (take a light title bar into a recipe with light text, if you have one imported). *A plain refusal naming the contrast ratio; nothing is applied.*
 
 **D. Wallpapers**
-21. [ ] Open **Wallpapers**. *Eight tiles with names and "Download N KB/MB"; arrow keys and Tab move between tiles; Narrator reads "Eclipse, Download 633 KB".*
+21. [ ] Open Appearance > **Wallpapers**. *Eight tiles with names and "Download N KB/MB"; arrow keys and Tab move between tiles; Narrator reads "Eclipse, Download 633 KB".*
 22. [ ] Select one, press **Preview full screen**. *A black window covers this display and shows the picture; the hint says "Preview from the small picture" until downloaded. Esc closes; clicking closes; switching to another window closes it.*
 23. [ ] Press **Download image** with the 3.8.0-preview.1 release published and the PNGs attached. *Progress, then "checked against the published checksum"; the file is in `%LOCALAPPDATA%\AllBlack11\wallpapers`.* Before the files are attached: *a clear "not attached to release ... yet" message.*
 24. [ ] Open the preview again (now full resolution), change **Fit** between Fill, Fit and Center. *Fill covers (crops on an ultrawide), Fit shows everything with black bars, Center shows actual size.* Press Enter in the preview. *The wallpaper is applied.*

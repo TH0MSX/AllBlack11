@@ -61,6 +61,9 @@ struct Builder2<'a> {
     hwnd: HWND,
     out: Vec<Built>,
     seen: HashMap<String, u32>,
+    /// Top and bottom of the visible part of the page, in screen pixels. A content element wholly
+    /// outside it is reported off-screen.
+    view: (f64, f64),
 }
 
 impl Builder2<'_> {
@@ -98,6 +101,10 @@ impl Builder2<'_> {
         row: Option<(usize, usize)>,
     ) -> usize {
         let key = self.key(tag);
+        // Only the scrolling content can be off-screen; the navigation pane and the trial bar
+        // are always where they are.
+        let offscreen =
+            row.is_some() && (rect[1] + rect[3] <= self.view.0 || rect[1] >= self.view.1);
         self.out.push(Built {
             info: Info {
                 key,
@@ -108,6 +115,7 @@ impl Builder2<'_> {
                 enabled: true,
                 focusable,
                 focused: false,
+                offscreen,
                 toggled: None,
                 selected: None,
                 value: None,
@@ -123,11 +131,19 @@ impl Builder2<'_> {
 impl Ui {
     fn uia_build(&self, hwnd: HWND) -> Vec<Built> {
         let _measure = MeasureScope::new(self, None, self.lw(hwnd));
+        let view = {
+            let (_, client_h) = client_size(hwnd);
+            let top = self.px(self.top());
+            let bottom = client_h - self.px(self.bottom_h());
+            let rect = uia::to_screen(hwnd, (0, top, 0, bottom));
+            (rect[1], rect[1] + rect[3])
+        };
         let mut b = Builder2 {
             ui: self,
             hwnd,
             out: Vec::new(),
             seen: HashMap::new(),
+            view,
         };
         // Navigation pane first: it is the first Tab stop.
         if self.nav_w > 0 {

@@ -5,6 +5,9 @@
 #   ("rootshot PATH" captures the whole screen, for windows other than Settings, such as the
 #   full-screen wallpaper preview)
 #
+# PAGE is a destination id (home, appearance, appearance/wallpapers, apps, apps/packs, safety,
+# settings, help, help/about, ...; see src/destinations.rs) or a pre-3.8 page number.
+#
 # Same caveats as ui-shot.sh: Wine, not Windows. Coordinates are window-relative pixels.
 set -euo pipefail
 page="$1"; shift

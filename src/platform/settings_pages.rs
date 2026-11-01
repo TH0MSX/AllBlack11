@@ -1562,7 +1562,7 @@ impl Ui {
         }
         if let Some(category) = nav_hit(self, client_x, ly) {
             self.ext.nav_focus = true;
-            self.set_page(hwnd, category.landing());
+            self.navigate(hwnd, category.landing());
             return true;
         }
         if client_x < self.nav_w {
@@ -1582,6 +1582,15 @@ impl Ui {
             return true;
         }
         false
+    }
+
+    /// Navigation the person chose (a category, a card, Back): the status line belongs to the page
+    /// they left, so it is cleared.
+    pub fn navigate(&mut self, hwnd: HWND, page: Page) {
+        if self.page != page {
+            self.status.clear();
+        }
+        self.set_page(hwnd, page);
     }
 
     pub fn set_page(&mut self, hwnd: HWND, page: Page) {
@@ -2100,10 +2109,10 @@ impl Ui {
             Row::WallGrid => self.select_wall(sub),
             Row::Crumb => {
                 if let Some(parent) = self.page.parent() {
-                    self.set_page(hwnd, parent);
+                    self.navigate(hwnd, parent);
                 }
             }
-            Row::Link(dest) => self.set_page(hwnd, *dest),
+            Row::Link(dest) => self.navigate(hwnd, *dest),
             Row::Result(index) => self.open_result(hwnd, *index),
             Row::Expander(title) => self.toggle_section(title),
             Row::GlobalSearch => self.focus_search(hwnd),

@@ -231,3 +231,22 @@ exe was run under Wine for layout and basic interaction only.
 | `IDesktopWallpaper` apply, put back, display list (`gallery.rs`, vtable checked against `shobjidl_core.idl`) | no | yes | the service is absent under Wine (error shown); apply never ran | not tested |
 | Per-display fit | n/a | n/a | n/a | **not possible through Windows' API (one position for all displays); documented, not implemented** |
 
+## 3.8.0-preview.2 stabilization additions
+
+**Nothing below has been run on Windows.**
+
+| Area | Unit-tested | Static | Cross-compiled | Wine-rendered | Windows runtime |
+| --- | --- | --- | --- | --- | --- |
+| Destination registry, legacy numeric switch, tree shape (`destinations.rs`, 7 tests) | yes | n/a | yes | n/a | not tested |
+| Shared index and search (`commands.rs`, 20 tests: synonyms, every destination reachable, scenes/looks/packs/wallpapers/help present, search never runs actions) | yes | 55 anchors checked against the page builders (`check-controls.py`) | yes | results page, selecting a result, scroll, focus ring and "Found" mark seen | not tested |
+| Six-category shell, hubs, subpages, Back, expanders | exhaustive `match` on every destination | every control still on a page (129) | yes | Home, hubs, subpages, expanders, Back seen at 100%, 150%, 200% (Home) | not tested |
+| Window bounds (`windowbounds.rs`, 9 tests: default, clamping, scaling, missing monitor, partly off-screen, damaged file) | yes | n/a | yes | n/a | **not tested** (real monitor changes) |
+| Search box focus order, Tab out of boxes, Esc/Enter/Down | no (window code) | n/a | yes | partly (typing, clearing) | not tested |
+| UIA: names for cards, results, sections, search; `IsOffscreen` | no | n/a | yes | our provider's self-test passed (23 of 23 elements named) | **not tested with Narrator, NVDA or Accessibility Insights** |
+| Store/Calculator evidence chain (`packs::assess`, `delta`, marks; 6 tests) | yes | n/a | yes | "Target not detected" seen (no Store under Wine) | **not tested**: window enumeration, package read, report |
+| Whether caption colors reach Store or Calculator frames | n/a | n/a | n/a | n/a | **unknown** (owner: no visible change) |
+
+Corrections to earlier rows: in 3.8.0-preview.1 the two packs were described as "partly supported";
+they are now "Experimental (no visible effect shown)". The UI Automation provider reported every
+element as on-screen; it now reports scrolled-out content as off-screen.
+
