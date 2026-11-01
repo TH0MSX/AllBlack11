@@ -5,7 +5,7 @@
 | File | What it is | Rebuild |
 | --- | --- | --- |
 | `banner.png` | README banner: pitch black, one moonlit rim | `node docs/banner-source/shot.js` (Playwright; Inter font; `assets/brand/png/allblack11-512.png`) |
-| `hero.png`, `bento.png`, `social-preview.png` | Mockups of the real app, styled for the README | `python3 docs/mockup-source/make_mockups.py` (numpy, Pillow) |
+| `hero.png`, `bento.png`, `windows-gallery.png`, `social-preview.png` | Mockups of the real app, styled for the README | `python3 docs/mockup-source/make_mockups.py` (numpy, Pillow) |
 | `mockup-source/shots/` | The window-only screenshots the mockups use, from a Windows 11 ARM64 PC, with pop-ups cropped or blacked out and nothing personal | taken by hand; the raw captures are not kept |
 | `screenshots/` | Other screenshots; see [its README](screenshots/README.md) | |
 
