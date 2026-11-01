@@ -1,0 +1,20 @@
+{
+  "schema": 1,
+  "id": "graphite",
+  "name": "Graphite",
+  "description": "Dark gray frames with a soft Mica surface. Easy on the eyes in a bright room.",
+  "author": "AllBlack11",
+  "minBuild": 22621,
+  "look": {
+    "darkMode": true,
+    "backdrop": "mica",
+    "captionColor": "#1A1A1A",
+    "borderColor": "none",
+    "textColor": "#F0F0F0",
+    "corners": "default"
+  },
+  "notes": [
+    "Mica is translucent and takes some color from your wallpaper, so this is dark gray, not true black.",
+    "Apps that draw their own title bar will not show the caption color."
+  ]
+}

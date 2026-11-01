@@ -56,11 +56,37 @@ pub fn accent_bgr() -> u32 {
         .unwrap_or(FALLBACK_ACCENT_BGR)
 }
 
+/// Windows' "Transparency effects" switch. Missing means on.
+pub fn transparency_enabled() -> bool {
+    reg_dword(
+        "Software\\Microsoft\\Windows\\CurrentVersion\\Themes\\Personalize",
+        "EnableTransparency",
+    )
+    .map(|value| value != 0)
+    .unwrap_or(true)
+}
+
+/// Windows' "Text size" setting (Settings > Accessibility > Text size) as a percentage, 100 to
+/// 225. `None` when it has never been changed.
+pub fn text_scale_percent() -> Option<u32> {
+    reg_dword("Software\\Microsoft\\Accessibility", "TextScaleFactor")
+}
+
 /// `Some(true)` when apps are in dark mode (`AppsUseLightTheme == 0`).
 pub fn apps_prefer_dark() -> Option<bool> {
     reg_dword(
         "Software\\Microsoft\\Windows\\CurrentVersion\\Themes\\Personalize",
         "AppsUseLightTheme",
+    )
+    .map(|value| value == 0)
+}
+
+/// `Some(true)` when the taskbar and notification area are dark (`SystemUsesLightTheme == 0`).
+/// The notification area follows the *system* theme, which can differ from the app theme.
+pub fn system_prefers_dark() -> Option<bool> {
+    reg_dword(
+        "Software\\Microsoft\\Windows\\CurrentVersion\\Themes\\Personalize",
+        "SystemUsesLightTheme",
     )
     .map(|value| value == 0)
 }
@@ -125,6 +151,34 @@ pub fn set_autostart(enabled: bool) -> Result<(), String> {
         Ok(())
     } else {
         Err(format!("registry update failed ({status})"))
+    }
+}
+
+/// Open a web address in the default browser. Only the creator's GitHub profile address passes
+/// (`brand::is_safe_profile_url`); call this only in response to a click or key press.
+pub fn open_url(url: &str) -> Result<(), String> {
+    if !crate::is_safe_profile_url(url) {
+        return Err("that address is not one AllBlack11 opens".into());
+    }
+    let op = to_wide("open");
+    let target = to_wide(url);
+    let code = unsafe {
+        ShellExecuteW(
+            null_mut(),
+            pcw(&op),
+            pcw(&target),
+            null_mut(),
+            null_mut(),
+            SW_SHOWNORMAL,
+        )
+    };
+    if (code as isize) > 32 {
+        Ok(())
+    } else {
+        Err(format!(
+            "could not open the browser (ShellExecute {})",
+            code as isize
+        ))
     }
 }
 

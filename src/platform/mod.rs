@@ -10,12 +10,18 @@
 
 mod app;
 mod cfgio;
+mod cmdq;
 mod composition;
+mod demo;
 mod dwm;
+mod helper;
 mod icon;
+mod image;
+mod inspect;
 mod legacy;
 mod menu;
 mod metrics;
+mod procinfo;
 mod registry;
 mod settings;
 mod shellwin;

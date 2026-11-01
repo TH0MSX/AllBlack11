@@ -3,8 +3,8 @@ use std::ptr::{null, null_mut};
 use std::sync::atomic::{AtomicBool, AtomicIsize, Ordering};
 use std::sync::{Mutex, OnceLock};
 use windows_sys::Win32::Foundation::{
-    CloseHandle, GetLastError, BOOL, ERROR_ALREADY_EXISTS, HANDLE, HWND, LPARAM, LRESULT, RECT, TRUE,
-    WAIT_OBJECT_0, WPARAM,
+    CloseHandle, GetLastError, BOOL, ERROR_ALREADY_EXISTS, HANDLE, HWND, LPARAM, LRESULT, RECT,
+    TRUE, WAIT_OBJECT_0, WPARAM,
 };
 use windows_sys::Win32::Graphics::Gdi::{
     GetMonitorInfoW, MonitorFromWindow, MONITORINFO, MONITOR_DEFAULTTONEAREST,
@@ -28,25 +28,28 @@ use windows_sys::Win32::UI::Shell::{
 use windows_sys::Win32::UI::WindowsAndMessaging::{
     CreateWindowExW, DefWindowProcW, DestroyIcon, DestroyWindow, DispatchMessageW, EnumWindows,
     FindWindowW, GetAncestor, GetClassNameW, GetWindow, GetWindowLongPtrW, GetWindowRect,
-    GetWindowThreadProcessId, IsIconic, IsWindow, IsWindowVisible, KillTimer,
+    GetWindowThreadProcessId, IsIconic, IsWindow, IsWindowVisible, KillTimer, MessageBoxW,
     MsgWaitForMultipleObjectsEx, PeekMessageW, PostMessageW, PostQuitMessage, RegisterClassExW,
     RegisterWindowMessageW, SetTimer, TranslateMessage, EVENT_OBJECT_SHOW, EVENT_OBJECT_UNCLOAKED,
     EVENT_SYSTEM_FOREGROUND, EVENT_SYSTEM_MOVESIZEEND, EVENT_SYSTEM_MOVESIZESTART, GA_ROOT,
-    GWL_EXSTYLE, GWL_STYLE, GW_OWNER, MSG, MWMO_INPUTAVAILABLE, PM_REMOVE, QS_ALLINPUT,
-    WINEVENT_INCONTEXT, WINEVENT_OUTOFCONTEXT,
-    WINEVENT_SKIPOWNPROCESS, WM_APP, WM_CLOSE, WM_CONTEXTMENU, WM_DESTROY, WM_DRAWITEM, WM_ENDSESSION,
-    WM_LBUTTONDBLCLK, WM_LBUTTONUP, WM_MEASUREITEM, WM_QUERYENDSESSION, WM_QUIT, WM_RBUTTONUP,
-    WM_SETTINGCHANGE, WM_TIMER,
-    MessageBoxW, IDYES, MB_DEFBUTTON2, MB_ICONQUESTION, MB_SETFOREGROUND, MB_TOPMOST, MB_YESNO,
-    WNDCLASSEXW, WS_CHILD, WS_DLGFRAME, WS_EX_LAYERED, WS_EX_NOACTIVATE, WS_EX_NOREDIRECTIONBITMAP,
-    WS_EX_TOOLWINDOW, WS_EX_TRANSPARENT, WS_POPUP,
+    GWL_EXSTYLE, GWL_STYLE, GW_OWNER, IDYES, MB_DEFBUTTON2, MB_ICONQUESTION, MB_SETFOREGROUND,
+    MB_TOPMOST, MB_YESNO, MSG, MWMO_INPUTAVAILABLE, PM_REMOVE, QS_ALLINPUT, WINEVENT_INCONTEXT,
+    WINEVENT_OUTOFCONTEXT, WINEVENT_SKIPOWNPROCESS, WM_APP, WM_CLOSE, WM_CONTEXTMENU, WM_DESTROY,
+    WM_DRAWITEM, WM_ENDSESSION, WM_LBUTTONDBLCLK, WM_LBUTTONUP, WM_MEASUREITEM, WM_QUERYENDSESSION,
+    WM_QUIT, WM_RBUTTONUP, WM_SETTINGCHANGE, WM_TIMER, WNDCLASSEXW, WS_CHILD, WS_DLGFRAME,
+    WS_EX_LAYERED, WS_EX_NOACTIVATE, WS_EX_NOREDIRECTIONBITMAP, WS_EX_TOOLWINDOW,
+    WS_EX_TRANSPARENT, WS_POPUP,
 };
 
+use windows_sys::Win32::System::Power::{GetSystemPowerStatus, SYSTEM_POWER_STATUS};
 use windows_sys::Win32::System::Registry::{RegCloseKey, HKEY};
+use windows_sys::Win32::UI::WindowsAndMessaging::{
+    GetForegroundWindow, GetSystemMetrics, SM_REMOTESESSION, WM_DISPLAYCHANGE, WM_POWERBROADCAST,
+};
 
 use crate::config::{
-    acrylic_gradient, bundled_default_json, file_name, hex_rgb, normalize_caption_height, parse_config,
-    set_enabled_flag, set_shell_flag, summarize, Backdrop, Style,
+    acrylic_gradient, bundled_default_json, file_name, hex_rgb, normalize_caption_height,
+    parse_config, set_enabled_flag, set_shell_flag, summarize, Backdrop, Style,
 };
 use crate::policy::{decide, rect_covers_monitor, Decision, WindowFacts};
 use crate::snapshot::{format_snapshots, parse_snapshots, same_process, StoredSnapshot};
@@ -56,6 +59,8 @@ use crate::{
     WS_EX_TOOLWINDOW as POLICY_WS_EX_TOOLWINDOW, WS_EX_TRANSPARENT as POLICY_WS_EX_TRANSPARENT,
 };
 
+use super::cfgio;
+use super::cmdq::{self, AppCommand, WM_APP_COMMAND};
 use super::composition;
 use super::dwm;
 use super::icon;
@@ -66,7 +71,6 @@ use super::registry;
 use super::settings;
 use super::shellwin;
 use super::sysinfo;
-use super::cfgio;
 use super::uxtheme;
 use super::wide::{
     self, config_path, fill_wide, log_line, migrate_legacy_config, pcw, snapshot_path, to_wide,
@@ -89,19 +93,35 @@ const HOOK_FLAGS: u32 = WINEVENT_OUTOFCONTEXT | WINEVENT_SKIPOWNPROCESS;
 const CMD_ENABLE: u32 = 1;
 const CMD_RELOAD: u32 = 2;
 const CMD_OPEN: u32 = 3;
-const CMD_RESET: u32 = 4;
+pub(super) const CMD_RESET: u32 = 4;
 const CMD_AUTOSTART: u32 = 5;
 const CMD_EXIT: u32 = 6;
 const CMD_OLED: u32 = 7;
 const CMD_BLACK_SHELL: u32 = 8;
 const CMD_SETTINGS: u32 = 9;
-const CMD_RESTART_EXPLORER: u32 = 10;
-const CMD_OPEN_FOLDER: u32 = 11;
-const CMD_DIAGNOSTICS: u32 = 12;
+pub(super) const CMD_RESTART_EXPLORER: u32 = 10;
+pub(super) const CMD_OPEN_FOLDER: u32 = 11;
+pub(super) const CMD_DIAGNOSTICS: u32 = 12;
+pub(super) const CMD_PALETTE: u32 = 15;
+pub(super) const CMD_PAUSE: u32 = 13;
+pub(super) const CMD_SCENE_UNDO: u32 = 14;
+/// Tray scene items: scenes first, then up to `TRAY_LOOKS` saved looks.
+pub(super) const CMD_SCENE_BASE: u32 = 200;
+const TRAY_LOOKS: usize = 8;
 const CMD_PRESET_BASE: u32 = 20;
 const WM_EXPLORER_DONE: u32 = WM_APP + 7;
 const TIMER_ACCENT: usize = 3;
 const TIMER_CLICK: usize = 4;
+const TIMER_TRIAL: usize = 5;
+/// One-shot timer for the next Day/Night boundary. Re-armed after every evaluation.
+const TIMER_SCHEDULE: usize = 6;
+/// One-shot: has the running config been stable long enough to become the last known good?
+const TIMER_LKG: usize = 7;
+const HOTKEY_PALETTE: i32 = 1;
+const TRY_WINDOW_MS: u64 = 20_000;
+
+/// Tick-count deadline of the running trial, or 0. Read by Settings for its countdown.
+pub static TRIAL_DEADLINE: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0);
 
 static SUPPRESS_MENU: AtomicBool = AtomicBool::new(false);
 
@@ -122,6 +142,16 @@ enum Kind {
 struct Due {
     hwnd: i64,
     at: u64,
+}
+
+/// What the last pass did to one window, for the inspector.
+struct OpRecord {
+    pid: u32,
+    create: u64,
+    attempts: Vec<dwm::Failure>,
+    style: Style,
+    backdrop: i32,
+    note: Option<&'static str>,
 }
 
 struct PendingApply {
@@ -149,6 +179,8 @@ struct App {
     originals: HashMap<i64, StoredSnapshot>,
     hold: HashSet<i64>,
     exe_cache: HashMap<i64, (u32, u64, String)>,
+    /// (pid, creation time) -> (path, package family). Filled only for rules that need them.
+    path_cache: HashMap<(u32, u64), (String, String)>,
     last_apply: HashMap<i64, u64>,
     due: Vec<Due>,
     seen_failures: HashSet<u32>,
@@ -161,6 +193,34 @@ struct App {
     instance_mutex: HANDLE,
     logged_startup: bool,
     swca_failed: HashSet<u32>,
+    /// The window that currently has focus (a themable one), for Focus Look.
+    fg_key: i64,
+    /// Why effects are reduced right now, if they are.
+    reduce: Option<&'static str>,
+    last_ops: HashMap<i64, OpRecord>,
+    /// All trial decisions live in `crate::trial`, which has the tests.
+    trial: crate::TrialMachine,
+    /// The config that is running and has not yet earned "last known good".
+    lkg: crate::LkgPromotion,
+    /// A trial was just kept and already recorded in the look history; the reload its Keep
+    /// causes must not record it again.
+    history_kept: bool,
+    /// Emergency pause: windows are put back and nothing new is styled until Resume. Held in
+    /// memory only, so a restart always begins from the saved settings.
+    paused: bool,
+    /// `config.json` as it was before the last tray scene switch, for one-step undo.
+    scene_undo: Option<String>,
+    /// Optional identity accents (see `crate::accents`), loaded from accents.json.
+    accents: crate::Accents,
+    /// Day/Night scene scheduler state (see `crate::schedule`).
+    scheduler: crate::Scheduler,
+    /// The optional global hotkey for the command palette is registered.
+    hotkey_on: bool,
+    /// Safe mode for this run: experimental features stay off. Never written to config.json.
+    safe: crate::StartupMode,
+    session: crate::StartupMarker,
+    /// Windows given a temporary look from the inspector, with their revert time.
+    try_windows: HashMap<i64, u64>,
 }
 
 /// `--quiet` keeps the recovery commands from popping a message box when they have no
@@ -196,13 +256,24 @@ pub fn start() -> i32 {
     if args.iter().any(|arg| arg == "--exit") {
         return cmd_exit();
     }
+    if args.iter().any(|arg| arg == "--reload") {
+        return cmd_reload();
+    }
     if args.iter().any(|arg| arg == "--restart-explorer") {
         return cmd_restart_explorer();
     }
     if args.iter().any(|arg| arg == "--restore") {
         return cmd_restore();
     }
-    if let Some(unknown) = args.iter().find(|arg| arg.as_str() != "--quiet") {
+    // Accepted on a normal start: --quiet, --safe (see `begin_session`), and the QA flag
+    // --open-settings[=N] that opens Settings on page N once the app is up.
+    let known = |arg: &String| {
+        arg == "--quiet"
+            || arg == "--safe"
+            || arg == "--open-settings"
+            || arg.starts_with("--open-settings=")
+    };
+    if let Some(unknown) = args.iter().find(|arg| !known(arg)) {
         wide::emit(&format!("Unknown argument: {unknown}\n\n{}", help_text()));
         return 2;
     }
@@ -226,8 +297,11 @@ fn help_text() -> String {
          Settings                 Tray menu, or double-click the icon\n\
          AllBlack11.exe --check   Validate config.json and print a diagnostics report\n\
                                   (also writes %APPDATA%\\AllBlack11\\check.txt)\n\
+         AllBlack11.exe --reload  Ask the running app to re-read config.json\n\
          AllBlack11.exe --restart-explorer  Restart the taskbar, Start and desktop\n\
          AllBlack11.exe --quiet   With --restore or --restart-explorer: no message box\n\
+         AllBlack11.exe --safe    Start in safe mode: experimental features off for this run\n\
+         AllBlack11.exe --open-settings[=N]  Start and open Settings (page N, 0 = Home)\n\
          AllBlack11.exe --restore Quit, undo the shell tweaks and CaptionHeight, keep the config\n\
          AllBlack11.exe --version Print the version\n\
          AllBlack11.exe --help    Show this help\n\
@@ -350,6 +424,18 @@ fn cmd_exit() -> i32 {
     0
 }
 
+/// Ask the running instance to re-read config.json, as if Settings had just saved it.
+fn cmd_reload() -> i32 {
+    let class = class_name();
+    let existing = unsafe { FindWindowW(pcw(class), null()) };
+    if existing.is_null() {
+        say("AllBlack11 is not running.\n");
+        return 1;
+    }
+    unsafe { PostMessageW(existing, settings::WM_SETTINGS_APPLIED, 0, 0) };
+    0
+}
+
 fn cmd_restart_explorer() -> i32 {
     match sysinfo::restart_explorer_blocking() {
         Ok(text) => {
@@ -459,14 +545,29 @@ fn run() -> Result<(), String> {
         return Err("Could not create the message window.".into());
     }
 
-    let (config, config_warning) = load_config();
-    let tray_icon = icon::load_tray_icon(instance);
+    // Must be read before `load_config` writes a default config: no config file means a fresh
+    // install (first-run setup), a config file means an upgrade (never prompt).
+    let fresh_install = !config_path().exists();
+    let (mut config, config_warning, lkg_candidate) = load_config();
+    init_onboarding(fresh_install);
+    let (startup_mode, startup_marker) = begin_session();
+    if startup_mode.is_safe() {
+        config.experimental_dark_legacy = false;
+        config.legacy.emulated_x64 = false;
+        config.features.identity_accents = false;
+        config.features.palette_hotkey = false;
+        config.features.day_night.enabled = false;
+    }
+    let (tray_on, tray_off) = icon::load_tray_icons(
+        instance,
+        icon::taskbar_is_dark(dwm::high_contrast_enabled()),
+    );
     let reg_event = shellwin::create_notify_event();
     let mut app = App {
         hwnd,
         hooks: Vec::new(),
-        icon_on: tray_icon,
-        icon_off: tray_icon,
+        icon_on: tray_on,
+        icon_off: tray_off,
         accent_bgr: registry::accent_bgr(),
         apps_dark: registry::apps_prefer_dark(),
         high_contrast: dwm::high_contrast_enabled(),
@@ -474,6 +575,7 @@ fn run() -> Result<(), String> {
         originals: load_snapshots(),
         hold: HashSet::new(),
         exe_cache: HashMap::new(),
+        path_cache: HashMap::new(),
         last_apply: HashMap::new(),
         due: Vec::new(),
         seen_failures: HashSet::new(),
@@ -486,17 +588,36 @@ fn run() -> Result<(), String> {
         instance_mutex,
         logged_startup: false,
         swca_failed: HashSet::new(),
+        fg_key: 0,
+        reduce: None,
+        last_ops: HashMap::new(),
+        trial: crate::TrialMachine::default(),
+        lkg: crate::LkgPromotion::default(),
+        history_kept: false,
+        paused: false,
+        scene_undo: None,
+        accents: cfgio::load_accents(),
+        scheduler: crate::Scheduler::default(),
+        hotkey_on: false,
+        safe: startup_mode,
+        session: startup_marker,
+        try_windows: HashMap::new(),
         config_file: config_path(),
         config,
     };
     app.prune_dead();
+    if let Some(text) = lkg_candidate {
+        app.offer_lkg(text);
+    }
     APP_HWND.store(hwnd as isize, Ordering::Relaxed);
     uxtheme::allow_dark_menus(!app.high_contrast);
     uxtheme::allow_window(hwnd, true);
     if !app.add_tray() {
         unsafe {
-            if !app.icon_on.is_null() {
-                DestroyIcon(app.icon_on);
+            for handle in [app.icon_on, app.icon_off] {
+                if !handle.is_null() {
+                    DestroyIcon(handle);
+                }
             }
             DestroyWindow(hwnd);
             CloseHandle(exit_event);
@@ -507,6 +628,16 @@ fn run() -> Result<(), String> {
     app.install_hooks();
     if let Some(warning) = config_warning {
         app.balloon("AllBlack11", &warning, true);
+    }
+    if let crate::StartupMode::Safe(reason) = app.safe {
+        app.balloon(
+            "AllBlack11 safe start",
+            &format!(
+                "{} Experimental features are off for this session. Open Settings > Safety to leave safe mode.",
+                reason.text()
+            ),
+            false,
+        );
     }
     if app.high_contrast {
         app.restore_visuals();
@@ -523,15 +654,19 @@ fn run() -> Result<(), String> {
             ),
         );
     }
+    app.refresh_reduce();
+    app.fg_key = unsafe { GetAncestor(GetForegroundWindow(), GA_ROOT) } as isize as i64;
     app.apply_startup();
     if app.config.experimental_dark_legacy && !app.high_contrast {
-        if let Err(err) = legacy::set_active(true) {
+        if let Err(err) = legacy::set_active(true, &legacy_options(&app.config)) {
             log_line("error", &err);
         } else {
             app.scan_legacy();
         }
     }
-    let shell_broadcast = app.apply_saved_shell();
+    app.sync_hotkey();
+    let schedule_broadcast = app.schedule_tick();
+    let shell_broadcast = app.apply_saved_shell() | schedule_broadcast;
     {
         let mut guard = STATE.lock().unwrap_or_else(|err| err.into_inner());
         *guard = Some(app);
@@ -540,54 +675,112 @@ fn run() -> Result<(), String> {
         shellwin::broadcast_immersive_color();
     }
 
+    // First run: open Settings straight into setup. Nothing is enabled by this; every choice in
+    // setup is the user's own.
+    let first_run = cfgio::load_onboarding().is_some_and(|state| state.should_prompt());
+    if first_run {
+        settings::open_page(hwnd, 0);
+    }
+    if let Some(page) = std::env::args().find_map(|arg| {
+        if arg == "--open-settings" {
+            Some(0)
+        } else {
+            arg.strip_prefix("--open-settings=")
+                .and_then(|n| n.parse::<usize>().ok())
+        }
+    }) {
+        settings::open_page(hwnd, page);
+    }
     unsafe { message_loop(hwnd) };
     shutdown();
     Ok(())
 }
 
-fn load_config() -> (crate::Config, Option<String>) {
+/// Decide, once, whether this person gets first-run setup. An existing onboarding file is left
+/// exactly as it is; with none, a fresh install starts at the beginning and an upgrade is
+/// recorded as `existingUser` so no later launch ever prompts.
+fn init_onboarding(fresh_install: bool) {
+    if cfgio::load_onboarding().is_some() {
+        return;
+    }
+    let state = crate::onboarding_initial(fresh_install, None);
+    if let Err(err) = cfgio::save_onboarding(&state) {
+        log_line("warn", &format!("could not save onboarding.json: {err}"));
+    }
+}
+
+fn session_path() -> std::path::PathBuf {
+    wide::config_dir().join("session.json")
+}
+
+/// Read the last run's marker, decide this run's mode, and write the new (unclean) marker.
+fn begin_session() -> (crate::StartupMode, crate::StartupMarker) {
+    let previous = std::fs::read_to_string(session_path())
+        .ok()
+        .and_then(|text| crate::startup_parse(&text));
+    let shift = unsafe {
+        windows_sys::Win32::UI::Input::KeyboardAndMouse::GetAsyncKeyState(
+            windows_sys::Win32::UI::Input::KeyboardAndMouse::VK_SHIFT as i32,
+        )
+    } < 0;
+    let flag = std::env::args().any(|arg| arg.eq_ignore_ascii_case("--safe"));
+    let now = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map(|d| d.as_secs())
+        .unwrap_or(0);
+    let (mode, marker) = crate::startup_decide(previous.as_ref(), shift || flag, now);
+    let _ = wide::write_atomic(&session_path(), &crate::startup_format(&marker));
+    if mode.is_safe() {
+        log_line(
+            "warn",
+            "started in safe mode: experimental features are off for this run",
+        );
+    }
+    (mode, marker)
+}
+
+/// The config to run, a warning to show if the file was not used, and (only when `config.json`
+/// itself parsed) its text as a *candidate* for the last known good copy: it is promoted later,
+/// after it has actually run (`LkgPromotion`), never just for parsing.
+fn load_config() -> (crate::Config, Option<String>, Option<String>) {
     let path = config_path();
     if let Some(parent) = path.parent() {
         let _ = std::fs::create_dir_all(parent);
     }
     migrate_legacy_config();
-    let bundled = || parse_config(bundled_default_json()).expect("bundled config");
     if !path.exists() {
         if wide::write_atomic(&path, bundled_default_json()).is_err() {
             log_line("error", "could not write the default config");
         }
-        return (bundled(), None);
+        return (crate::pick_config(None, None).config, None, None);
     }
-    match std::fs::read_to_string(&path) {
-        Ok(text) => match parse_config(&text) {
-            Ok(config) => (config, None),
-            Err(err) => {
-                log_line("error", &format!("config ignored, running disabled: {err}"));
-                let mut config = bundled();
-                config.enabled = false;
-                (
-                    config,
-                    Some(format!(
-                        "config.json was not applied, so theming is off. {err}"
-                    )),
-                )
-            }
-        },
+    let primary = match std::fs::read_to_string(&path) {
+        Ok(text) => text,
         Err(err) => {
-            log_line(
-                "error",
-                &format!("config unreadable, running disabled: {err}"),
-            );
-            let mut config = bundled();
-            config.enabled = false;
-            (
-                config,
-                Some(format!(
-                    "Could not read config.json, so theming is off. {err}"
-                )),
-            )
+            log_line("error", &format!("config unreadable: {err}"));
+            String::new()
+        }
+    };
+    let mut candidate = None;
+    let picked = crate::pick_config(Some(&primary), cfgio::load_lkg().as_deref());
+    match picked.source {
+        crate::ConfigSource::Primary => {
+            if crate::lkg::is_pre_schema_2(&primary) {
+                // 3.5 saves a newer format a 3.0 build cannot read. Keep the original once.
+                let backup = path.with_file_name("config.pre-3.5.json");
+                if !backup.exists() {
+                    let _ = wide::write_atomic(&backup, &primary);
+                }
+            }
+            candidate = Some(primary.clone());
+        }
+        _ => {
+            if let Some(warning) = &picked.warning {
+                log_line("error", warning);
+            }
         }
     }
+    (picked.config, picked.warning, candidate)
 }
 
 fn load_snapshots() -> HashMap<i64, StoredSnapshot> {
@@ -598,6 +791,13 @@ fn load_snapshots() -> HashMap<i64, StoredSnapshot> {
             log_line("error", &format!("snapshot file ignored: {err}"));
             HashMap::new()
         }
+    }
+}
+
+fn legacy_options(config: &crate::Config) -> legacy::LegacyOptions {
+    legacy::LegacyOptions {
+        palette: config.legacy.palette.clone(),
+        emulated_x64: config.legacy.emulated_x64,
     }
 }
 
@@ -677,6 +877,40 @@ unsafe extern "system" fn wndproc(hwnd: HWND, msg: u32, wparam: WPARAM, lparam: 
             }
             return 0;
         }
+        WM_APP_COMMAND => {
+            // Run queued Settings requests, then broadcast outside the lock if needed.
+            if with_app(|app| app.run_commands()).unwrap_or(false) {
+                shellwin::broadcast_immersive_color();
+            }
+            return 0;
+        }
+        WM_POWERBROADCAST => {
+            // PBT_APMRESUMEAUTOMATIC / PBT_APMRESUMESUSPEND: the clock may have moved past a
+            // Day/Night boundary while the PC slept. Compare phases; never act on elapsed time.
+            if wparam == 0x0012 || wparam == 0x0007 {
+                if with_app(|app| app.schedule_tick()).unwrap_or(false) {
+                    shellwin::broadcast_immersive_color();
+                }
+            }
+            // PBT_APMPOWERSTATUSCHANGED: AC/battery or battery saver may have flipped.
+            if wparam == 0x000A {
+                with_app(|app| {
+                    if app.refresh_reduce() {
+                        app.restyle_all();
+                    }
+                });
+            }
+            return TRUE as LRESULT;
+        }
+        WM_DISPLAYCHANGE => {
+            // Connecting or leaving a remote session changes the display.
+            with_app(|app| {
+                if app.refresh_reduce() {
+                    app.restyle_all();
+                }
+            });
+            return 0;
+        }
         settings::WM_RUN_COMMAND => {
             on_command(hwnd, wparam as u32);
             return 0;
@@ -708,6 +942,14 @@ unsafe extern "system" fn wndproc(hwnd: HWND, msg: u32, wparam: WPARAM, lparam: 
                 show_menu(hwnd);
             } else if wparam == TIMER_SECOND {
                 with_app(|app| app.fire_due());
+            } else if wparam == TIMER_TRIAL {
+                with_app(|app| app.expire_trials());
+            } else if wparam == TIMER_LKG {
+                with_app(|app| app.promote_lkg(false));
+            } else if wparam == TIMER_SCHEDULE {
+                if with_app(|app| app.schedule_tick()).unwrap_or(false) {
+                    shellwin::broadcast_immersive_color();
+                }
             } else if wparam == TIMER_ACCENT {
                 let wrote = with_app(|app| app.reapply_black_palette()).unwrap_or(false);
                 if wrote {
@@ -731,6 +973,20 @@ unsafe extern "system" fn wndproc(hwnd: HWND, msg: u32, wparam: WPARAM, lparam: 
         WM_QUERYENDSESSION => return TRUE as LRESULT,
         WM_SETTINGCHANGE => {
             on_setting_change(lparam);
+            return 0;
+        }
+        // WM_HOTKEY: the optional Ctrl+Alt+Space for the command palette.
+        0x0312 => {
+            if wparam == HOTKEY_PALETTE as usize {
+                settings::open_palette(hwnd);
+            }
+            return 0;
+        }
+        // WM_TIMECHANGE: the clock or the time zone changed (including daylight saving).
+        0x001E => {
+            if with_app(|app| app.schedule_tick()).unwrap_or(false) {
+                shellwin::broadcast_immersive_color();
+            }
             return 0;
         }
         WM_ALREADY => {
@@ -782,34 +1038,89 @@ fn on_setting_change(lparam: LPARAM) {
         app.accent_bgr = accent;
         app.apps_dark = registry::apps_prefer_dark();
         app.high_contrast = contrast;
+        app.refresh_tray_icons();
         if contrast && contrast_changed {
             app.restore_visuals();
-            let _ = legacy::set_active(false);
+            let _ = legacy::set_active(false, &legacy::LegacyOptions::default());
             app.balloon("AllBlack11", "Paused while high contrast is on.", false);
         } else if accent_changed || contrast_changed {
             app.hold.clear();
             app.last_apply.clear();
             app.apply_startup();
-            if !contrast && app.config.experimental_dark_legacy && legacy::set_active(true).is_ok() {
+            if !contrast
+                && app.config.experimental_dark_legacy
+                && legacy::set_active(true, &legacy_options(&app.config)).is_ok()
+            {
                 app.scan_legacy();
             }
+        }
+        if app.refresh_reduce() {
+            app.restyle_all();
         }
         uxtheme::allow_dark_menus(!contrast);
         app.update_tray();
     });
 }
 
+/// The tray's Scenes submenu: five scenes, then up to eight saved looks, with the matching
+/// one checked, and a one-step undo.
+fn scene_menu_items(contrast: bool, can_undo: bool) -> Vec<Item> {
+    let current = cfgio::load();
+    let mut items = Vec::new();
+    for (index, scene) in crate::scene_catalog().iter().enumerate() {
+        items.push(hinted(
+            CMD_SCENE_BASE + index as u32,
+            &scene.name,
+            &scene.blurb,
+            ItemKind::Checked(crate::preview_scene(&current, scene).is_empty()),
+            !contrast,
+        ));
+    }
+    let book = cfgio::load_lookbook();
+    if !book.looks.is_empty() {
+        items.push(item(0, "", ItemKind::Separator, true));
+        let offset = crate::SCENE_COUNT;
+        for (index, look) in book.looks.iter().take(TRAY_LOOKS).enumerate() {
+            items.push(hinted(
+                CMD_SCENE_BASE + (offset + index) as u32,
+                &look.name,
+                "Your saved look",
+                ItemKind::Checked(crate::preview_scene(&current, look).is_empty()),
+                !contrast,
+            ));
+        }
+    }
+    items.push(item(0, "", ItemKind::Separator, true));
+    items.push(item(
+        CMD_SCENE_UNDO,
+        "Undo last scene change",
+        ItemKind::Action,
+        can_undo,
+    ));
+    items
+}
+
 fn show_menu(hwnd: HWND) {
-    let Some((enabled, autostart, contrast, oled, black_shell, dark)) = with_app(|app| {
-        (
-            app.config.enabled,
-            registry::autostart_enabled(),
-            app.high_contrast,
-            app.config.shell.oled_taskbar,
-            app.config.shell.black_shell,
-            app.apps_dark.unwrap_or(true),
-        )
-    }) else {
+    let Some((enabled, autostart, contrast, oled, black_shell, dark, paused, scene_undo)) =
+        with_app(|app| {
+            (
+                app.config.enabled,
+                registry::autostart_enabled(),
+                app.high_contrast,
+                app.config.shell.oled_taskbar,
+                app.config.shell.black_shell,
+                // The menu follows AllBlack11's own appearance choice (System, Light or Dark), the
+                // same one its Settings window uses, not only the Windows app theme.
+                crate::resolve_appearance(
+                    app.config.ui.appearance,
+                    app.apps_dark.unwrap_or(true),
+                    app.high_contrast,
+                ) == crate::UiMode::Dark,
+                app.paused,
+                app.scene_undo.is_some(),
+            )
+        })
+    else {
         return;
     };
     uxtheme::allow_dark_menus(!contrast);
@@ -842,7 +1153,11 @@ fn show_menu(hwnd: HWND) {
         item(0, "", ItemKind::Separator, true),
         hinted(
             CMD_ENABLE,
-            if contrast { "Enabled (high contrast)" } else { "Enabled" },
+            if contrast {
+                "Enabled (high contrast)"
+            } else {
+                "Enabled"
+            },
             "Master switch for dark title bars, borders and backdrops.",
             ItemKind::Checked(enabled),
             !contrast,
@@ -854,7 +1169,22 @@ fn show_menu(hwnd: HWND) {
             ItemKind::Action,
             true,
         ),
+        hinted(
+            CMD_PALETTE,
+            "Command palette…",
+            "Search every action. Also Ctrl+K inside Settings.",
+            ItemKind::Action,
+            true,
+        ),
         submenu("Presets", presets),
+        submenu("Scenes", scene_menu_items(contrast, scene_undo)),
+        hinted(
+            CMD_PAUSE,
+            "Pause all styling",
+            "Emergency stop: puts every window back and stops the legacy layer and helper until you resume.",
+            ItemKind::Checked(paused),
+            true,
+        ),
         item(0, "", ItemKind::Separator, true),
         submenu(
             "Shell",
@@ -889,7 +1219,12 @@ fn show_menu(hwnd: HWND) {
                 item(CMD_RELOAD, "Reload config", ItemKind::Action, true),
                 item(CMD_OPEN, "Open config", ItemKind::Action, true),
                 item(CMD_OPEN_FOLDER, "Open data folder", ItemKind::Action, true),
-                item(CMD_DIAGNOSTICS, "Write diagnostics report", ItemKind::Action, true),
+                item(
+                    CMD_DIAGNOSTICS,
+                    "Write diagnostics report",
+                    ItemKind::Action,
+                    true,
+                ),
                 item(0, "", ItemKind::Separator, true),
                 hinted(
                     CMD_RESET,
@@ -981,6 +1316,16 @@ fn on_command(hwnd: HWND, command: u32) {
         CMD_RELOAD => {
             with_app(|app| app.reload());
         }
+        CMD_PALETTE => settings::open_palette(hwnd),
+        CMD_PAUSE => {
+            with_app(|app| {
+                if app.paused {
+                    app.resume()
+                } else {
+                    app.pause()
+                }
+            });
+        }
         CMD_OPEN => {
             let path = with_app(|app| {
                 app.ensure_config_file();
@@ -1008,7 +1353,20 @@ fn on_command(hwnd: HWND, command: u32) {
             cmd_check_to_file();
         }
         id if (CMD_PRESET_BASE..CMD_PRESET_BASE + crate::PRESETS.len() as u32).contains(&id) => {
-            let broadcast = with_app(|app| app.apply_preset((id - CMD_PRESET_BASE) as usize))
+            let broadcast =
+                with_app(|app| app.apply_preset((id - CMD_PRESET_BASE) as usize)).unwrap_or(false);
+            if broadcast {
+                shellwin::broadcast_immersive_color();
+            }
+        }
+        CMD_SCENE_UNDO => {
+            let broadcast = with_app(|app| app.undo_scene()).unwrap_or(false);
+            if broadcast {
+                shellwin::broadcast_immersive_color();
+            }
+        }
+        id if (CMD_SCENE_BASE..CMD_SCENE_BASE + 64).contains(&id) => {
+            let broadcast = with_app(|app| app.apply_scene_choice((id - CMD_SCENE_BASE) as usize))
                 .unwrap_or(false);
             if broadcast {
                 shellwin::broadcast_immersive_color();
@@ -1042,11 +1400,43 @@ fn on_command(hwnd: HWND, command: u32) {
                 shellwin::broadcast_immersive_color();
             }
         }
-        CMD_EXIT => unsafe {
-            PostMessageW(hwnd, WM_CLOSE, 0, 0);
-        },
+        CMD_EXIT => {
+            // Only ask when quitting would undo or stop something; otherwise just quit.
+            let notes = with_app(|app| {
+                crate::exit_consequences(
+                    app.trial.is_active(),
+                    app.config.experimental_dark_legacy && !app.paused && !app.high_contrast,
+                    crate::platform::helper::is_enabled(),
+                )
+            })
+            .unwrap_or_default();
+            if !notes.is_empty() && !confirm_exit(&notes) {
+                return;
+            }
+            unsafe {
+                PostMessageW(hwnd, WM_CLOSE, 0, 0);
+            }
+        }
         _ => {}
     }
+}
+
+/// Exit is a choice when it would undo or stop something. The default answer is to keep running.
+fn confirm_exit(notes: &[&str]) -> bool {
+    let title = to_wide("Quit AllBlack11?");
+    let text = to_wide(&format!(
+        "Quitting puts every styled window back as Windows draws it.\n\n{}\n\nQuit now?",
+        notes.join("\n")
+    ));
+    let answer = unsafe {
+        MessageBoxW(
+            null_mut(),
+            pcw(&text),
+            pcw(&title),
+            MB_YESNO | MB_ICONQUESTION | MB_DEFBUTTON2 | MB_TOPMOST | MB_SETFOREGROUND,
+        )
+    };
+    answer == IDYES
 }
 
 fn shutdown() {
@@ -1058,18 +1448,28 @@ fn shutdown() {
         return;
     }
     app.shut_down = true;
+    // A clean exit after a real run is evidence the config worked; do it before anything is torn
+    // down, while the state it depends on is still true.
+    app.promote_lkg(true);
+    app.sync_hotkey();
     APP_HWND.store(0, Ordering::Relaxed);
+    let _ = wide::write_atomic(
+        &session_path(),
+        &crate::startup_format(&crate::startup_clean(&app.session)),
+    );
     legacy::shutdown();
     app.unhook();
     app.restore_and_forget();
     app.remove_tray();
     unsafe {
         KillTimer(app.hwnd, TIMER_SECOND);
-        if !app.icon_on.is_null() {
-            DestroyIcon(app.icon_on);
-            app.icon_on = null_mut();
-            app.icon_off = null_mut();
+        for handle in [app.icon_on, app.icon_off] {
+            if !handle.is_null() {
+                DestroyIcon(handle);
+            }
         }
+        app.icon_on = null_mut();
+        app.icon_off = null_mut();
         if !app.accent_key.is_null() {
             RegCloseKey(app.accent_key);
             app.accent_key = null_mut();
@@ -1164,8 +1564,113 @@ impl App {
         unsafe { Shell_NotifyIconW(NIM_DELETE, &nid) };
     }
 
+    /// Styling is running: on, not paused, and not stepping aside for high contrast.
+    fn styling_on(&self) -> bool {
+        self.config.enabled && !self.high_contrast && !self.paused
+    }
+
+    /// The notification area follows the system theme (or the contrast theme's window color):
+    /// reload the white or near-black mark when that changes, then show it.
+    fn refresh_tray_icons(&mut self) {
+        let instance = unsafe { GetModuleHandleW(std::ptr::null()) };
+        let (on, off) = icon::load_tray_icons(instance, icon::taskbar_is_dark(self.high_contrast));
+        if on.is_null() || off.is_null() {
+            // Keep what is showing rather than ending up with no icon.
+            for handle in [on, off] {
+                if !handle.is_null() {
+                    unsafe { DestroyIcon(handle) };
+                }
+            }
+            return;
+        }
+        let old = [
+            std::mem::replace(&mut self.icon_on, on),
+            std::mem::replace(&mut self.icon_off, off),
+        ];
+        self.update_tray();
+        for handle in old {
+            if !handle.is_null() {
+                unsafe { DestroyIcon(handle) };
+            }
+        }
+    }
+
+    /// Add this change to the session's look history, unless it is the undo that wrote it.
+    fn record_history(&self, old: &crate::Config, new: &crate::Config) {
+        let (Ok(old_json), Ok(new_json)) = (serde_json::to_string(old), serde_json::to_string(new))
+        else {
+            return;
+        };
+        let scene = match (crate::active_scene(old), crate::active_scene(new)) {
+            (before, Some(after)) if before.as_deref() != Some(after.as_str()) => {
+                crate::scene_catalog()
+                    .into_iter()
+                    .find(|scene| scene.id == after)
+                    .map(|scene| scene.name)
+            }
+            _ => None,
+        };
+        let now = unsafe { GetTickCount64() };
+        crate::with_history(|history| {
+            if history.is_own_undo(&new_json) {
+                return;
+            }
+            if let Some(name) = crate::describe_change(&old_json, &new_json, scene.as_deref()) {
+                history.record(&name, &old_json, now);
+            }
+        });
+    }
+
+    /// A parsed config is now being applied. It becomes the "last known good" copy only after it
+    /// has run (see `lkg::Promotion`); the clock restarts with every new offer.
+    fn offer_lkg(&mut self, text: String) {
+        let now = unsafe { GetTickCount64() };
+        self.lkg.offer(&text, now);
+        unsafe { SetTimer(self.hwnd, TIMER_LKG, crate::LKG_STABLE_MS as u32, None) };
+    }
+
+    /// Whether this run is a real test of the config: styling is on, nothing is paused, no trial
+    /// is substituting another config, and safe mode has not forced parts of it off.
+    fn lkg_eligible(&self) -> bool {
+        self.config.enabled
+            && !self.paused
+            && !self.high_contrast
+            && !self.safe.is_safe()
+            && !self.trial.is_active()
+    }
+
+    fn promote_lkg(&mut self, clean_exit: bool) {
+        if !self.lkg.is_pending() {
+            unsafe { KillTimer(self.hwnd, TIMER_LKG) };
+            return;
+        }
+        let now = unsafe { GetTickCount64() };
+        let eligible = self.lkg_eligible();
+        let promoted = if clean_exit {
+            self.lkg.clean_exit(now, eligible)
+        } else {
+            self.lkg.stable(now, eligible)
+        };
+        match promoted {
+            Some(text) => {
+                unsafe { KillTimer(self.hwnd, TIMER_LKG) };
+                cfgio::save_lkg(&text);
+                log_line(
+                    "info",
+                    "config recorded as last known good after running cleanly",
+                );
+            }
+            // Not stable yet, or this run does not count: look again in a minute. The timer is
+            // killed above when there is nothing left to promote.
+            None if !clean_exit => unsafe {
+                SetTimer(self.hwnd, TIMER_LKG, crate::LKG_STABLE_MS as u32, None);
+            },
+            None => {}
+        }
+    }
+
     fn current_icon(&self) -> windows_sys::Win32::UI::WindowsAndMessaging::HICON {
-        if self.config.enabled && !self.high_contrast {
+        if self.styling_on() {
             self.icon_on
         } else {
             self.icon_off
@@ -1173,13 +1678,18 @@ impl App {
     }
 
     fn tip(&self) -> String {
-        if self.high_contrast {
-            "AllBlack11: paused, high contrast".into()
-        } else if !self.config.enabled {
-            "AllBlack11: off".into()
-        } else {
-            format!("AllBlack11: {} windows", self.themed_count())
-        }
+        crate::tray_tip(&crate::TrayState {
+            enabled: self.config.enabled,
+            paused: self.paused,
+            high_contrast: self.high_contrast,
+            windows: self.themed_count(),
+            reduced_effects: self.reduce.is_some(),
+            safe_mode: self.safe.is_safe(),
+            trying_a_look: self.trial.is_active(),
+            classic_layer: self.config.experimental_dark_legacy
+                && !self.paused
+                && !self.high_contrast,
+        })
     }
 
     fn themed_count(&self) -> usize {
@@ -1202,6 +1712,7 @@ impl App {
     }
 
     fn toggle_enabled(&mut self) {
+        self.end_trial_for_external_change();
         let turning_on = !self.config.enabled;
         if turning_on {
             self.ensure_config_file();
@@ -1210,6 +1721,7 @@ impl App {
                     Ok(mut config) => {
                         config.enabled = true;
                         self.config = config;
+                        self.enforce_safe_mode();
                         self.accent_bgr = registry::accent_bgr();
                         self.apps_dark = registry::apps_prefer_dark();
                     }
@@ -1243,6 +1755,7 @@ impl App {
     }
 
     fn reload(&mut self) {
+        self.end_trial_for_external_change();
         let text = match std::fs::read_to_string(&self.config_file) {
             Ok(text) => text,
             Err(err) => {
@@ -1259,7 +1772,8 @@ impl App {
                 self.hold.clear();
                 self.last_apply.clear();
                 self.exe_cache.clear();
-                if self.config.enabled && !self.high_contrast {
+                self.enforce_safe_mode();
+                if self.styling_on() {
                     self.apply_startup();
                 } else {
                     self.restore_visuals();
@@ -1312,7 +1826,7 @@ impl App {
     }
 
     fn apply_startup(&mut self) {
-        if self.high_contrast || !self.config.enabled {
+        if !self.styling_on() {
             self.scan_legacy();
             return;
         }
@@ -1336,7 +1850,11 @@ impl App {
     }
 
     fn scan_legacy(&self) {
-        if !self.config.experimental_dark_legacy || self.high_contrast || self.shut_down {
+        if !self.config.experimental_dark_legacy
+            || self.high_contrast
+            || self.paused
+            || self.shut_down
+        {
             return;
         }
         for key in enum_hwnds() {
@@ -1345,7 +1863,11 @@ impl App {
     }
 
     fn note_legacy(&self, key: i64) {
-        if !self.config.experimental_dark_legacy || self.high_contrast || self.shut_down {
+        if !self.config.experimental_dark_legacy
+            || self.high_contrast
+            || self.paused
+            || self.shut_down
+        {
             return;
         }
         legacy::consider(key_to_hwnd(key), &self.config.exclude);
@@ -1353,6 +1875,7 @@ impl App {
 
     /// Returns true when a shell value changed and Windows should be told.
     fn apply_external_config(&mut self) -> bool {
+        self.end_trial_for_external_change();
         let old = self.config.clone();
         let text = match std::fs::read_to_string(&self.config_file) {
             Ok(text) => text,
@@ -1368,8 +1891,19 @@ impl App {
                 return false;
             }
         };
+        self.offer_lkg(text.clone());
+        if !std::mem::take(&mut self.history_kept) {
+            self.record_history(&old, &new);
+        }
         self.config = new;
+        self.enforce_safe_mode();
+        self.refresh_reduce();
         self.config.caption_height = normalize_caption_height(self.config.caption_height);
+        self.sync_hotkey();
+        if old.features.day_night != self.config.features.day_night {
+            // Settings changed the schedule: act on the current phase straight away.
+            self.scheduler.reset();
+        }
         let shell_changed = self.reconcile_shell(&old);
         if normalize_caption_height(old.caption_height) != self.config.caption_height {
             if let Err(err) = metrics::apply_caption_height(self.config.caption_height) {
@@ -1382,15 +1916,21 @@ impl App {
                 );
             }
         }
-        let want_hook = self.config.experimental_dark_legacy && !self.high_contrast;
-        let had_hook = old.experimental_dark_legacy && !self.high_contrast;
+        let want_hook = self.config.experimental_dark_legacy && !self.high_contrast && !self.paused;
+        let had_hook = old.experimental_dark_legacy && !self.high_contrast && !self.paused;
         if want_hook != had_hook || (want_hook && old.exclude != self.config.exclude) {
-            let _ = legacy::set_active(false);
+            let _ = legacy::set_active(false, &legacy::LegacyOptions::default());
             if want_hook {
-                if let Err(err) = legacy::set_active(true) {
+                if let Err(err) = legacy::set_active(true, &legacy_options(&self.config)) {
                     self.balloon("AllBlack11", &err, true);
                     self.config.experimental_dark_legacy = false;
                 }
+            }
+        } else if want_hook && old.legacy != self.config.legacy {
+            // Palette or helper switch changed while the layer is on: update in place.
+            let _ = legacy::set_active(true, &legacy_options(&self.config));
+            if !self.config.legacy.emulated_x64 {
+                legacy::stop_helper();
             }
         }
         self.accent_bgr = registry::accent_bgr();
@@ -1399,18 +1939,22 @@ impl App {
         self.hold.clear();
         self.last_apply.clear();
         self.exe_cache.clear();
-        if self.config.enabled && !self.high_contrast {
+        if self.styling_on() {
             self.apply_startup();
         } else {
             self.restore_visuals();
         }
         self.update_tray();
         uxtheme::allow_dark_menus(!self.high_contrast);
-        shell_changed
+        // A changed Day/Night setting (or a new config) takes effect now, not at the next
+        // boundary. The scheduler remembers the phase it acted on, so this cannot loop.
+        let scheduled = self.schedule_tick();
+        shell_changed | scheduled
     }
 
     /// Apply a preset from the tray: write the config, then take the same path as Settings.
     fn apply_preset(&mut self, index: usize) -> bool {
+        self.end_trial_for_external_change();
         let mut config = cfgio::load();
         if !crate::apply_preset(&mut config, index) {
             return false;
@@ -1421,7 +1965,11 @@ impl App {
         }
         let changed = self.apply_external_config();
         if let Some(preset) = crate::PRESETS.get(index) {
-            self.balloon("AllBlack11", &format!("Preset applied: {}.", preset.name), false);
+            self.balloon(
+                "AllBlack11",
+                &format!("Preset applied: {}.", preset.name),
+                false,
+            );
         }
         changed
     }
@@ -1446,7 +1994,11 @@ impl App {
             return;
         }
         let mut kinds: HashMap<i64, Kind> = HashMap::new();
+        let mut new_fg = None;
         for (key, event) in batch {
+            if event == EVENT_SYSTEM_FOREGROUND {
+                new_fg = Some(key);
+            }
             let kind = kind_from_event(event);
             kinds
                 .entry(key)
@@ -1457,11 +2009,27 @@ impl App {
                 })
                 .or_insert(kind);
         }
+        // Focus Look: the window that just lost focus gets its calmer look, and the one that
+        // gained it gets the active look. Only on foreground events, never on a timer.
+        let mut left_focus = None;
+        if let Some(key) = new_fg {
+            if self.fg_key != key {
+                left_focus = Some(self.fg_key).filter(|prev| *prev != 0);
+                self.fg_key = key;
+            }
+        }
         let mut pending = Vec::new();
-        for (key, kind) in kinds {
+        for (key, kind) in kinds.clone() {
             self.note_legacy(key);
             if let Some(item) = self.plan(key, kind) {
                 pending.push(item);
+            }
+        }
+        if self.config.focus.enabled {
+            if let Some(prev) = left_focus.filter(|prev| !kinds.contains_key(prev)) {
+                if let Some(item) = self.plan(prev, Kind::Second) {
+                    pending.push(item);
+                }
             }
         }
         self.commit(pending);
@@ -1520,10 +2088,40 @@ impl App {
             }
             self.hold.remove(&key);
         }
-        if self.high_contrast || !self.config.enabled {
+        if !self.styling_on() {
             return None;
         }
-        let facts = collect_facts(hwnd, &exe, pid);
+        if self.try_windows.contains_key(&key) {
+            return None;
+        }
+        let needs_path = self
+            .config
+            .rules
+            .iter()
+            .any(|rule| rule.path.is_some() || rule.package.is_some());
+        let needs_package = self.config.rules.iter().any(|rule| rule.package.is_some());
+        let (path, package) = if needs_path {
+            let key = (pid, create);
+            if self.path_cache.len() > 512 {
+                self.path_cache.clear();
+            }
+            self.path_cache
+                .entry(key)
+                .or_insert_with(|| super::procinfo::path_and_package(pid, needs_package))
+                .clone()
+        } else {
+            (String::new(), String::new())
+        };
+        let title = self
+            .config
+            .rules
+            .iter()
+            .any(|rule| rule.title.is_some())
+            .then(|| super::procinfo::window_title(hwnd));
+        let mut facts = collect_facts(hwnd, &exe, pid);
+        facts.path = path;
+        facts.package = package;
+        facts.title = title;
         match decide(&facts, &self.config, self.accent_bgr) {
             Decision::Skip(_) => {
                 if self.originals.contains_key(&key) {
@@ -1532,6 +2130,7 @@ impl App {
                 None
             }
             Decision::Apply(style) => {
+                let style = self.effective_style(&facts, key, style);
                 if kind == Kind::MoveStart
                     && (style.backdrop != Backdrop::TintedAcrylic
                         || !style.tinted_acrylic_on_move_fallback)
@@ -1562,15 +2161,26 @@ impl App {
         match kind {
             Kind::Startup | Kind::Second | Kind::MoveStart | Kind::MoveSize => true,
             Kind::Show => now.saturating_sub(last) > 80,
-            Kind::Foreground => self.config.reapply_on_foreground && now.saturating_sub(last) > 800,
+            Kind::Foreground => {
+                self.config.focus.enabled
+                    || (self.config.reapply_on_foreground && now.saturating_sub(last) > 800)
+            }
         }
     }
 
     fn ensure_original(&mut self, key: i64, hwnd: HWND, pid: u32, create: u64) {
+        // Hot path (runs on every re-style): the caller's cached pid and creation time are
+        // reused, so this makes a few user32 calls and opens no process handle.
+        let live = super::inspect::fingerprint_with(hwnd, pid, create);
         if let Some(existing) = self.originals.get(&key) {
-            if same_process(existing, pid, create) {
+            if snapshot_is_for(existing, pid, create, live.as_ref()) {
                 return;
             }
+            // Same number, different window. The old snapshot describes something else.
+            log_line(
+                "info",
+                "a recorded original was dropped: the window handle was reused",
+            );
         }
         let captured = dwm::capture(hwnd);
         self.originals.insert(
@@ -1586,6 +2196,7 @@ impl App {
                 text: captured.text,
                 corners: captured.corners,
                 accent_policy: false,
+                fingerprint: live,
             },
         );
         self.dirty = true;
@@ -1633,7 +2244,33 @@ impl App {
                     self.mark_accent(item.hwnd, false);
                 }
             }
-            for failure in dwm::apply(hwnd, &item.style, self.accent_bgr, self.build, backdrop) {
+            let attempts = dwm::apply(hwnd, &item.style, self.accent_bgr, self.build, backdrop);
+            if self.last_ops.len() > 512 {
+                self.last_ops.clear();
+            }
+            let note = if item.style.backdrop == Backdrop::TintedAcrylic
+                && backdrop == Backdrop::Acrylic.dwm_value()
+            {
+                Some("tinted acrylic was refused by Windows, so plain Acrylic was used")
+            } else {
+                None
+            };
+            self.last_ops.insert(
+                item.hwnd,
+                OpRecord {
+                    pid: item.pid,
+                    create: self
+                        .exe_cache
+                        .get(&item.hwnd)
+                        .map(|entry| entry.1)
+                        .unwrap_or(0),
+                    attempts: attempts.clone(),
+                    style: item.style,
+                    backdrop,
+                    note,
+                },
+            );
+            for failure in attempts.iter().filter(|attempt| attempt.hr < 0) {
                 if self.seen_failures.insert(failure.attribute) {
                     log_line(
                         "warn",
@@ -1645,9 +2282,6 @@ impl App {
                 }
             }
             self.last_apply.insert(item.hwnd, now);
-            if self.config.experimental_dark_legacy {
-                legacy::nudge(hwnd);
-            }
         }
         if self.dirty {
             self.write_snapshots();
@@ -1697,11 +2331,22 @@ impl App {
             return;
         };
         let hwnd = key_to_hwnd(key);
-        if unsafe { IsWindow(hwnd) } != 0 {
+        // Re-check right before writing: writing old values onto a window that is not the
+        // original would damage it. When unsure, leave the window alone and drop the record.
+        let still_it = unsafe { IsWindow(hwnd) } != 0
+            && snapshot_matches_live(&snap, super::inspect::fingerprint_of(hwnd).as_ref());
+        if still_it {
             dwm::restore(hwnd, &snap, self.apps_dark, self.build);
             if snap.accent_policy {
                 let _ = composition::clear_accent(hwnd);
             }
+        } else if unsafe { IsWindow(hwnd) } != 0 {
+            log_line(
+                "info",
+                "a restore was skipped: the window is not the one that was recorded",
+            );
+            self.originals.remove(&key);
+            self.dirty = true;
         }
         self.last_apply.remove(&key);
         if forget {
@@ -1730,10 +2375,11 @@ impl App {
                 continue;
             }
             if let Some((pid, create, _)) = self.identity(hwnd) {
+                let live = super::inspect::fingerprint_with(hwnd, pid, create);
                 if self
                     .originals
                     .get(&key)
-                    .is_some_and(|snap| !same_process(snap, pid, create))
+                    .is_some_and(|snap| !snapshot_is_for(snap, pid, create, live.as_ref()))
                 {
                     self.originals.remove(&key);
                     self.hold.remove(&key);
@@ -1800,6 +2446,7 @@ impl App {
     }
 
     fn set_oled(&mut self, enable: bool) -> bool {
+        self.end_trial_for_external_change();
         self.ensure_config_file();
         if self.config.shell.oled_taskbar == enable {
             return false;
@@ -1828,6 +2475,7 @@ impl App {
     }
 
     fn set_black_shell(&mut self, enable: bool) -> bool {
+        self.end_trial_for_external_change();
         self.ensure_config_file();
         if self.config.shell.black_shell == enable {
             return false;
@@ -1900,6 +2548,670 @@ impl App {
         }
     }
 
+    // ---- effective look: Focus Look and reduced effects -----------------------------------
+
+    fn effective_style(&mut self, facts: &WindowFacts, key: i64, style: Style) -> Style {
+        let mut out = style;
+        let wants_accent = self.config.features.identity_accents;
+        if (self.config.focus.enabled || wants_accent) && !self.high_contrast {
+            let identity = crate::WindowIdentity {
+                exe: &facts.exe,
+                class: &facts.class_name,
+                path: &facts.path,
+                package: &facts.package,
+                title: facts.title.as_deref(),
+            };
+            let resolved = crate::resolve(&self.config, &identity, self.accent_bgr);
+            let from_rule = |name: &str| {
+                resolved.sources.iter().any(|(field, source)| {
+                    *field == name && matches!(source, crate::Source::Rule(_))
+                })
+            };
+            let explicit = crate::Explicit {
+                caption: from_rule("title bar color"),
+                border: from_rule("border color"),
+                text: from_rule("text color"),
+            };
+            // Identity accent: the border only, and only where no rule sets it. Focus Look,
+            // when it is on, still decides the border afterwards.
+            if wants_accent && !explicit.border {
+                if let Some((color, recorded)) = self.accents.color_for(&facts.exe) {
+                    out.border = color;
+                    if recorded {
+                        if let Err(err) = cfgio::save_accents(&self.accents) {
+                            log_line("warn", &format!("could not save accents.json: {err}"));
+                        }
+                    }
+                }
+            }
+            if !self.config.focus.enabled {
+                return crate::reduced(&out, self.reduce);
+            }
+            out = crate::focus_style(
+                &out,
+                &self.config.focus,
+                &explicit,
+                key == self.fg_key,
+                self.accent_bgr,
+            );
+        }
+        crate::reduced(&out, self.reduce)
+    }
+
+    /// Re-read the system signals. True when the reason for reduced effects changed.
+    fn refresh_reduce(&mut self) -> bool {
+        let reason = crate::reduce_reason(&self.config.reduce_effects, &system_state());
+        let changed = reason != self.reduce;
+        self.reduce = reason;
+        changed
+    }
+
+    /// Re-style every window from scratch under the current config.
+    fn restyle_all(&mut self) {
+        self.hold.clear();
+        self.last_apply.clear();
+        self.exe_cache.clear();
+        self.path_cache.clear();
+        if self.styling_on() {
+            self.apply_startup();
+        } else {
+            self.restore_visuals();
+        }
+        self.update_tray();
+    }
+
+    // ---- commands from Settings --------------------------------------------------------------
+
+    /// Returns true when Windows should be told about a shell change (do that outside the lock).
+    fn run_commands(&mut self) -> bool {
+        let mut broadcast = false;
+        for command in cmdq::drain() {
+            match command {
+                AppCommand::TryOnWindow {
+                    key,
+                    fingerprint,
+                    style,
+                } => self.try_window(key, fingerprint, style),
+                AppCommand::RestoreWindow { key, fingerprint } => {
+                    self.restore_window(key, fingerprint)
+                }
+                AppCommand::TrialStart(config) => self.trial_start(*config),
+                AppCommand::TrialKeep => self.trial_end(true),
+                AppCommand::TrialRevert => self.trial_end(false),
+                AppCommand::RestoreLastKnownGood => broadcast |= self.restore_lkg(),
+                AppCommand::ReloadAccents => {
+                    self.accents = cfgio::load_accents();
+                    self.restyle_all();
+                }
+                AppCommand::Pause => self.pause(),
+                AppCommand::Resume => self.resume(),
+                AppCommand::LeaveSafeMode => broadcast |= self.leave_safe_mode(),
+            }
+        }
+        broadcast
+    }
+
+    /// The HWND is still the window the caller looked at. Process id and creation time are not
+    /// enough (a new dialog in the same process can get the same HWND), so the whole
+    /// fingerprint is compared and any doubt means "no".
+    fn same_window(&mut self, key: i64, recorded: &crate::Fingerprint) -> crate::Identity {
+        let hwnd = key_to_hwnd(key);
+        if unsafe { IsWindow(hwnd) } == 0 {
+            return crate::Identity::Different("the window is gone");
+        }
+        crate::check_identity(recorded, super::inspect::fingerprint_of(hwnd).as_ref())
+    }
+
+    fn try_window(&mut self, key: i64, fingerprint: crate::Fingerprint, style: Style) {
+        let identity = self.same_window(key, &fingerprint);
+        if !identity.allows_apply() {
+            log_line("info", &format!("preview refused: {}", identity.reason()));
+            self.balloon(
+                "AllBlack11",
+                "That window has closed or been replaced, so nothing was changed.",
+                false,
+            );
+            return;
+        }
+        let (pid, create) = (fingerprint.pid, fingerprint.create);
+        let hwnd = key_to_hwnd(key);
+        self.ensure_original(key, hwnd, pid, create);
+        let now = unsafe { GetTickCount64() };
+        self.try_windows.insert(key, now + TRY_WINDOW_MS);
+        let exe = self
+            .exe_cache
+            .get(&key)
+            .map(|entry| entry.2.clone())
+            .unwrap_or_default();
+        let style = crate::reduced(&style, self.reduce);
+        self.commit(vec![PendingApply {
+            hwnd: key,
+            pid,
+            exe,
+            style,
+            move_blur: false,
+        }]);
+        unsafe { SetTimer(self.hwnd, TIMER_TRIAL, 1000, None) };
+    }
+
+    fn restore_window(&mut self, key: i64, fingerprint: crate::Fingerprint) {
+        let identity = self.same_window(key, &fingerprint);
+        if !identity.allows_restore() {
+            log_line("info", &format!("restore refused: {}", identity.reason()));
+            self.balloon(
+                "AllBlack11",
+                "That window has closed or been replaced, so nothing was changed.",
+                false,
+            );
+            return;
+        }
+        self.try_windows.remove(&key);
+        self.restore_one(key, false);
+        // Leave it alone until Enabled is toggled or the config is reloaded.
+        self.hold.insert(key);
+        self.update_tray();
+    }
+
+    /// Timer tick shared by temporary window looks and the config trial.
+    fn expire_trials(&mut self) {
+        let now = unsafe { GetTickCount64() };
+        let due: Vec<i64> = self
+            .try_windows
+            .iter()
+            .filter(|(_, deadline)| **deadline <= now)
+            .map(|(key, _)| *key)
+            .collect();
+        let mut pending = Vec::new();
+        for key in due {
+            self.try_windows.remove(&key);
+            self.restore_one(key, false);
+            // The normal pass decides what this window should look like.
+            if let Some(item) = self.plan(key, Kind::Second) {
+                pending.push(item);
+            }
+        }
+        self.commit(pending);
+        if self.trial.expired(now) {
+            self.trial_end(false);
+        }
+        if self.try_windows.is_empty() && !self.trial.is_active() {
+            unsafe { KillTimer(self.hwnd, TIMER_TRIAL) };
+        }
+        self.update_tray();
+    }
+
+    /// Switch to the n-th tray scene (scenes first, then saved looks). Like a tray preset this
+    /// is an explicit choice, so it applies at once; the previous file is kept for one undo.
+    fn apply_scene_choice(&mut self, index: usize) -> bool {
+        self.end_trial_for_external_change();
+        let scenes = crate::scene_catalog();
+        let book = cfgio::load_lookbook();
+        let item: &dyn crate::SceneLike = if index < scenes.len() {
+            &scenes[index]
+        } else {
+            match book.looks.get(index - scenes.len()) {
+                Some(look) => look,
+                None => return false,
+            }
+        };
+        let name = if index < scenes.len() {
+            scenes[index].name.clone()
+        } else {
+            book.looks[index - scenes.len()].name.clone()
+        };
+        self.apply_look(item, &name)
+    }
+
+    /// Apply a scene or saved look to the permanent config and run it. Keeps the previous
+    /// file for one undo.
+    fn apply_look(&mut self, item: &dyn crate::SceneLike, name: &str) -> bool {
+        let before = std::fs::read_to_string(&self.config_file).ok();
+        let mut config = cfgio::load();
+        crate::apply_scene(&mut config, item);
+        if let Err(err) = cfgio::store(&config) {
+            self.balloon("AllBlack11", &err, true);
+            return false;
+        }
+        self.scene_undo = before;
+        let changed = self.apply_external_config();
+        self.balloon("AllBlack11", &format!("Scene: {name}."), false);
+        changed
+    }
+
+    /// Apply a scene by id (a bundled scene, or a look in the Look Book).
+    fn apply_scene_id(&mut self, id: &str) -> bool {
+        self.end_trial_for_external_change();
+        let scenes = crate::scene_catalog();
+        if let Some(scene) = scenes.iter().find(|scene| scene.id == id) {
+            return self.apply_look(scene, &scene.name.clone());
+        }
+        let book = cfgio::load_lookbook();
+        match book.get(id) {
+            Some(look) => self.apply_look(look, &look.name.clone()),
+            None => {
+                log_line("warn", &format!("Day/Night: no scene or look named {id}"));
+                false
+            }
+        }
+    }
+
+    /// Register or release the optional palette hotkey to match the setting.
+    fn sync_hotkey(&mut self) {
+        use windows_sys::Win32::UI::Input::KeyboardAndMouse::{RegisterHotKey, UnregisterHotKey};
+        let want = self.config.features.palette_hotkey && !self.safe.is_safe() && !self.shut_down;
+        if want && !self.hotkey_on {
+            // MOD_ALT | MOD_CONTROL | MOD_NOREPEAT, Space.
+            if unsafe { RegisterHotKey(self.hwnd, HOTKEY_PALETTE, 0x0001 | 0x0002 | 0x4000, 0x20) }
+                != 0
+            {
+                self.hotkey_on = true;
+            } else {
+                self.balloon(
+                    "AllBlack11",
+                    "Ctrl+Alt+Space is already used by another app, so the palette hotkey is off. The tray item and Ctrl+K in Settings still work.",
+                    true,
+                );
+            }
+        } else if !want && self.hotkey_on {
+            unsafe { UnregisterHotKey(self.hwnd, HOTKEY_PALETTE) };
+            self.hotkey_on = false;
+        }
+    }
+
+    /// Day/Night: evaluate the clock, switch scene if the phase changed, and arm one timer for
+    /// the next boundary. Returns true when a shell broadcast is needed.
+    fn schedule_tick(&mut self) -> bool {
+        unsafe { KillTimer(self.hwnd, TIMER_SCHEDULE) };
+        let setting = self.config.features.day_night.clone();
+        if !setting.enabled || self.paused || self.safe.is_safe() || self.shut_down {
+            self.scheduler.reset();
+            return false;
+        }
+        let times = match crate::parse_schedule_times(&setting.day_starts, &setting.night_starts) {
+            Ok(times) => times,
+            Err(err) => {
+                log_line("warn", &format!("Day/Night is off: {err}"));
+                return false;
+            }
+        };
+        let mut now: windows_sys::Win32::Foundation::SYSTEMTIME = unsafe { std::mem::zeroed() };
+        unsafe { windows_sys::Win32::System::SystemInformation::GetLocalTime(&mut now) };
+        let minute = now.wHour * 60 + now.wMinute;
+        let mut broadcast = false;
+        if let Some(phase) = self.scheduler.evaluate(minute, &times) {
+            let id = match phase {
+                crate::DayPhase::Day => setting.day_scene.clone(),
+                crate::DayPhase::Night => setting.night_scene.clone(),
+            };
+            log_line("info", &format!("Day/Night: switching to {id}"));
+            broadcast = self.apply_scene_id(&id);
+        }
+        // Applying a scene re-read the config; arm from the clock again.
+        let wait = crate::millis_until_change(minute, now.wSecond, &times).clamp(1_000, 86_400_000);
+        unsafe { SetTimer(self.hwnd, TIMER_SCHEDULE, wait as u32, None) };
+        broadcast
+    }
+
+    fn undo_scene(&mut self) -> bool {
+        let Some(previous) = self.scene_undo.take() else {
+            return false;
+        };
+        self.end_trial_for_external_change();
+        if parse_config(&previous).is_err() {
+            self.balloon(
+                "AllBlack11",
+                "The earlier config is no longer readable; nothing was changed.",
+                true,
+            );
+            return false;
+        }
+        if wide::write_atomic(&self.config_file, &previous).is_err() {
+            self.balloon("AllBlack11", "Could not write config.json.", true);
+            return false;
+        }
+        let changed = self.apply_external_config();
+        self.balloon("AllBlack11", "Scene change undone.", false);
+        changed
+    }
+
+    /// Anything that is about to change the permanent config (tray preset, reload, enable
+    /// toggle, shell toggles, last-known-good restore) calls this first. A running trial is
+    /// reverted to the config that was in effect, so the new change starts from a known state
+    /// and the trial timer can never "revert" over it later with a stale copy.
+    fn end_trial_for_external_change(&mut self) {
+        let Some(previous) = self.trial.cancel_for_external_change() else {
+            return;
+        };
+        TRIAL_DEADLINE.store(0, Ordering::Relaxed);
+        self.config = previous;
+        self.refresh_reduce();
+        if self.try_windows.is_empty() {
+            unsafe { KillTimer(self.hwnd, TIMER_TRIAL) };
+        }
+        log_line(
+            "info",
+            "a trial look was ended because the configuration changed",
+        );
+        settings::notify_external_change();
+    }
+
+    /// Safe mode keeps the experimental parts off for this run, whatever the file says. The
+    /// file itself is never changed by it.
+    fn enforce_safe_mode(&mut self) {
+        if self.safe.is_safe() {
+            self.config.experimental_dark_legacy = false;
+            self.config.legacy.emulated_x64 = false;
+            // Automatic extras stay off too: nothing changes a look by itself in safe mode.
+            self.config.features.identity_accents = false;
+            self.config.features.palette_hotkey = false;
+            self.config.features.day_night.enabled = false;
+        }
+    }
+
+    /// Emergency pause. Windows go back to how they were drawn, the legacy hook and the x64
+    /// helper stop, and nothing is styled until Resume. It is not saved: restarting
+    /// AllBlack11 always begins from the saved settings.
+    fn pause(&mut self) {
+        if self.paused {
+            return;
+        }
+        self.end_trial_for_external_change();
+        self.paused = true;
+        self.try_windows.clear();
+        self.restore_visuals();
+        let _ = legacy::set_active(false, &legacy::LegacyOptions::default());
+        log_line("info", "paused from the Safety page or tray");
+        self.update_tray();
+        settings::notify_external_change();
+    }
+
+    fn resume(&mut self) {
+        if !self.paused {
+            return;
+        }
+        self.paused = false;
+        self.hold.clear();
+        self.last_apply.clear();
+        self.exe_cache.clear();
+        if self.styling_on() {
+            self.apply_startup();
+        }
+        if self.config.experimental_dark_legacy && !self.high_contrast {
+            match legacy::set_active(true, &legacy_options(&self.config)) {
+                Ok(()) => self.scan_legacy(),
+                Err(err) => log_line("error", &err),
+            }
+        }
+        log_line("info", "resumed");
+        // Pausing stopped the Day/Night timer; arm it again and catch up on the clock.
+        self.schedule_tick();
+        self.update_tray();
+        settings::notify_external_change();
+    }
+
+    /// Leave safe mode without restarting: load the saved settings as they are.
+    fn leave_safe_mode(&mut self) -> bool {
+        if !self.safe.is_safe() {
+            return false;
+        }
+        self.safe = crate::StartupMode::Normal;
+        let changed = self.apply_external_config();
+        // `apply_external_config` starts the legacy layer only when the setting changed; it
+        // was forced off in memory, so it did change if the file asks for it.
+        self.balloon(
+            "AllBlack11",
+            "Safe mode ended. Saved settings are in effect.",
+            false,
+        );
+        changed
+    }
+
+    /// Run a whole config in memory. The shell, startup, legacy switch and logging keep their
+    /// current values: a trial never changes the registry or loads a hook.
+    fn trial_start(&mut self, next: crate::Config) {
+        let now = unsafe { GetTickCount64() };
+        self.trial.start(now, crate::TRIAL_MS, &self.config);
+        let deadline = self.trial.deadline().unwrap_or(0);
+        self.config = crate::constrain_trial(next, &self.config);
+        self.refresh_reduce();
+        self.restyle_all();
+        TRIAL_DEADLINE.store(deadline, Ordering::Relaxed);
+        unsafe { SetTimer(self.hwnd, TIMER_TRIAL, 1000, None) };
+    }
+
+    fn trial_end(&mut self, keep: bool) {
+        if !self.trial.is_active() {
+            return;
+        }
+        TRIAL_DEADLINE.store(0, Ordering::Relaxed);
+        // A kept look is the main named change; its "before" is the config from before the
+        // trial, which only the trial machine still has.
+        if keep {
+            if let Some(before) = self.trial.previous().cloned() {
+                let after = self.config.clone();
+                self.record_history(&before, &after);
+                self.history_kept = true;
+            }
+        }
+        // Keep: Settings has already written the file (it owns any shell flags a preset
+        // carries); the normal apply path then records the last known good copy.
+        // Revert or timeout: the machine hands back exactly the config that was running.
+        if let Some(previous) = self.trial.finish(keep) {
+            self.config = previous;
+            self.refresh_reduce();
+            self.restyle_all();
+        }
+        if self.try_windows.is_empty() {
+            unsafe { KillTimer(self.hwnd, TIMER_TRIAL) };
+        }
+        settings::notify_external_change();
+    }
+
+    /// Put the last known good config back. The broken file is kept next to it.
+    fn restore_lkg(&mut self) -> bool {
+        self.end_trial_for_external_change();
+        let Some(good) = cfgio::load_lkg() else {
+            self.balloon(
+                "AllBlack11",
+                "There is no last known good config yet.",
+                true,
+            );
+            return false;
+        };
+        if parse_config(&good).is_err() {
+            self.balloon(
+                "AllBlack11",
+                "The saved last known good config is not usable.",
+                true,
+            );
+            return false;
+        }
+        if let Ok(current) = std::fs::read_to_string(&self.config_file) {
+            let _ = wide::write_atomic(&self.config_file.with_extension("broken.json"), &current);
+        }
+        if wide::write_atomic(&self.config_file, &good).is_err() {
+            self.balloon("AllBlack11", "Could not write config.json.", true);
+            return false;
+        }
+        self.balloon("AllBlack11", "Restored the last known good config.", false);
+        self.apply_external_config()
+    }
+
+    // ---- the inspector's report -----------------------------------------------------------------
+
+    fn build_report(&mut self, key: i64) -> Option<crate::Report> {
+        let hwnd = key_to_hwnd(key);
+        if unsafe { IsWindow(hwnd) } == 0 {
+            return None;
+        }
+        let (pid, create, exe) = self.identity(hwnd)?;
+        let (path, package) = super::procinfo::path_and_package(pid, true);
+        let title = super::procinfo::window_title(hwnd);
+        let mut facts = collect_facts(hwnd, &exe, pid);
+        facts.path = path.clone();
+        facts.package = package.clone();
+        // A title only takes part in matching if some rule asks for one.
+        facts.title = self
+            .config
+            .rules
+            .iter()
+            .any(|rule| rule.title.is_some())
+            .then(|| title.clone());
+        let mut explanation = crate::explain(&facts, &self.config, self.accent_bgr, self.build);
+        if let Some(reason) = self.reduce {
+            explanation.notes.push(format!(
+                "Effects are reduced right now because of {reason}, so no backdrop material is applied."
+            ));
+        }
+        // Identity accents set the border where no rule does; say so, so the receipt matches
+        // what was actually requested. (A copy of the store is used: reading a report never
+        // records a new assignment.)
+        if self.config.features.identity_accents && explanation.applied {
+            if let Some(resolved) = explanation.resolved.as_mut() {
+                let from_rule = resolved.sources.iter().any(|(field, source)| {
+                    *field == "border color" && matches!(source, crate::Source::Rule(_))
+                });
+                if !from_rule {
+                    if let Some((color, _)) = self.accents.clone().color_for(&exe) {
+                        resolved.style.border = color;
+                        for entry in resolved.sources.iter_mut() {
+                            if entry.0 == "border color" {
+                                entry.1 = crate::Source::Accent;
+                            }
+                        }
+                        explanation.notes.push(
+                            "Identity accent sets the border (optional feature). Change or reset it in the Identity accent section above."
+                                .to_string(),
+                        );
+                    }
+                }
+            }
+        }
+        let options = legacy_options(&self.config);
+        let assessment = legacy::assess(hwnd, &self.config.exclude, &options);
+        let (arch_key, arch_text, legacy_view) = match &assessment {
+            Some(found) => {
+                let verdict = match &found.verdict {
+                    crate::Verdict::Full => "this dialog can be fully treated".to_string(),
+                    crate::Verdict::Partial(_) => "this dialog can be partly treated".to_string(),
+                    crate::Verdict::Skip(reason) => crate::reason_text(reason).to_string(),
+                };
+                let gate = match &found.gate {
+                    Ok(crate::Route::Native) => "allowed: native hook".to_string(),
+                    Ok(crate::Route::X64Helper) => "allowed: x64 helper".to_string(),
+                    Ok(crate::Route::Unsupported(reason)) | Err(reason) => {
+                        crate::reason_text(reason).to_string()
+                    }
+                };
+                let partial = match &found.verdict {
+                    crate::Verdict::Partial(list) => list.clone(),
+                    _ => Vec::new(),
+                };
+                (
+                    found.arch.key(),
+                    found.arch.key().to_string(),
+                    Some(crate::LegacyView {
+                        verdict,
+                        gate,
+                        partial,
+                    }),
+                )
+            }
+            None => ("unknown", "unknown".to_string(), None),
+        };
+        let attempts = match self
+            .last_ops
+            .get(&key)
+            .filter(|rec| rec.pid == pid && (rec.create == 0 || rec.create == create))
+        {
+            Some(record) => {
+                let read = dwm::readback(
+                    hwnd,
+                    &record.style,
+                    self.accent_bgr,
+                    self.build,
+                    record.backdrop,
+                );
+                let mut list: Vec<crate::Attempt> = record
+                    .attempts
+                    .iter()
+                    .map(|attempt| crate::Attempt {
+                        name: attempt.name,
+                        attribute: attempt.attribute,
+                        confirm: if attempt.hr < 0 {
+                            crate::Confirm::Rejected(attempt.hr)
+                        } else if read.iter().any(|(id, ok)| *id == attempt.attribute && *ok) {
+                            crate::Confirm::ReadbackMatches
+                        } else {
+                            crate::Confirm::AcceptedUnverified
+                        },
+                    })
+                    .collect();
+                if let Some(note) = record.note {
+                    explanation.notes.push(note.to_string());
+                }
+                list.truncate(12);
+                list
+            }
+            None => Vec::new(),
+        };
+        // Which rules compete, and why the winner won.
+        let identity = crate::WindowIdentity {
+            exe: &exe,
+            class: &facts.class_name,
+            path: &path,
+            package: &package,
+            title: facts.title.as_deref(),
+        };
+        let ranked = crate::rank(&self.config.rules, &identity);
+        let mut rule_lines = Vec::new();
+        if let Some((winner, rest)) = ranked.split_first() {
+            for other in rest {
+                rule_lines.push(format!(
+                    "Rule {} also matched and lost: {}.",
+                    other.index + 1,
+                    crate::why_it_won(winner, other)
+                ));
+            }
+            for conflict in crate::find_conflicts(&self.config.rules)
+                .iter()
+                .filter(|c| c.first == winner.index || c.second == winner.index)
+            {
+                rule_lines.push(crate::describe_conflict(&self.config.rules, conflict));
+            }
+        }
+        let book = cfgio::load_notebook();
+        let compat_key = if package.is_empty() {
+            exe.to_ascii_lowercase()
+        } else {
+            package.clone()
+        };
+        let entry = book.get(&compat_key, self.build, &arch_text).cloned();
+        Some(crate::Report {
+            exe,
+            class: facts.class_name.clone(),
+            pid,
+            path,
+            package,
+            title,
+            arch: arch_key.to_string(),
+            build: self.build,
+            explanation,
+            attempts,
+            legacy: legacy_view,
+            compat: entry
+                .as_ref()
+                .map(|e| e.status)
+                .unwrap_or(crate::CompatStatus::Untested),
+            compat_note: entry.map(|e| e.note).unwrap_or_default(),
+            rule_lines,
+            support: crate::attribute_support(self.build)
+                .into_iter()
+                .map(|a| (a.name, a.support))
+                .collect(),
+        })
+    }
+
     fn identity(&mut self, hwnd: HWND) -> Option<(u32, u64, String)> {
         let mut pid = 0u32;
         let thread = unsafe { GetWindowThreadProcessId(hwnd, &mut pid) };
@@ -1919,6 +3231,82 @@ impl App {
         self.exe_cache.insert(key, (pid, create, exe.clone()));
         Some((pid, create, exe))
     }
+}
+
+/// A recorded original may still belong to this live window. Snapshots from older versions
+/// have no fingerprint and fall back to the process check alone.
+///
+/// "Uncertain" (a style bit an app can toggle changed) keeps the record: re-capturing would
+/// store our own styled values as the "original". It is still not used to restore; that needs
+/// the strict `snapshot_matches_live`.
+fn snapshot_is_for(
+    snap: &StoredSnapshot,
+    pid: u32,
+    create: u64,
+    live: Option<&crate::Fingerprint>,
+) -> bool {
+    if !same_process(snap, pid, create) {
+        return false;
+    }
+    match &snap.fingerprint {
+        Some(recorded) => !matches!(
+            crate::check_identity(recorded, live),
+            crate::Identity::Different(_)
+        ),
+        None => true,
+    }
+}
+
+fn snapshot_matches_live(snap: &StoredSnapshot, live: Option<&crate::Fingerprint>) -> bool {
+    match &snap.fingerprint {
+        Some(recorded) => crate::check_identity(recorded, live).allows_restore(),
+        None => live.is_some_and(|live| same_process(snap, live.pid, live.create)),
+    }
+}
+
+/// The signals Reduce Effects looks at, straight from Windows.
+fn system_state() -> crate::SystemState {
+    let mut power: SYSTEM_POWER_STATUS = unsafe { std::mem::zeroed() };
+    let have_power = unsafe { GetSystemPowerStatus(&mut power) } != 0;
+    crate::SystemState {
+        // SystemStatusFlag is 1 while battery saver is on.
+        battery_saver: have_power && power.SystemStatusFlag == 1,
+        remote_session: unsafe { GetSystemMetrics(SM_REMOTESESSION) } != 0,
+        transparency_enabled: registry::transparency_enabled(),
+    }
+}
+
+/// The inspector's report for one window, or `None` if it has gone.
+pub fn report_for(key: i64) -> Option<crate::Report> {
+    with_app(|app| app.build_report(key)).flatten()
+}
+
+/// Safe mode text for Settings, or `None` in a normal run.
+pub fn safe_mode_text() -> Option<String> {
+    with_app(|app| match app.safe {
+        crate::StartupMode::Safe(reason) => Some(reason.text()),
+        crate::StartupMode::Normal => None,
+    })
+    .flatten()
+}
+
+/// There is a scene switch from the tray or palette that can still be undone.
+pub fn can_undo_scene() -> bool {
+    with_app(|app| app.scene_undo.is_some()).unwrap_or(false)
+}
+
+pub fn is_paused() -> bool {
+    with_app(|app| app.paused).unwrap_or(false)
+}
+
+/// AllBlack11 has changed this window and holds its original look (so a restore is meaningful).
+pub fn window_touched(key: i64) -> bool {
+    with_app(|app| app.originals.contains_key(&key)).unwrap_or(false)
+}
+
+/// Text for the Settings page: why effects are currently reduced, if they are.
+pub fn reduce_reason_now() -> Option<&'static str> {
+    with_app(|app| app.reduce).flatten()
 }
 
 fn kind_from_event(event: u32) -> Kind {
@@ -2044,6 +3432,9 @@ fn collect_facts(hwnd: HWND, exe: &str, pid: u32) -> WindowFacts {
             minimized: IsIconic(hwnd) != 0,
             covers_monitor: covers_monitor(hwnd, &rect),
             pid_known: true,
+            path: String::new(),
+            package: String::new(),
+            title: None,
         }
     }
 }
@@ -2079,6 +3470,11 @@ fn class_of(hwnd: HWND) -> String {
     } else {
         String::from_utf16_lossy(&buf[..length as usize])
     }
+}
+
+/// (process creation time, exe name) for a process id.
+pub(super) fn process_basic(pid: u32) -> Option<(u64, String)> {
+    query_process(pid)
 }
 
 fn query_process(pid: u32) -> Option<(u64, String)> {

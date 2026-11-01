@@ -4,8 +4,9 @@
 use std::ptr::{null, null_mut};
 
 use crate::shell::{
-    black_shell_already_applied, blacken_shell_slots, oled_already_applied, slots_are_black,
-    BinarySlot, DwordSlot, ShellBackup,
+    black_shell_already_applied, blacken_shell_slots, oled_already_applied, palette_still_ours,
+    slots_are_black, still_ours, BinarySlot, DwordSlot, ShellBackup, COLOR_PREVALENCE_WRITTEN,
+    DWM_COLOR_PREVALENCE_WRITTEN, ENABLE_TRANSPARENCY_WRITTEN, OLED_WRITTEN, SYSTEM_LIGHT_WRITTEN,
 };
 use windows_sys::Win32::Foundation::{ERROR_SUCCESS, HANDLE, LPARAM, WPARAM};
 use windows_sys::Win32::System::Registry::{
@@ -37,7 +38,9 @@ pub fn load_backup() -> ShellBackup {
 }
 
 pub fn save_backup(backup: &ShellBackup) {
-    if let Err(err) = super::wide::write_atomic(&shell_backup_path(), &format!("{}\n", backup.to_json())) {
+    if let Err(err) =
+        super::wide::write_atomic(&shell_backup_path(), &format!("{}\n", backup.to_json()))
+    {
         super::wide::log_line("error", &format!("could not save shell-backup.json: {err}"));
     }
 }
@@ -87,7 +90,14 @@ pub fn enable_oled(backup: &mut ShellBackup) -> Result<(), String> {
 
 pub fn disable_oled(backup: &mut ShellBackup) -> Result<(), String> {
     if let Some(slot) = backup.oled_taskbar.clone() {
-        if slot.already_applied {
+        let current = read_dword(ADVANCED, OLED_VALUE);
+        if !still_ours(&current, OLED_WRITTEN) {
+            // Changed after AllBlack11 set it. Not ours to overwrite.
+            super::wide::log_line(
+                "info",
+                "left UseOLEDTaskbarTransparency as it is: it was changed after AllBlack11 set it",
+            );
+        } else if slot.already_applied {
             delete_value(ADVANCED, OLED_VALUE)?;
         } else {
             restore_dword(ADVANCED, OLED_VALUE, &slot)?;
@@ -113,25 +123,54 @@ pub fn disable_black_shell(backup: &mut ShellBackup) -> Result<(), String> {
         .accent_palette
         .as_ref()
         .is_some_and(|slot| slot.already_applied);
+    let palette_now = read_binary(ACCENT, PALETTE_VALUE);
+    let palette_ours = palette_still_ours(&palette_now);
+    if !palette_ours {
+        super::wide::log_line(
+            "info",
+            "left AccentPalette as it is: it no longer holds the black slots AllBlack11 wrote",
+        );
+    }
     if already {
-        delete_value(ACCENT, PALETTE_VALUE)?;
-        write_dword(PERSONALIZE, COLOR_PREVALENCE, 0)?;
-    } else {
-        if let Some(slot) = backup.accent_palette.clone() {
-            restore_binary(ACCENT, PALETTE_VALUE, &slot)?;
+        if palette_ours {
+            delete_value(ACCENT, PALETTE_VALUE)?;
         }
-        restore_named(&mut backup.color_prevalence, PERSONALIZE, COLOR_PREVALENCE)?;
-        restore_named(
+        if still_ours(
+            &read_dword(PERSONALIZE, COLOR_PREVALENCE),
+            COLOR_PREVALENCE_WRITTEN,
+        ) {
+            write_dword(PERSONALIZE, COLOR_PREVALENCE, 0)?;
+        }
+    } else {
+        if palette_ours {
+            if let Some(slot) = backup.accent_palette.clone() {
+                restore_binary(ACCENT, PALETTE_VALUE, &slot)?;
+            }
+        }
+        restore_named_if_ours(
+            &mut backup.color_prevalence,
+            PERSONALIZE,
+            COLOR_PREVALENCE,
+            COLOR_PREVALENCE_WRITTEN,
+        )?;
+        restore_named_if_ours(
             &mut backup.enable_transparency,
             PERSONALIZE,
             ENABLE_TRANSPARENCY,
+            ENABLE_TRANSPARENCY_WRITTEN,
         )?;
-        restore_named(
+        restore_named_if_ours(
             &mut backup.system_uses_light_theme,
             PERSONALIZE,
             SYSTEM_LIGHT,
+            SYSTEM_LIGHT_WRITTEN,
         )?;
-        restore_named(&mut backup.dwm_color_prevalence, DWM, COLOR_PREVALENCE)?;
+        restore_named_if_ours(
+            &mut backup.dwm_color_prevalence,
+            DWM,
+            COLOR_PREVALENCE,
+            DWM_COLOR_PREVALENCE_WRITTEN,
+        )?;
     }
     backup.accent_palette = None;
     backup.color_prevalence = None;
@@ -216,9 +255,22 @@ fn write_black_palette() -> Result<bool, String> {
     Ok(true)
 }
 
-fn restore_named(slot: &mut Option<DwordSlot>, key: &str, name: &str) -> Result<(), String> {
+/// Restore the saved original only while the value is still the one we wrote.
+fn restore_named_if_ours(
+    slot: &mut Option<DwordSlot>,
+    key: &str,
+    name: &str,
+    written: u32,
+) -> Result<(), String> {
     if let Some(value) = slot.clone() {
-        restore_dword(key, name, &value)?;
+        if still_ours(&read_dword(key, name), written) {
+            restore_dword(key, name, &value)?;
+        } else {
+            super::wide::log_line(
+                "info",
+                &format!("left {name} as it is: it was changed after AllBlack11 set it"),
+            );
+        }
         *slot = None;
     }
     Ok(())

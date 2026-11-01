@@ -85,6 +85,10 @@ public static class PepaNativeArch {
     return [System.Runtime.InteropServices.RuntimeInformation]::OSArchitecture.ToString()
 }
 
+function Stop-AllBlack11Helper {
+    Get-Process -Name "AllBlack11Helper.x64" -ErrorAction SilentlyContinue | Stop-Process -Force
+}
+
 function Stop-AllBlack11 {
     param([string]$Exe)
     if (Test-Path $Exe) {
@@ -98,6 +102,7 @@ function Stop-AllBlack11 {
         Stop-Process -Name "AllBlack11" -Force
         Start-Sleep -Milliseconds 400
     }
+    Stop-AllBlack11Helper
 }
 
 function Remove-LegacyPepaTheme {
@@ -154,9 +159,10 @@ if (Test-Path $destExe) {
 
 New-Item -ItemType Directory -Force -Path $dest | Out-Null
 Copy-Item $source $destExe -Force
-$hook = Join-Path $here "AllBlack11Hook.dll"
-if (Test-Path $hook) {
-    Copy-Item $hook (Join-Path $dest "AllBlack11Hook.dll") -Force
+foreach ($pattern in @("AllBlack11Hook*.dll", "AllBlack11Helper*.exe", "AllBlack11-Harness*.exe")) {
+    Get-ChildItem -Path $here -Filter $pattern -ErrorAction SilentlyContinue | ForEach-Object {
+        Copy-Item $_.FullName (Join-Path $dest $_.Name) -Force
+    }
 }
 foreach ($name in @("README.md", "uninstall.ps1", "config.default.json", "install.ps1")) {
     $from = Join-Path $here $name

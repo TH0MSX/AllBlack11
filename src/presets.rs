@@ -35,11 +35,7 @@ const WHITE: Color = Color::Rgb {
     b: 255,
 };
 
-fn look(
-    backdrop: Backdrop,
-    border: Color,
-    tint_opacity: Option<f64>,
-) -> PartialStyle {
+fn look(backdrop: Backdrop, border: Color, tint_opacity: Option<f64>) -> PartialStyle {
     PartialStyle {
         enabled: Some(true),
         dark_mode: Some(true),

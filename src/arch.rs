@@ -75,9 +75,18 @@ mod tests {
 
     #[test]
     fn classifies_every_pair() {
-        assert_eq!(classify(MACHINE_ARM64, MACHINE_ARM64), ArchStatus::NativeArm64);
-        assert_eq!(classify(MACHINE_AMD64, MACHINE_ARM64), ArchStatus::X64OnArm64);
-        assert_eq!(classify(MACHINE_AMD64, MACHINE_AMD64), ArchStatus::NativeX64);
+        assert_eq!(
+            classify(MACHINE_ARM64, MACHINE_ARM64),
+            ArchStatus::NativeArm64
+        );
+        assert_eq!(
+            classify(MACHINE_AMD64, MACHINE_ARM64),
+            ArchStatus::X64OnArm64
+        );
+        assert_eq!(
+            classify(MACHINE_AMD64, MACHINE_AMD64),
+            ArchStatus::NativeX64
+        );
         assert_eq!(classify(MACHINE_ARM64, MACHINE_AMD64), ArchStatus::Other);
         assert_eq!(classify(0, 0), ArchStatus::Other);
     }

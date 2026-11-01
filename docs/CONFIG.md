@@ -43,6 +43,58 @@ A rule overrides only the fields it sets. The first matching exe name wins. Name
 
 `mmc.exe` is Control Panel. That rule keeps the default black caption and accent border, and uses a darker tinted acrylic (opacity `0.7`).
 
+## What is new in schema 2 (3.5)
+
+Files from 1.x to 3.0 load unchanged. The next time AllBlack11 saves, it writes `"schemaVersion": 2` and keeps a one-time copy of your old file as `config.pre-3.5.json`, because a 3.0 build cannot read a 3.5 file. A file with a *newer* schema than this build understands is refused with a message instead of being half-read. A file that fails to parse falls back to `config.lkg.json` (the last config that loaded) and your file is left untouched.
+
+```json
+{
+  "schemaVersion": 2,
+  "rules": [
+    {
+      "name": "Windows Terminal",
+      "class": "CASCADIA_HOSTING_WINDOW_CLASS",
+      "priority": 5,
+      "backdrop": "acrylic"
+    },
+    { "package": "Microsoft.WindowsNotepad_*", "backdrop": "none" },
+    { "process": "app.exe", "path": "C:\\Tools\\*", "title": "report" }
+  ],
+  "focus": { "enabled": true, "activeBorder": "accent", "inactiveBorder": "none", "inactiveText": "#9A9A9A" },
+  "reduceEffects": { "onBatterySaver": true, "onRemoteSession": true, "onTransparencyOff": true },
+  "legacy": { "palette": "graphite", "emulatedX64": false },
+  "features": {
+    "identityAccents": false,
+    "paletteHotkey": false,
+    "dayNight": { "enabled": false, "dayScene": "graphite", "nightScene": "oled-black", "dayStarts": "07:00", "nightStarts": "20:00" }
+  }
+}
+```
+
+**Rule matchers** (a rule needs at least one, and must match on every one it sets): `process` (file name), `class` (exact), `path` (glob on the full path), `package` (glob on the package family name), `title` (substring). Globs use `*` and `?`, ignore case, and treat `/` and `\` alike. A `path` or `package` rule never matches a window whose path or package is unknown. A `title` rule only matches when the title was read, which only happens while some rule uses one.
+
+**Precedence** is deterministic: higher `priority` (−1000..1000), then the rule that matched more specifically (package 30, title 25, class 20, path 15, executable 10 points each), then the earlier rule. The Rules page in Settings shows why a rule won and warns about rules that can only be told apart by file order.
+
+**Focus Look**: when `enabled`, the active window gets `activeBorder`, others get `inactiveBorder` and, if it stays readable on the caption, `inactiveText`. Anything a rule sets itself wins. It runs on focus changes only.
+
+**Reduce effects**: each condition switches backdrop materials to plain colors while it holds. The active reason is shown in Settings. Colors, corners and dark mode are unchanged.
+
+**Legacy**: `palette` is `graphite` or `black`. `emulatedX64` is ARM64-only and needs the packaged helper.
+
+**Features** (all optional, all off, independent; the whole section is omitted from the file until something differs from the defaults, so 3.5 can still read an untouched config):
+
+- `identityAccents`: gives each app a stable border color, only where no rule sets a border. Assignments are kept in `accents.json` (app names and colors, never window titles).
+- `paletteHotkey`: Ctrl+Alt+Space opens the command palette from anywhere. One `RegisterHotKey`, no keyboard hook.
+- `dayNight`: switches scene by local time. `dayScene` and `nightScene` are a scene id (`oled-black`, `graphite`, `midnight-accent`, `focus`, `living-room`) or the id of a look in `lookbook.json`. Times are `HH:MM`, 24-hour; the two must differ and the day may run past midnight. Invalid times make the config fail to load rather than being guessed.
+
+Safe mode (Shift at launch, `--safe`, or two unclean ends in a row) turns `experimentalDarkLegacy`, `legacy.emulatedX64` and every feature above off **in memory for that run**; the file is not changed.
+
+Other files in the data folder: `lookbook.json` (your saved looks), `accents.json`, `onboarding.json` (first-run setup progress), `session.json` (whether the last run ended cleanly), `compat.json`, `config.lkg.json`.
+
+## Recipes
+
+A recipe is a small JSON file (`%APPDATA%\AllBlack11\recipes\<id>.json`, or built in) with a **closed schema**: `schema`, `id`, `name`, `description`, `author`, `minBuild`, `look` (only `darkMode`, `backdrop`, `captionColor`, `borderColor`, `textColor`, `corners`, `acrylicTint`, `acrylicOpacity`, `tintedAcrylicOnMoveFallback`), an optional `match` (`process`, `class`, `package`) and `notes`. Unknown fields are refused. There is no field that runs anything, writes the registry, changes the shell, or points outside the look. Imported recipes are validated, shown as a diff, and tried for 15 seconds before they can be kept.
+
 ## Keys
 
 | Key | Where | Values |
@@ -96,9 +148,11 @@ The tray **Presets** menu and the top of Settings rewrite `default` (and `shell`
 
 ## Settings window
 
-The tray **Settings…** item, and a double-click on the icon, open a native Win32 window. It is drawn with GDI in the AllBlack11 process. There is no WebView. The frame uses Mica and immersive dark mode. The client is pure black so the text stays sharp and OLED pixels stay off.
+The tray **Settings…** item, and a double-click on the icon, open a native Win32 window. It is drawn with GDI in the AllBlack11 process. There is no WebView. A left pane lists the pages (Home, Fix this app, Appearance, Scenes, Rules, Safety, Diagnostics, Settings & help). The title bar follows AllBlack11's own appearance, and the client is true black in dark mode so the text stays sharp and OLED pixels stay off.
 
-Every coordinate is logical (96 dpi) and scaled once, so layout, hit-testing and the edit boxes stay aligned at any display scale and when the window moves between monitors. The preview at the top is drawn from the same `Style` the theming pass uses, so it matches what a window gets.
+Every coordinate is logical (96 dpi) and scaled once by display scaling times the Windows *Text size* setting, so layout, hit-testing and the edit boxes stay aligned at any scale and when the window moves between monitors. Cards are as tall as their text at the current width. The preview on the Appearance page is drawn from the same `Style` the theming pass uses, so it matches what a window gets.
+
+**`ui`** (optional; omitted from the file while it holds the default): `{ "appearance": "system" | "light" | "dark" }`. It chooses how AllBlack11's *own* windows and tray menu look. It is separate from every look, rule and recipe, which describe other apps, and nothing that is applied to another app reads it. An unknown value makes the config fail to load rather than being guessed. First-run setup progress is kept in `onboarding.json`, not here.
 
 Adding or removing an app in a list, or picking a preset, rewrites `config.json` the same way the tray does. The file is written to a temporary name and renamed, so a crash cannot leave a half-written config.
 

@@ -17,7 +17,7 @@
 </div>
 
 > [!NOTE]
-> **3.0 Preview is the current release.** It adds a real Setup.exe, a rebuilt Settings window with a live preview, presets, and Restart Explorer. See [what changed](CHANGELOG.md). Made by [@TH0MSX](https://github.com/TH0MSX) with AI assistance (Cursor, and Claude for 3.0), tested daily on real ARM64 hardware.
+> **Latest release: 3.0 Preview.** A **3.5 Preview pre-release** is available for testing: much better legacy-dialog dark mode, a window picker that explains what AllBlack11 did and why, recipes, Focus Look, and a recoverable trial look. It has been built and unit-tested, but **not yet run on Windows hardware**, so it stays a pre-release. See [what is verified](docs/dev/EVIDENCE.md) and the [smoke test](docs/dev/SMOKE-TEST.md). Made by [@TH0MSX](https://github.com/TH0MSX) with AI assistance (Cursor, and Claude), tested daily on real ARM64 hardware.
 
 ## 🌙 Why
 
@@ -77,6 +77,32 @@ Windows 11 dark mode still paints gray title bars, a gray taskbar, and a tinted 
 - 🔁 **Undo everywhere:** original frame attributes go back on Exit, Disable, or Reset. Shell tweaks are HKCU only, snapshotted, and undone from the same menu or the uninstaller.
 - 🧪 **Optional and off by default:** **Dark legacy windows**. A same-architecture hook DLL recolors classic dialogs such as Run. See [Safety](#️-safety-and-uninstall).
 
+## 🧪 3.6 Preview (pre-release)
+
+AllBlack11 works in three honest layers. Knowing which one a window is in explains most "why didn't it change?" questions.
+
+| Layer | What it does | Reaches into other apps? |
+| --- | --- | --- |
+| **A. Frame styling** | Title bar, text and border colors, corners, Mica, Mica Alt, Acrylic and experimental tinted Acrylic, set through Windows' own window-frame attributes. | No |
+| **B. Legacy layer** (opt-in) | Recolors the controls of *classic dialogs* (Run, old installers, property pages) from inside the app: labels, edit boxes, buttons, check boxes, combo and list boxes, list views, tree views. | Yes, per dialog, only same-CPU, non-elevated, never games or shell |
+| **C. App integrations** | None ship yet. | No |
+
+What the 3.5 and 3.6 previews add:
+
+- **Legacy dark mode that holds up.** Each control family has its own technique, states stay readable, controls that cannot be darkened safely are left alone and reported, and Explorer, Control Panel and dialogs with embedded web or Explorer views are never touched. A built-in **control harness** lets you check it without relying on another app.
+- **Window picker and inspector.** Drag a crosshair onto any window to see its executable, class, CPU type, which rule applied and why, where each setting came from, and what Windows answered. The report says "accepted by Windows; appearance not verified" and never claims more.
+- **Effects Studio.** Per-app looks, Focus Look, Reduce effects on battery saver or remote sessions, and a demonstration window that shows how materials behave.
+- **Rules that explain themselves.** Match by executable, class, path, package or (optionally) title, with clear precedence and conflict warnings.
+- **Safe to experiment.** Presets and recipes run as a 15-second trial; a broken config falls back to the last known good one; shell restores skip anything you changed yourself.
+- **Experimental on ARM64:** an on-demand x64 helper for emulated x64 dialogs. It has not been run on hardware yet.
+- **Fix this app (3.6).** Pick a window and see, per surface (title bar, border, backdrop, app content, classic controls), what can change and why, then preview it for 20 seconds, save it as a rule, exclude the app, or restore it.
+- **Scenes and a Look Book (3.6).** OLED Black, Graphite, Midnight Accent, Focus and Living Room, plus looks you save. Switching a scene never touches your per-app rules. Build a look from a picture, compare before and after on windows AllBlack11 owns, and switch from the tray or the **command palette** (Ctrl+K in Settings).
+- **Safety page (3.6).** Emergency pause, reset, undo shell changes, last known good, safe start after repeated crashes, and the status of every experimental piece. Identity accents, Day / Night scenes and the palette hotkey are optional and off by default.
+
+**Everything in 3.6 is unverified on real Windows hardware** and ships only as a pre-release; see `docs/dev/EVIDENCE.md`.
+
+Honest limits: Chromium, Electron, WinUI and many modern apps draw their own opaque client area and often their own title bar, so a backdrop cannot show through them and caption colors may not apply. AllBlack11 does not change whole-window opacity, and no feature here is universal. Settings is custom drawn: it has full keyboard access and a UI Automation provider for screen readers, but that provider has not yet been tried with Narrator, so treat screen reader support as unverified.
+
 ## ⬇️ Download
 
 Grab the files from **[github.com/TH0MSX/AllBlack11/releases/latest](https://github.com/TH0MSX/AllBlack11/releases/latest)**.
@@ -135,7 +161,9 @@ Exit
 
 Menu items carry a one-line explanation of what they do. A check mark means that item is on. In dark mode the menu is dark, with padded rows and rounded corners. Light mode stays light. High contrast uses the normal system menu.
 
-**Settings** is a native window in the same near-black as the rest. Every option sits on its own card: the name and a plain-language explanation on the left, the control on the right. A **live preview** is pinned at the top. It redraws a mock window, Start menu and taskbar from your current config, so you can see what a backdrop, corner style, border, tint or shell toggle does before you look at a real window. It also has the presets, per-app rules, exclusions, **Restart Explorer**, and an **About** card that says whether you are running natively on ARM64.
+**Settings** is a native window. A left pane has eight pages: **Home** (is customization on, the current look, what to do next, Pause), **Fix this app** (pick a window, see what can change, preview, keep or undo), **Appearance** (a live preview of a mock window, Start menu and taskbar, plus every look option), **Scenes**, **Rules**, **Safety**, **Diagnostics**, and **Settings & help** (walkthroughs, searchable help, replay the first-run setup, and a System / Light / Dark choice for AllBlack11's own windows, which never changes what it applies to other apps). Every option sits on its own card: the name and a plain-language explanation on the left, the control on the right. **Restart Explorer** is under the shell options on Appearance, and the **About** card on Settings & help says whether you are running natively on ARM64.
+
+> The Settings screenshot in the feature table above is from the 3.0 Preview. The 3.6.0-preview.2 interface has not been photographed on Windows yet; `docs/dev/UI-GUIDELINES.md` says what it follows and where it deviates.
 
 | Item | What it does |
 | --- | --- |

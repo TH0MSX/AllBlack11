@@ -1,5 +1,7 @@
 use serde::{Deserialize, Serialize};
 
+use crate::identity::Fingerprint;
+
 /// Original DWM attributes captured before AllBlack11 first touched a window.
 /// Written to disk so a later exit can undo even if this process was killed and restarted.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
@@ -17,6 +19,11 @@ pub struct StoredSnapshot {
     /// AllBlack11 called `SetWindowCompositionAttribute` on this window.
     #[serde(default)]
     pub accent_policy: bool,
+    /// What this window was like when captured, so a reused HWND in the same process is not
+    /// mistaken for it. Absent in files written by 3.5 and earlier (those fall back to the
+    /// process check alone).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub fingerprint: Option<Fingerprint>,
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
@@ -75,10 +82,47 @@ mod tests {
             text: Some(0),
             corners: Some(0),
             accent_policy: false,
+            fingerprint: None,
         };
         let text = format_snapshots(std::slice::from_ref(&item));
         let parsed = parse_snapshots(&text).unwrap();
         assert_eq!(parsed, vec![item]);
+    }
+
+    #[test]
+    fn fingerprints_round_trip_and_old_files_still_load() {
+        let fingerprint = Fingerprint {
+            pid: 7,
+            create: 50,
+            thread: 9,
+            class: "#32770".into(),
+            instance: 0x1000,
+            owner: 0,
+            top_level: true,
+            tool_window: false,
+            no_redirection: false,
+        };
+        let item = StoredSnapshot {
+            hwnd: 1,
+            pid: 7,
+            create: 50,
+            dark: None,
+            backdrop: None,
+            caption: None,
+            border: None,
+            text: None,
+            corners: None,
+            accent_policy: false,
+            fingerprint: Some(fingerprint),
+        };
+        let parsed = parse_snapshots(&format_snapshots(std::slice::from_ref(&item))).unwrap();
+        assert_eq!(parsed, vec![item]);
+        // A file written before fingerprints existed has no such field.
+        let old = r#"{"version":1,"windows":[{"hwnd":1,"pid":7,"create":50,"dark":null,
+            "backdrop":null,"caption":null,"border":null,"text":null,"corners":null}]}"#;
+        let loaded = parse_snapshots(old).unwrap();
+        assert_eq!(loaded.len(), 1);
+        assert!(loaded[0].fingerprint.is_none());
     }
 
     #[test]
@@ -100,6 +144,7 @@ mod tests {
             text: None,
             corners: None,
             accent_policy: false,
+            fingerprint: None,
         };
         assert!(same_process(&stored, 7, 50));
         assert!(!same_process(&stored, 8, 50));

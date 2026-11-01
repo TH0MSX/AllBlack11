@@ -1,0 +1,95 @@
+name: CI
+
+on:
+  push:
+    branches: [main, 'claude/next-preview-3.6', 'claude/ui-polish-fluent', 'claude/workbench-3.7']
+  pull_request:
+  workflow_dispatch:
+
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          components: rustfmt, clippy
+          targets: aarch64-pc-windows-msvc,x86_64-pc-windows-msvc
+      - name: Format
+        run: |
+          cargo fmt --check
+          (cd hook && cargo fmt --check)
+          (cd setup && cargo fmt --check)
+          (cd harness && cargo fmt --check)
+          (cd helper && cargo fmt --check)
+      - name: Unit tests (Linux host; pure logic only)
+        run: cargo test --lib
+      - name: Every Settings control is still on a page
+        run: python3 scripts/check-controls.py
+      - name: Brand icon geometry, contrast and edges
+        run: |
+          python3 -m pip install --quiet pillow numpy
+          python3 assets/brand/brand_icon.py check
+      - name: Type-check every Windows crate for both CPUs
+        run: |
+          for target in aarch64-pc-windows-msvc x86_64-pc-windows-msvc; do
+            cargo check --target $target
+            (cd hook && cargo check --target $target)
+            (cd harness && cargo check --target $target)
+            (cd harness && cargo check --target $target --features classic)
+          done
+          (cd helper && cargo check --target x86_64-pc-windows-msvc)
+      - name: Clippy (errors only)
+        run: cargo clippy --target aarch64-pc-windows-msvc -- -A warnings
+
+  # A real Windows runner. This is the only job that compiles and tests the Windows-only code
+  # natively; the Linux job above only cross-compiles it. A pass here still does not exercise
+  # the tray, Settings window, hooks or helper: nothing in CI does. That is the hardware smoke
+  # test's job.
+  #
+  # Both CPUs now run natively. The build scripts need a resource compiler and a resource
+  # converter: the ARM64 image has LLVM's (llvm-rc, llvm-cvtres); the x64 image does not (LLVM
+  # from Chocolatey ships no llvm-cvtres), so the x64 job loads the MSVC environment and the
+  # build scripts fall back to MSVC's rc and cvtres, which take the same flags.
+  windows-arm64:
+    runs-on: windows-11-arm
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - name: LLVM resource tools are present
+        shell: pwsh
+        run: |
+          Get-Command llvm-rc, llvm-cvtres | Format-Table Name, Source
+      - name: Unit tests (native Windows ARM64)
+        run: cargo test --lib
+      - name: Build every ARM64 crate natively
+        run: |
+          cargo build
+          cd hook; cargo build; cd ..
+          cd harness; cargo build; cd ..
+      - name: Windows-only code compiles under test
+        run: cargo test --no-run
+
+  windows-x64:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - name: Load the MSVC environment (puts rc.exe and cvtres.exe on PATH)
+        uses: ilammy/msvc-dev-cmd@v1
+        with:
+          arch: x64
+      - name: Resource tools are present
+        shell: pwsh
+        run: |
+          Get-Command rc, cvtres | Format-Table Name, Source
+      - name: Unit tests (native Windows x64)
+        run: cargo test --lib
+      - name: Build every x64 crate natively
+        run: |
+          cargo build
+          cd hook; cargo build; cd ..
+          cd harness; cargo build; cd ..
+          cd helper; cargo build; cd ..
+      - name: Windows-only code compiles under test
+        run: cargo test --no-run

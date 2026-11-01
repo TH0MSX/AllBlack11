@@ -45,7 +45,12 @@ fn main() {
     println!("cargo:rerun-if-changed=setup.manifest");
     println!("cargo:rerun-if-changed=../assets/allblack11.ico");
     let payload = std::env::var("ALLBLACK11_PAYLOAD").unwrap_or_default();
-    for name in ["AllBlack11.exe", "AllBlack11Hook.dll", "config.default.json", "LICENSE"] {
+    for name in [
+        "AllBlack11.exe",
+        "AllBlack11Hook.dll",
+        "config.default.json",
+        "LICENSE",
+    ] {
         if !PathBuf::from(&payload).join(name).is_file() {
             panic!(
                 "ALLBLACK11_PAYLOAD must point at a folder holding {name} (got '{payload}'). \
@@ -53,14 +58,39 @@ fn main() {
             );
         }
     }
+    // Optional files: present for some builds only (the helper and x64 hook ship in the
+    // ARM64 package; the harness ships in both). Whatever exists is embedded.
+    let mut code = String::from("pub static EXTRAS: &[(&str, &[u8])] = &[\n");
+    for name in [
+        "AllBlack11Helper.x64.exe",
+        "AllBlack11Hook.x64.dll",
+        "AllBlack11-Harness.exe",
+        "AllBlack11-Harness-Classic.exe",
+    ] {
+        let path = PathBuf::from(&payload).join(name);
+        println!("cargo:rerun-if-changed={}", path.display());
+        if path.is_file() {
+            let escaped = path.display().to_string().replace('\\', "/");
+            code.push_str(&format!(
+                "    (\"{name}\", include_bytes!(\"{escaped}\")),\n"
+            ));
+        }
+    }
+    code.push_str("];\n");
+    std::fs::write(out_dir.join("extras.rs"), code).expect("write extras.rs");
 }
 
 fn find_tool(base: &str) -> String {
+    // LLVM's tools first (Linux cross builds, the ARM64 runner). On a Windows x64 runner the
+    // same two jobs are done by the MSVC tools `rc` and `cvtres`, which take the same flags
+    // here and are on PATH once the MSVC environment is loaded (see .github/workflows/ci.yml).
+    let msvc = base.strip_prefix("llvm-").unwrap_or(base).to_string();
     for name in [
         base.to_string(),
         format!("{base}-18"),
         format!("{base}-19"),
         format!("{base}-20"),
+        msvc,
     ] {
         if Command::new(&name)
             .arg("--version")
@@ -72,5 +102,8 @@ fn find_tool(base: &str) -> String {
             return name;
         }
     }
-    panic!("{base} was not found on PATH; install LLVM (llvm-rc and llvm-cvtres)");
+    panic!(
+        "{base} was not found on PATH; install LLVM (llvm-rc and llvm-cvtres) or load the MSVC \
+environment (rc and cvtres)"
+    );
 }

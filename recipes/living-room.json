@@ -1,0 +1,19 @@
+{
+  "schema": 1,
+  "id": "living-room",
+  "name": "Living Room",
+  "description": "Maximum-contrast frames that read from across the room: pure black title bars, bright text, accent border.",
+  "author": "AllBlack11",
+  "minBuild": 22000,
+  "look": {
+    "darkMode": true,
+    "backdrop": "none",
+    "captionColor": "#000000",
+    "borderColor": "accent",
+    "textColor": "#FFFFFF",
+    "corners": "default"
+  },
+  "notes": [
+    "This changes window frames only. It does not make text or buttons inside apps larger."
+  ]
+}
