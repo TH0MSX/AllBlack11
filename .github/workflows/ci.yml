@@ -26,6 +26,8 @@ jobs:
         run: cargo test --lib
       - name: Every Settings control is still on a page
         run: python3 scripts/check-controls.py
+      - name: Website links, assets and download tag match the app version
+        run: python3 scripts/check-site.py
       - name: Brand icon geometry, contrast and edges
         run: |
           python3 -m pip install --quiet pillow numpy
