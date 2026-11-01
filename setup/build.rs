@@ -81,11 +81,16 @@ fn main() {
 }
 
 fn find_tool(base: &str) -> String {
+    // LLVM's tools first (Linux cross builds, the ARM64 runner). On a Windows x64 runner the
+    // same two jobs are done by the MSVC tools `rc` and `cvtres`, which take the same flags
+    // here and are on PATH once the MSVC environment is loaded (see .github/workflows/ci.yml).
+    let msvc = base.strip_prefix("llvm-").unwrap_or(base).to_string();
     for name in [
         base.to_string(),
         format!("{base}-18"),
         format!("{base}-19"),
         format!("{base}-20"),
+        msvc,
     ] {
         if Command::new(&name)
             .arg("--version")
@@ -97,5 +102,8 @@ fn find_tool(base: &str) -> String {
             return name;
         }
     }
-    panic!("{base} was not found on PATH; install LLVM (llvm-rc and llvm-cvtres)");
+    panic!(
+        "{base} was not found on PATH; install LLVM (llvm-rc and llvm-cvtres) or load the MSVC \
+environment (rc and cvtres)"
+    );
 }

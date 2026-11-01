@@ -2,7 +2,7 @@ name: CI
 
 on:
   push:
-    branches: [main, 'claude/next-preview-3.6', 'claude/ui-polish-fluent']
+    branches: [main, 'claude/next-preview-3.6', 'claude/ui-polish-fluent', 'claude/workbench-3.7']
   pull_request:
   workflow_dispatch:
 
@@ -26,6 +26,10 @@ jobs:
         run: cargo test --lib
       - name: Every Settings control is still on a page
         run: python3 scripts/check-controls.py
+      - name: Brand icon geometry, contrast and edges
+        run: |
+          python3 -m pip install --quiet pillow numpy
+          python3 assets/brand/brand_icon.py check
       - name: Type-check every Windows crate for both CPUs
         run: |
           for target in aarch64-pc-windows-msvc x86_64-pc-windows-msvc; do
@@ -43,9 +47,10 @@ jobs:
   # the tray, Settings window, hooks or helper: nothing in CI does. That is the hardware smoke
   # test's job.
   #
-  # Only ARM64 runs natively. The build script needs llvm-rc and llvm-cvtres; the
-  # windows-11-arm image has them and windows-latest (x64) does not (LLVM from Chocolatey ships
-  # no llvm-cvtres), so x64 is covered by the cross-compile in the job above instead.
+  # Both CPUs now run natively. The build scripts need a resource compiler and a resource
+  # converter: the ARM64 image has LLVM's (llvm-rc, llvm-cvtres); the x64 image does not (LLVM
+  # from Chocolatey ships no llvm-cvtres), so the x64 job loads the MSVC environment and the
+  # build scripts fall back to MSVC's rc and cvtres, which take the same flags.
   windows-arm64:
     runs-on: windows-11-arm
     steps:
@@ -62,5 +67,29 @@ jobs:
           cargo build
           cd hook; cargo build; cd ..
           cd harness; cargo build; cd ..
+      - name: Windows-only code compiles under test
+        run: cargo test --no-run
+
+  windows-x64:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - name: Load the MSVC environment (puts rc.exe and cvtres.exe on PATH)
+        uses: ilammy/msvc-dev-cmd@v1
+        with:
+          arch: x64
+      - name: Resource tools are present
+        shell: pwsh
+        run: |
+          Get-Command rc, cvtres | Format-Table Name, Source
+      - name: Unit tests (native Windows x64)
+        run: cargo test --lib
+      - name: Build every x64 crate natively
+        run: |
+          cargo build
+          cd hook; cargo build; cd ..
+          cd harness; cargo build; cd ..
+          cd helper; cargo build; cd ..
       - name: Windows-only code compiles under test
         run: cargo test --no-run
