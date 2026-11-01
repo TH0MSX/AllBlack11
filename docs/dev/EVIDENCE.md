@@ -126,7 +126,7 @@ the build script needs).
 
 | Area | Unit-tested | Cross-compiled | Native CI | Wine-rendered | Runtime Windows |
 | --- | --- | --- | --- | --- | --- |
-| Brand icon geometry, 10 sizes, tray marks, SVG; contrast of palette and mono marks | `brand_icon.py check` (also in CI) | yes | yes (check job) | PNG renders inspected at 16 to 256 px on four backgrounds | **not tested**: taskbar, Start, Alt+Tab, shortcut, installer, theme swap |
+| Brand icon geometry, 10 sizes, tray marks, SVG; contrast of palette and mono marks | `brand_icon.py check` (also in CI) | yes | yes (check job) | PNG renders inspected at 16 to 256 px on four backgrounds | **seen on ARM64**: installer, window title bars, taskbar, tray overflow. Not tested: Start, Alt+Tab, shortcut, theme swap |
 | Icon resources linked (ids 1, 10 to 13), `LoadIconWithScaleDown`, class icons | no | yes | yes (builds) | tray not drivable; nav mark and Home icon seen | not tested |
 | Brand tokens in `Palette` (contrast-tested); Home header; nav mark; credit row | yes (tokens, `brand.rs` 4 tests) | yes | yes | yes: Home in Dark and Light, focus ring on the link | not tested; link launch and Narrator not tested |
 | Credit link URL rules | yes | yes | yes | no | browser launch not tested |
@@ -139,6 +139,17 @@ the build script needs).
 | Exit confirmation dialog | no | yes | yes | no | not tested |
 | Native Windows x64 CI job (MSVC `rc`/`cvtres` fallback) | n/a | n/a | **yes: run 41267253779 passed on `windows-latest`** | n/a | n/a |
 | Installer header | no | yes (`./build.sh`) | not built natively (needs the payload) | not run | not tested |
+
+### Observed on real hardware (3.7.0-preview.1, ARM64)
+
+The author ran the ARM64 installer and build on a Windows 11 ARM64 PC (Snapdragon) and sent screenshots on 2026-11-01. What those screenshots show, and nothing more:
+
+- **Installer**: the new header (mark, name, "3.7 Preview · true black for Windows 11", blue line), the new icon in its title bar, "Native ARM64 build for this ARM64 PC", Update / Uninstall / Close.
+- **Tray**: the white mark in the notification overflow; the tray menu titled "AllBlack11 3.7 Preview · ARM64" with Command palette, Presets, Scenes, Pause all styling, Shell, Maintenance, Start with Windows (checked), Exit.
+- **Taskbar and desktop**: the new icon on two taskbar buttons; Control Panel, Run and File Explorer drawn with black title bars alongside Settings.
+- **Settings** (icon rail, narrow window): Home with the brand header and "Made with love by TH0MSX" (TH0MSX underlined); Fix this app with a live window list; Appearance with the live preview, quick looks and toggles; Scenes with the scene list and detail for "Focus"; Rules with Test without applying; "Kept." in the status line.
+
+**Not shown by those screenshots**, so still unverified: the x64 build on x64; Narrator and any UI Automation client; the credit link opening a browser; the tray swap between light and dark taskbars and contrast themes; the Look history, Rule playground results, Contrast check, Exit dialog and last-known-good timing; the Start menu, Alt+Tab and shortcut icons; 125% to 200% scaling; the helper.
 
 ### Defects found and fixed in 3.7
 

@@ -13,10 +13,9 @@ pub const NAME: &str = "AllBlack11";
 pub const TAGLINE: &str = "Pick a window, see what can change, preview it, keep it or undo it.";
 
 /// What About says about how far this build has been checked. It is a statement of fact for the
-/// build it ships in: the owner changes it only after the hardware pass in
-/// `docs/dev/SMOKE-TEST.md` has actually been run.
-pub const VERIFICATION_STATUS: &str =
-    "Pre-release. Unit-tested and built for ARM64 and x64; not yet verified on Windows hardware.";
+/// build it ships in. Change it only when the facts change: it says what has been run, and the
+/// full hardware pass in `docs/dev/SMOKE-TEST.md` is not finished.
+pub const VERIFICATION_STATUS: &str = "Pre-release. Unit-tested and built for ARM64 and x64. The ARM64 build has been run on a Windows 11 ARM64 PC by its author; the full hardware test pass is not finished.";
 
 /// The creator credit, as it reads on Home and in About. The plain text is complete without any
 /// symbol, link or heart glyph.

@@ -2,7 +2,7 @@
 
 ## 3.7.0-preview.1
 
-A **pre-release** on top of 3.6.0-preview.2: a new icon and brand, a first batch of the workbench features, and two recovery fixes. **Nothing in it has been run on Windows by the author.** It is unit-tested (269 tests on Linux), cross-compiled, built and unit-tested natively on Windows ARM64 and x64 CI runners, and rendered under Wine for layout (Wine is not Windows). `docs/dev/INVENTORY-3.7.md` lists, item by item, what exists and what was deliberately left undone; `docs/dev/SMOKE-TEST.md` section 3.7 is the hardware pass.
+A **pre-release** on top of 3.6.0-preview.2: a new icon and brand, a first batch of the workbench features, and two recovery fixes. **The ARM64 build has been run by the author on a Windows 11 ARM64 PC** (installer, tray icon and menu, Home, Fix this app, Appearance, Scenes and Rules pages, and styled Control Panel, Run and File Explorer windows were seen working); **the full hardware checklist is not finished and the x64 build has not been run on an x64 PC.** It is unit-tested (269 tests on Linux), cross-compiled, built and unit-tested natively on Windows ARM64 and x64 CI runners, and rendered under Wine for layout (Wine is not Windows). `docs/dev/INVENTORY-3.7.md` lists, item by item, what exists and what was deliberately left undone; `docs/dev/SMOKE-TEST.md` section 3.7 is the hardware pass.
 
 **Brand**
 - A new original icon: a silver moon eclipsed by a window, on a graphite plate. It replaces the four-pane icon, which looked too much like the Windows logo. Ten pixel-tuned sizes, an editable SVG, and a reproducible generator (`assets/brand/brand_icon.py`; see `docs/dev/BRAND.md`).

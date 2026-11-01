@@ -3,7 +3,7 @@
 Branch `claude/workbench-3.7` (from `claude/ui-polish-fluent` @ `9ef0ea2`, which stays as the
 recoverable checkpoint). The brief asked for 30 features, 5 wizards and 30 quality-of-life items
 as a **prioritized backlog**. This pass finished a few completely and left the rest alone rather
-than leave decorative stubs. Nothing here has run on Windows.
+than leave decorative stubs. The ARM64 build has been run by its author on a Windows 11 ARM64 PC (see EVIDENCE.md, "Observed on real hardware"); the full hardware checklist and the x64 build are still pending.
 
 Evidence labels: **unit** = `cargo test --lib` on Linux (269 tests). **cross** = cross-compiled
 for ARM64 and x64. **native CI** = built and unit-tested on real Windows runners (ARM64 and x64).

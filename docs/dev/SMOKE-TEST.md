@@ -1,9 +1,9 @@
 # Hardware smoke test
 
-**Nothing in 3.7.0-preview.1 has been run on Windows by the author.** It is unit-tested on Linux
+**The ARM64 build of 3.7.0-preview.1 has been started and looked at on a Windows 11 ARM64 PC by the author (installer, tray, Settings pages; see EVIDENCE.md). None of the numbered steps below has been ticked, and x64 has not been run.** It is unit-tested on Linux
 (269 tests), cross-compiled for ARM64 and x64, rendered under Wine for layout (Wine is not
 Windows), and checked on a Windows ARM64 runner in CI for compilation only. Every item below is
-therefore **unverified until you tick it**. Mark each line pass or fail and attach the diagnostics
+therefore **unverified until you tick it**, whatever the screenshots showed. Mark each line pass or fail and attach the diagnostics
 report (Settings > Diagnostics > Write report) to any failure.
 
 Do **section 3.7 first** (about 30 minutes: icon, credit, recovery, new pages), then **section U** (about 25 minutes): it covers the interface redesign and is where a
