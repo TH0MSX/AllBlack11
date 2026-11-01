@@ -94,6 +94,10 @@ A new Settings shell with global search; an updater; compatibility packs (experi
 
 `docs/dev/EVIDENCE.md` says, feature by feature, what was run and what was only built; `docs/dev/SMOKE-TEST.md` is the checklist.
 
+## Support
+
+AllBlack11 is free, MIT-licensed and has no locked features, no ads and no telemetry. If it saves you time and you want to say thanks, a tip is welcome through [PayPal](https://paypal.me/peplinski00). It is never required, and bug reports, screenshots and test results from your own PC help just as much.
+
 ## Install
 
 **Setup.exe.** Run the installer for your CPU. It installs for your account only, so there is no administrator prompt. It adds a Start menu shortcut and an entry in Settings > Apps, and it can start AllBlack11 at sign-in. Running a newer Setup updates in place and keeps your config. To uninstall, use Settings > Apps, or run Setup again and choose **Uninstall**. Uninstall puts the Windows settings AllBlack11 changed back first, then asks whether to keep your config.
@@ -297,9 +301,6 @@ Built by Tomasz Pepliński ([@TH0MSX](https://github.com/TH0MSX)) with AI coding
 
 Window frames use the public DWM attribute APIs. Tinted acrylic uses `SetWindowCompositionAttribute`, the same user32 entry TranslucentTB uses on the taskbar, called from this process only. Icons are Segoe Fluent Icons, used from the font Windows provides; the AllBlack11 mark and the wallpapers are original.
 
-## Support
-
-AllBlack11 is free, MIT-licensed and has no locked features, no ads and no telemetry. If it saves you time and you want to say thanks, a tip is welcome through [PayPal](https://paypal.me/peplinski00). It is never required, and bug reports, screenshots and test results from your own PC help just as much.
 
 ## License
 
