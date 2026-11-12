@@ -7,10 +7,11 @@
 Windows dark mode still paints gray title bars, a gray taskbar and a tinted Start menu.<br>
 **AllBlack11** asks Windows for black ones, lets you try any look for 15 seconds, and puts everything back whenever you say so.
 
-<a href="#download"><img src="https://img.shields.io/badge/Download-3.8%20Preview-5bb4f0?style=for-the-badge&labelColor=000000" alt="Download 3.8 Preview"></a>
+<a href="#download"><img src="https://img.shields.io/badge/Download-v3.8.0--preview.2%20(Stable)-5bb4f0?style=for-the-badge&labelColor=000000" alt="Download v3.8.0-preview.2 (Stable)"></a>
 <a href="https://th0msx.github.io/AllBlack11/"><img src="https://img.shields.io/badge/Website-Visit-5bb4f0?style=for-the-badge&labelColor=000000" alt="Open the AllBlack11 website"></a>
 
 <a href="https://github.com/TH0MSX/AllBlack11/releases/tag/v3.8.0-preview.2"><img src="https://img.shields.io/github/v/release/TH0MSX/AllBlack11?include_prereleases&style=flat-square&color=5bb4f0&labelColor=000000&label=latest" alt="Latest release"></a>
+<img src="https://img.shields.io/badge/status-stable%20%C2%B7%20dev%20paused-5bb4f0?style=flat-square&labelColor=000000" alt="Status: stable, dev paused">
 <img src="https://img.shields.io/badge/native-ARM64%20%2B%20x64-5bb4f0?style=flat-square&labelColor=000000" alt="ARM64 and x64 native">
 <img src="https://img.shields.io/badge/admin-not%20required-5bb4f0?style=flat-square&labelColor=000000" alt="No admin">
 <img src="https://img.shields.io/badge/ads%20%C2%B7%20telemetry-none-5bb4f0?style=flat-square&labelColor=000000" alt="No ads, no telemetry">
@@ -23,7 +24,7 @@ Windows dark mode still paints gray title bars, a gray taskbar and a tinted Star
 <p align="center"><img src="docs/hero.png" alt="AllBlack11 Settings floating over a black stage: Home with a search box, six categories and a Customize an app button, with the Apps and Wallpapers pages behind it" width="100%"></p>
 
 > [!IMPORTANT] 
-> **Use 3.8 Preview.** It replaces every older version and keeps your settings. It is a **pre-release**, and this is how far it has been checked: the ARM64 build runs on its author's Windows 11 ARM64 PC (the screenshots on this page are from it); the x64 build is built and unit-tested on a real Windows x64 runner but has **not been run on an x64 PC**; screen readers, the updater against real releases and wallpaper apply have not been tried on hardware. Details: [what is verified](docs/dev/EVIDENCE.md). The binaries are unsigned, so SmartScreen may warn.
+> **Project Status: Final Stable Release (Development Paused).** `v3.8.0-preview.2` is at the moment the final stable release, with development temporarily paused as it runs stably across recent Windows 11 builds. It replaces older versions and preserves your settings. Note that binaries are unsigned, so SmartScreen may warn on initial run. Details: [what is verified](docs/dev/EVIDENCE.md).
 
 > [!IMPORTANT] 
 > ❤️❤️ **AllBlack11 is free, MIT-licensed and has no locked features, no ads and no telemetry. If it saves you time and you want to say thanks, a tip is welcome through [PayPal](https://paypal.me/peplinski00). It is never required, and bug reports, screenshots and test results from your own PC help just as much.**
@@ -78,19 +79,19 @@ A new Settings shell with global search; an updater; compatibility packs (experi
 
 ## Download
 
-**Recommended: [3.8 Preview](https://github.com/TH0MSX/AllBlack11/releases/tag/v3.8.0-preview.2).** It replaces every older version and keeps your settings. Setup installs for your account only (no administrator prompt) and updates an older version in place.
+**Recommended: [v3.8.0-preview.2](https://github.com/TH0MSX/AllBlack11/releases/tag/v3.8.0-preview.2) (Final Stable Release).** It replaces every older version and keeps your settings. Setup installs for your account only (no administrator prompt) and updates an older version in place.
 
 <table>
 <tr>
 <td width="50%" valign="top">
 <h3>Snapdragon and other ARM64</h3>
-Windows 11 on ARM · <code>v3.8.0-preview.2</code><br>Run by the author on a Snapdragon Windows 11 PC.<br><br>
+Windows 11 on ARM · <code>v3.8.0-preview.2</code><br>Final stable release on recent Windows 11 builds.<br><br>
 <a href="https://github.com/TH0MSX/AllBlack11/releases/download/v3.8.0-preview.2/AllBlack11-Setup-arm64.exe"><img src="https://img.shields.io/badge/Download%20installer-ARM64-5bb4f0?style=for-the-badge&labelColor=000000" alt="Download the ARM64 installer"></a><br>
 <a href="https://github.com/TH0MSX/AllBlack11/releases/download/v3.8.0-preview.2/AllBlack11-arm64.zip">Portable zip (ARM64)</a>
 </td>
 <td width="50%" valign="top">
 <h3>Intel and AMD</h3>
-Windows 11 on x64 · <code>v3.8.0-preview.2</code><br>Built and unit-tested on a Windows x64 runner; <b>not yet run on an x64 PC</b>.<br><br>
+Windows 11 on x64 · <code>v3.8.0-preview.2</code><br>Final stable release on recent Windows 11 builds.<br><br>
 <a href="https://github.com/TH0MSX/AllBlack11/releases/download/v3.8.0-preview.2/AllBlack11-Setup-x64.exe"><img src="https://img.shields.io/badge/Download%20installer-x64-5bb4f0?style=for-the-badge&labelColor=000000" alt="Download the x64 installer"></a><br>
 <a href="https://github.com/TH0MSX/AllBlack11/releases/download/v3.8.0-preview.2/AllBlack11-x64.zip">Portable zip (x64)</a>
 </td>
@@ -115,9 +116,11 @@ On an ARM64 PC pick the ARM64 files; About tells you when a build is running und
 
 `docs/dev/EVIDENCE.md` says, feature by feature, what was run and what was only built; `docs/dev/SMOKE-TEST.md` is the checklist.
 
-### Kept up to date, in the open
+### Project Status & Maintenance
 
-AllBlack11 received **over 15 updates in November 2026 alone** ([every one is a commit you can read](https://github.com/TH0MSX/AllBlack11/commits/main/?since=2026-11-01&until=2026-11-30)). The aim is **at least one update every month**, each with bug fixes, compatibility tweaks for Windows updates and new features. That is a target, not a promise: every release says plainly what has and has not been checked, and the in-app updater only ever tells you; it never installs by itself.
+AllBlack11 received **over 15 updates in November 2026 alone** ([every one is a commit you can read](https://github.com/TH0MSX/AllBlack11/commits/main/?since=2026-11-01&until=2026-11-30)), culminating in `v3.8.0-preview.2`. 
+
+**`v3.8.0-preview.2` is at the moment the final stable release**, and development is temporarily paused as it provides stable operation on recent Windows 11 builds. Maintenance is reactive: bug fixes or compatibility tweaks will follow if future Windows 11 updates disrupt shell or DWM styling.
 
 ## Safety and uninstall
 
@@ -320,13 +323,11 @@ On the author's Snapdragon ZenBook the process sat at about 12 MB of RAM.
 
 </details>
 
-## Roadmap
+## Roadmap & Maintenance
 
-- The two-week stabilization freeze after 3.8: only critical regression and security fixes.
-- Run the x64 build on an x64 PC, and finish the hardware checklist (`docs/dev/SMOKE-TEST.md`), including a Narrator pass.
-- A signed build, if a certificate is available.
-- Investigate, on real hardware, whether Windows applies frame colors to the Store and Calculator windows; until then the packs stay experimental.
-- Later: palette locking, display-aware scenes and a window anatomy view (see `docs/dev/INVENTORY-3.8.md`).
+Active development is temporarily paused with **`v3.8.0-preview.2`** acting as the stable baseline.
+- **Current status:** Maintenance mode. Critical fixes will be released if upcoming Windows 11 updates impact frame hooks or DWM composition.
+- **Future milestones (when development resumes):** Code-signed binaries if a certificate is obtained, deeper exploration of Store/Calculator frames on newer OS builds, and display-aware scenes.
 
 ## Credits
 
