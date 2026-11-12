@@ -2,7 +2,13 @@
 
 Keep this file current. It exists so the work survives a context reset.
 
-## Stabilization checkpoint (3.8.0-preview.2) and the two-week feature freeze
+## Project Status (2026-11-12): Final Stable Release & Development Paused
+
+- `v3.8.0-preview.2` is designated as the current **final stable release**.
+- **Development is temporarily paused**: this release is proven stable across recent Windows 11 builds (Snapdragon ARM64 and x64).
+- **Maintenance posture**: only critical regression or compatibility fixes will be evaluated if future upstream Windows 11 updates break frame hooks or DWM composition. Feature development is on hold.
+
+## Stabilization checkpoint (3.8.0-preview.2) and the feature freeze
 
 - Branch `claude/stabilize-3.8` (from `claude/next-3.8` `0b275e7`, which is untouched and is the recoverable baseline). Details: `INVENTORY-3.8-stabilization.md`; owner checklist: `SMOKE-TEST.md` section S.
 - **Freeze:** for two weeks after this lands, only critical regression and security fixes. No new features, no roadmap items, no new systems. Nothing here schedules anything.
