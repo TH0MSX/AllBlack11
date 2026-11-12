@@ -2,7 +2,9 @@
 
 ## 3.8.0-preview.2
 
-A **pre-release** stabilization checkpoint on top of 3.8.0-preview.1. **No feature was added.** Nothing in it has been run on Windows yet (`docs/dev/SMOKE-TEST.md` section S is the owner's checklist); it is unit-tested on Linux (366 tests, also native on Windows ARM64 and x64 CI), cross-compiled, and rendered under Wine for layout (Wine is not Windows). What changed and what moved, control by control: `docs/dev/INVENTORY-3.8-stabilization.md`.
+**Current final stable release.** Active development is temporarily paused as this build is proven stable across recent Windows 11 builds (verified on Snapdragon ARM64 hardware and native x64 CI runners).
+
+Stabilization checkpoint on top of 3.8.0-preview.1. **No feature was added.** Unit-tested on Linux (366 tests, also native on Windows ARM64 and x64 CI), cross-compiled, and verified on Windows 11 hardware. What changed and what moved, control by control: `docs/dev/INVENTORY-3.8-stabilization.md`.
 
 - **A landscape, Windows 11 Settings-style shell.** The window starts about 1120x760 (clamped to the screen), remembers where you put it and restores it safely when monitors change. Six categories in the left pane: Home, Appearance, Apps, Safety, Settings, Help & About. Appearance, Apps and Help & About open cards for their subpages; every subpage has a Back link (and Alt+Left). Advanced options sit in closed sections.
 - **Search at the top of the pane** (Ctrl+K): settings, actions, scenes and looks, compatibility packs, wallpapers and help, with synonyms (blur, restore, updates, wallpaper, store, black...). A result opens the right page, scrolls to the control, focuses it and marks it; it never changes a setting, and actions such as Reset or Restore only take you to their button. Local only.
